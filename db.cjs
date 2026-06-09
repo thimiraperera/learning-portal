@@ -1,60 +1,68 @@
-/* SQLite data layer for the Learning Portal.
-   Creates the schema on first run, runs lightweight migrations for existing
-   databases, and seeds demo data with hashed passwords. The database file
-   (data.sqlite) lives next to this file and persists across deploys (it is
-   gitignored, so git pull never touches it). */
-const path = require("path");
-const Database = require("better-sqlite3");
+/* MySQL data layer for the Learning Portal.
+   Credentials come from environment variables (set in the cPanel Node.js App
+   UI, or a local .env file). Nothing secret is committed to the repo.
+   On first run it creates the schema, migrates older databases, and seeds
+   demo data with hashed passwords. */
+require("dotenv").config();
+const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 
-const db = new Database(path.join(__dirname, "data.sqlite"));
-db.pragma("journal_mode = WAL");
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || "localhost",
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 5,
+  charset: "utf8mb4",
+});
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  first_name    TEXT DEFAULT '',
-  last_name     TEXT DEFAULT '',
-  nickname      TEXT DEFAULT '',
-  username      TEXT NOT NULL UNIQUE,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'student',
-  status        TEXT NOT NULL DEFAULT 'active'
-);
-CREATE TABLE IF NOT EXISTS courses (
-  id TEXT PRIMARY KEY, code TEXT NOT NULL, title TEXT NOT NULL, instructor TEXT, blurb TEXT, sessions INTEGER DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS recordings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, course_id TEXT NOT NULL, title TEXT NOT NULL, date TEXT, length TEXT
-);
-CREATE TABLE IF NOT EXISTS links (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, course_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT
-);
-CREATE TABLE IF NOT EXISTS materials (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, course_id TEXT NOT NULL, title TEXT NOT NULL, size TEXT, ext TEXT
-);
-CREATE TABLE IF NOT EXISTS enrolments (
-  user_id INTEGER NOT NULL, course_id TEXT NOT NULL, PRIMARY KEY (user_id, course_id)
-);
-CREATE TABLE IF NOT EXISTS settings ( key TEXT PRIMARY KEY, value TEXT );
-CREATE TABLE IF NOT EXISTS sessions ( token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at INTEGER );
-`);
+const q = (sql, params) => pool.query(sql, params);
 
-/* ---- migrations for databases created before these columns existed ---- */
-function hasColumn(table, col) {
-  return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
-}
-for (const col of ["first_name", "last_name", "nickname"]) {
-  if (!hasColumn("users", col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT DEFAULT ''`);
-}
-// Backfill first/last name from the existing single name field.
-const needsName = db.prepare("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''").all();
-const setNames = db.prepare("UPDATE users SET first_name=?, last_name=? WHERE id=?");
-for (const u of needsName) {
-  const parts = String(u.name || "").trim().split(/\s+/);
-  setNames.run(parts.shift() || "", parts.join(" "), u.id);
+const TABLES = [
+  `CREATE TABLE IF NOT EXISTS users (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     name VARCHAR(255) NOT NULL,
+     first_name VARCHAR(255) DEFAULT '',
+     last_name VARCHAR(255) DEFAULT '',
+     nickname VARCHAR(255) DEFAULT '',
+     username VARCHAR(190) NOT NULL UNIQUE,
+     email VARCHAR(190) NOT NULL UNIQUE,
+     password_hash VARCHAR(255) NOT NULL,
+     role VARCHAR(20) NOT NULL DEFAULT 'student',
+     status VARCHAR(20) NOT NULL DEFAULT 'active'
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS courses (
+     id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
+     instructor VARCHAR(255), blurb TEXT, sessions INT DEFAULT 0
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS recordings (
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS links (
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, url TEXT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS materials (
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS enrolments (
+     user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, PRIMARY KEY (user_id, course_id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS settings (
+     k VARCHAR(64) PRIMARY KEY, v LONGTEXT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+     token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+];
+
+async function ensureColumn(table, col, decl) {
+  const [rows] = await q(
+    "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?",
+    [table, col]
+  );
+  if (rows[0].n === 0) await q(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 
 function displayName(u) {
@@ -62,116 +70,131 @@ function displayName(u) {
   return (u.nickname && u.nickname.trim()) || full || u.username;
 }
 
-/* ---- one-time seed ---- */
-function seedIfEmpty() {
-  const { n } = db.prepare("SELECT COUNT(*) AS n FROM users").get();
+async function seedIfEmpty() {
+  const [[{ n }]] = await q("SELECT COUNT(*) AS n FROM users");
   if (n > 0) return;
 
-  const ins = db.prepare("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?,?,?,?,?,?, 'active')");
-  const mk = (first, last, username, email, pw, role) =>
-    ins.run(`${first} ${last}`.trim(), first, last, "", username, email, bcrypt.hashSync(pw, 10), role).lastInsertRowid;
-  mk("Chamira", "H.", "admin", "chamira@demo.lk", "admin123", "admin");
-  const ravi  = mk("Ravi", "Perera", "ravi", "ravi@demo.lk", "ravi123", "student");
-  const amara = mk("Amara", "Silva", "amara", "amara@demo.lk", "amara123", "student");
-  mk("Dilan", "Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
-
-  const insCourse = db.prepare("INSERT INTO courses (id,code,title,instructor,blurb,sessions) VALUES (?,?,?,?,?,?)");
-  const insRec = db.prepare("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?,?,?)");
-  const insLink = db.prepare("INSERT INTO links (course_id,title,url) VALUES (?,?,?)");
-  const insMat = db.prepare("INSERT INTO materials (course_id,title,size,ext) VALUES (?,?,?,?)");
-
-  insCourse.run("c1", "EQ-101", "Foundations of Equity Markets", "C. Hettiarachchi", "How exchanges, orders and price discovery actually work.", 8);
-  insRec.run("c1", "Market structure & order types", "May 04, 2026", "1h 12m");
-  insRec.run("c1", "Reading a quote: bid, ask, spread", "May 11, 2026", "58m");
-  insRec.run("c1", "Primary vs secondary markets", "May 18, 2026", "1h 04m");
-  insRec.run("c1", "Settlement, custody & the CDS", "May 25, 2026", "47m");
-  insLink.run("c1", "Colombo Stock Exchange (live board)", "https://www.cse.lk");
-  insLink.run("c1", "Glossary: 40 terms every beginner needs", "#");
-  insMat.run("c1", "Session 1-2 slide deck", "4.2 MB", "PDF");
-  insMat.run("c1", "Order-types cheat sheet", "180 KB", "PDF");
-
-  insCourse.run("c2", "TA-220", "Technical Analysis Masterclass", "C. Hettiarachchi", "Price action, structure and the discipline behind the charts.", 10);
-  insRec.run("c2", "Support, resistance & market memory", "May 06, 2026", "1h 21m");
-  insRec.run("c2", "Trend, range and the in-between", "May 13, 2026", "1h 09m");
-  insRec.run("c2", "Volume as confirmation", "May 20, 2026", "55m");
-  insLink.run("c2", "Charting workspace template", "#");
-  insLink.run("c2", "Pattern reference library", "#");
-  insMat.run("c2", "TA pattern handbook", "9.8 MB", "PDF");
-  insMat.run("c2", "Trade journal template", "320 KB", "XLSX");
-
-  insCourse.run("c3", "DV-310", "Options & Derivatives", "C. Hettiarachchi", "Payoffs, greeks and structuring positions with intent.", 9);
-  insRec.run("c3", "Calls, puts & the payoff diagram", "May 09, 2026", "1h 30m");
-  insRec.run("c3", "The greeks, plainly", "May 16, 2026", "1h 18m");
-  insLink.run("c3", "Options payoff simulator", "#");
-  insMat.run("c3", "Greeks quick-reference", "640 KB", "PDF");
-
-  insCourse.run("c4", "PF-330", "Portfolio Construction & Risk", "C. Hettiarachchi", "Sizing, diversification and surviving your worst week.", 7);
-  insRec.run("c4", "Position sizing & the 2% rule", "May 12, 2026", "1h 02m");
-  insLink.run("c4", "Risk calculator spreadsheet", "#");
-  insMat.run("c4", "Allocation worksheet", "210 KB", "XLSX");
-
-  const insEnrol = db.prepare("INSERT INTO enrolments (user_id,course_id) VALUES (?,?)");
-  insEnrol.run(ravi, "c1"); insEnrol.run(ravi, "c2");
-  insEnrol.run(amara, "c2"); insEnrol.run(amara, "c3"); insEnrol.run(amara, "c4");
-
-  db.prepare("INSERT INTO settings (key,value) VALUES ('brand',?)").run(JSON.stringify({ company: "", name: "Learning Portal", logo: "" }));
-}
-seedIfEmpty();
-
-/* ---- read helpers ---- */
-function courseFull(id) {
-  const c = db.prepare("SELECT * FROM courses WHERE id=?").get(id);
-  if (!c) return null;
-  return {
-    code: c.code, title: c.title, instructor: c.instructor, blurb: c.blurb, sessions: c.sessions,
-    recordings: db.prepare("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY id").all(id),
-    links:      db.prepare("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY id").all(id),
-    materials:  db.prepare("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY id").all(id),
+  const mk = async (first, last, username, email, pw, role) => {
+    const [r] = await q(
+      "INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?,?,?,?,?,?, 'active')",
+      [`${first} ${last}`.trim(), first, last, "", username, email, bcrypt.hashSync(pw, 10), role]
+    );
+    return r.insertId;
   };
+  await mk("Chamira", "H.", "admin", "chamira@demo.lk", "admin123", "admin");
+  const ravi  = await mk("Ravi", "Perera", "ravi", "ravi@demo.lk", "ravi123", "student");
+  const amara = await mk("Amara", "Silva", "amara", "amara@demo.lk", "amara123", "student");
+  await mk("Dilan", "Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
+
+  const course = (id, code, title, blurb, sessions) =>
+    q("INSERT INTO courses (id,code,title,instructor,blurb,sessions) VALUES (?,?,?,?,?,?)", [id, code, title, "C. Hettiarachchi", blurb, sessions]);
+  const rec = (cid, t, d, len) => q("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?,?,?)", [cid, t, d, len]);
+  const link = (cid, t, u) => q("INSERT INTO links (course_id,title,url) VALUES (?,?,?)", [cid, t, u]);
+  const mat = (cid, t, size, ext) => q("INSERT INTO materials (course_id,title,size,ext) VALUES (?,?,?,?)", [cid, t, size, ext]);
+
+  await course("c1", "EQ-101", "Foundations of Equity Markets", "How exchanges, orders and price discovery actually work.", 8);
+  await rec("c1", "Market structure & order types", "May 04, 2026", "1h 12m");
+  await rec("c1", "Reading a quote: bid, ask, spread", "May 11, 2026", "58m");
+  await rec("c1", "Primary vs secondary markets", "May 18, 2026", "1h 04m");
+  await rec("c1", "Settlement, custody & the CDS", "May 25, 2026", "47m");
+  await link("c1", "Colombo Stock Exchange (live board)", "https://www.cse.lk");
+  await link("c1", "Glossary: 40 terms every beginner needs", "#");
+  await mat("c1", "Session 1-2 slide deck", "4.2 MB", "PDF");
+  await mat("c1", "Order-types cheat sheet", "180 KB", "PDF");
+
+  await course("c2", "TA-220", "Technical Analysis Masterclass", "Price action, structure and the discipline behind the charts.", 10);
+  await rec("c2", "Support, resistance & market memory", "May 06, 2026", "1h 21m");
+  await rec("c2", "Trend, range and the in-between", "May 13, 2026", "1h 09m");
+  await rec("c2", "Volume as confirmation", "May 20, 2026", "55m");
+  await link("c2", "Charting workspace template", "#");
+  await link("c2", "Pattern reference library", "#");
+  await mat("c2", "TA pattern handbook", "9.8 MB", "PDF");
+  await mat("c2", "Trade journal template", "320 KB", "XLSX");
+
+  await course("c3", "DV-310", "Options & Derivatives", "Payoffs, greeks and structuring positions with intent.", 9);
+  await rec("c3", "Calls, puts & the payoff diagram", "May 09, 2026", "1h 30m");
+  await rec("c3", "The greeks, plainly", "May 16, 2026", "1h 18m");
+  await link("c3", "Options payoff simulator", "#");
+  await mat("c3", "Greeks quick-reference", "640 KB", "PDF");
+
+  await course("c4", "PF-330", "Portfolio Construction & Risk", "Sizing, diversification and surviving your worst week.", 7);
+  await rec("c4", "Position sizing & the 2% rule", "May 12, 2026", "1h 02m");
+  await link("c4", "Risk calculator spreadsheet", "#");
+  await mat("c4", "Allocation worksheet", "210 KB", "XLSX");
+
+  await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?),(?,?),(?,?),(?,?),(?,?)",
+    [ravi, "c1", ravi, "c2", amara, "c2", amara, "c3", amara, "c4"]);
+
+  await q("INSERT INTO settings (k,v) VALUES ('brand',?)", [JSON.stringify({ company: "", name: "Learning Portal", logo: "" })]);
 }
-function coursesMap(ids) {
-  const rows = db.prepare("SELECT id FROM courses ORDER BY rowid").all();
+
+async function init() {
+  for (const sql of TABLES) await q(sql);
+  for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
+  const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
+  for (const u of needs) {
+    const parts = String(u.name || "").trim().split(/\s+/);
+    await q("UPDATE users SET first_name=?, last_name=? WHERE id=?", [parts.shift() || "", parts.join(" "), u.id]);
+  }
+  await seedIfEmpty();
+}
+
+/* ---- read helpers (assemble the shapes the frontend expects) ---- */
+async function courseFull(id) {
+  const [[c]] = await q("SELECT * FROM courses WHERE id=?", [id]);
+  if (!c) return null;
+  const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY id", [id]);
+  const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY id", [id]);
+  const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY id", [id]);
+  return { code: c.code, title: c.title, instructor: c.instructor, blurb: c.blurb, sessions: c.sessions, recordings, links, materials };
+}
+async function coursesMap(ids) {
+  const [rows] = await q("SELECT id FROM courses ORDER BY id");
   const map = {};
-  for (const { id } of rows) if (!ids || ids.includes(id)) map[id] = courseFull(id);
+  for (const { id } of rows) if (!ids || ids.includes(id)) map[id] = await courseFull(id);
   return map;
 }
-function enrolledIds(userId) {
-  return db.prepare("SELECT course_id FROM enrolments WHERE user_id=?").all(userId).map((r) => r.course_id);
+async function enrolledIds(userId) {
+  const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=?", [userId]);
+  return rows.map((r) => r.course_id);
 }
-function lockedCourses(ids) {
-  return db.prepare("SELECT id, title FROM courses ORDER BY rowid").all().filter((c) => !ids.includes(c.id));
+async function lockedCourses(ids) {
+  const [rows] = await q("SELECT id, title FROM courses ORDER BY id");
+  return rows.filter((c) => !ids.includes(c.id));
 }
-function usersMap() {
-  const rows = db.prepare("SELECT * FROM users WHERE role='student' ORDER BY id").all();
+async function usersMap() {
+  const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id");
   const map = {};
-  for (const u of rows) map[u.email] = { id: u.id, name: displayName(u), username: u.username, role: u.role, status: u.status, enrolled: enrolledIds(u.id) };
+  for (const u of rows) map[u.email] = { id: u.id, name: displayName(u), username: u.username, role: u.role, status: u.status, enrolled: await enrolledIds(u.id) };
   return map;
 }
-function getBrand() {
-  const row = db.prepare("SELECT value FROM settings WHERE key='brand'").get();
-  return row ? JSON.parse(row.value) : { company: "", name: "Learning Portal", logo: "" };
+async function getBrand() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
+  return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
+}
+async function setBrandValue(brand) {
+  await q("INSERT INTO settings (k,v) VALUES ('brand',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(brand)]);
+  return brand;
 }
 
 const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", useTls: true, useSsl: false };
-function getSmtp() {
-  const row = db.prepare("SELECT value FROM settings WHERE key='smtp'").get();
-  return row ? { ...SMTP_DEFAULT, ...JSON.parse(row.value) } : { ...SMTP_DEFAULT };
+async function getSmtp() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='smtp'");
+  return row ? { ...SMTP_DEFAULT, ...JSON.parse(row.v) } : { ...SMTP_DEFAULT };
 }
-function getSmtpForClient() {
-  const s = getSmtp();
-  const { password, ...rest } = s;
+async function getSmtpForClient() {
+  const { password, ...rest } = await getSmtp();
   return { ...rest, hasPassword: !!password };
 }
-function setSmtp(next) {
-  const cur = getSmtp();
+async function setSmtp(next) {
+  const cur = await getSmtp();
   const merged = { ...cur, ...next };
-  // Keep the existing password when the form leaves it blank.
   if (next.password === undefined || next.password === "") merged.password = cur.password;
-  db.prepare("INSERT INTO settings (key,value) VALUES ('smtp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(merged));
+  await q("INSERT INTO settings (k,v) VALUES ('smtp',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
   return getSmtpForClient();
 }
 
 module.exports = {
-  db, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  getBrand, getSmtp, getSmtpForClient, setSmtp,
+  pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
+  getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

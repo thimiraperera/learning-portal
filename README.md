@@ -7,13 +7,27 @@ and logo) is configurable in **Settings**, so the same build serves any client.
 ## Stack
 
 - Frontend: React 18 + React Router 6, Vite 5, lucide-react icons
-- Backend: Express server (`server.cjs`) + SQLite (`better-sqlite3`)
-- Auth: bcrypt-hashed passwords (`bcryptjs`), bearer-token sessions
+- Backend: Express server (`server.cjs`) + MySQL (`mysql2`)
+- Auth: bcrypt-hashed passwords (`bcryptjs`), bearer-token sessions in the DB
 - Plain CSS design system (`src/styles.css`)
 
-## Run locally
+## Configuration
 
-The frontend and API run together through the Node server:
+Database credentials come from environment variables (never committed):
+
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=your_db_name
+```
+
+Set these in the cPanel Node.js App "Environment variables" panel. For local
+development, put them in a `.env` file (gitignored). Tables are created and demo
+data is seeded automatically on first run.
+
+## Run locally
 
 ```bash
 npm install
@@ -21,8 +35,8 @@ npm run build        # build the frontend into dist/
 npm start            # serves API + dist on http://localhost:3000
 ```
 
-For live frontend reloading during development, run the API and Vite together
-(the dev server proxies /api to port 3000):
+For live frontend reloading, run the API and Vite together (the dev server
+proxies /api to port 3000):
 
 ```bash
 npm start            # terminal 1: API on :3000
@@ -55,16 +69,16 @@ Sign in with a username and password (both students and admins use the same form
 
 ## Data & auth
 
-All data lives in a SQLite database (`data.sqlite`, created on first run and
-gitignored so it persists across deploys). Passwords are stored as bcrypt
-hashes and never sent to the browser. After sign-in the client holds a bearer
-token; students only ever receive their enrolled courses from the API.
+All data lives in MySQL. Passwords are stored as bcrypt hashes and never sent
+to the browser. Sessions are stored in the database, so a server restart does
+not log users out. After sign-in the client holds a bearer token; students only
+ever receive their enrolled courses from the API.
 
 ## Project structure
 
 ```
 server.cjs            Express API + serves the built frontend (Passenger entry)
-db.cjs                SQLite schema, seed data, and query helpers
+db.cjs                MySQL pool, schema, seed data, and query helpers
 src/
   main.jsx            entry
   App.jsx             router + role guards + load gate
