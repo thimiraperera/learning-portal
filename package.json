@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "White-label Learning Portal (LMS) — student portal + admin console.",
+  "description": "White-label Learning Portal (LMS). Student portal and admin console.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,14 +11,12 @@
     "start": "node server.cjs"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
     "express": "^4.22.2",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
+    "react-router-dom": "^6.28.0",
     "vite": "^5.4.11"
   }
 }
