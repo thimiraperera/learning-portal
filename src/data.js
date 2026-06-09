@@ -17,11 +17,11 @@ export const seedCourses = {
       { t: "Settlement, custody & the CDS", d: "May 25, 2026", len: "47m" },
     ],
     links: [
-      { t: "Colombo Stock Exchange — live board", u: "https://www.cse.lk" },
+      { t: "Colombo Stock Exchange (live board)", u: "https://www.cse.lk" },
       { t: "Glossary: 40 terms every beginner needs", u: "#" },
     ],
     materials: [
-      { t: "Session 1–2 slide deck", size: "4.2 MB", ext: "PDF" },
+      { t: "Session 1-2 slide deck", size: "4.2 MB", ext: "PDF" },
       { t: "Order-types cheat sheet", size: "180 KB", ext: "PDF" },
     ],
   },
@@ -70,11 +70,12 @@ export const seedCourses = {
   },
 };
 
-// Enrolments are the access-control table. UI filtering is for show only —
+// Enrolments are the access-control table. UI filtering is for show only;
 // the real boundary must be enforced server-side / in the database.
+// Passwords are plain text here only because this is a front-end prototype.
 export const seedUsers = {
-  "chamira@demo.lk": { name: "Chamira H.", role: "admin", enrolled: [], status: "active" },
-  "ravi@demo.lk":    { name: "Ravi Perera", role: "student", enrolled: ["c1", "c2"], status: "active" },
-  "amara@demo.lk":   { name: "Amara Silva", role: "student", enrolled: ["c2", "c3", "c4"], status: "active" },
-  "dilan@demo.lk":   { name: "Dilan Fernando", role: "student", enrolled: [], status: "invited" },
+  "chamira@demo.lk": { name: "Chamira H.", username: "admin", password: "admin123", role: "admin", enrolled: [], status: "active" },
+  "ravi@demo.lk":    { name: "Ravi Perera", username: "ravi", password: "ravi123", role: "student", enrolled: ["c1", "c2"], status: "active" },
+  "amara@demo.lk":   { name: "Amara Silva", username: "amara", password: "amara123", role: "student", enrolled: ["c2", "c3", "c4"], status: "active" },
+  "dilan@demo.lk":   { name: "Dilan Fernando", username: "dilan", password: "dilan123", role: "student", enrolled: [], status: "active" },
 };

@@ -11,7 +11,7 @@ export default function Access() {
     <Layout title="Access Control">
       <div className="page-hero">
         <h1>Access control</h1>
-        <p>Tick a cell to enrol. This matrix is the enrolments table — the single source of truth for what each student can open.</p>
+        <p>Tick a cell to enrol. This matrix is the enrolments table, the single source of truth for what each student can open.</p>
       </div>
 
       <div className="card">

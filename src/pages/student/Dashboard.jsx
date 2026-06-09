@@ -62,7 +62,7 @@ export default function Dashboard() {
       {locked.length > 0 && (
         <div style={{ marginTop: 30 }}>
           <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 4px" }}>
-            NOT ENROLLED — HIDDEN FROM THIS ACCOUNT
+            NOT ENROLLED (HIDDEN FROM THIS ACCOUNT)
           </div>
           <div className="locked-list">
             {locked.map((id) => (

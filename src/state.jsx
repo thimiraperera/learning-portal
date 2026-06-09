@@ -4,7 +4,7 @@ import { seedCourses, seedUsers } from "./data.js";
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
-/* White-label branding — no client name is hard-coded. An administrator
+/* White-label branding. No client name is hard-coded. An administrator
    sets these in Settings; they persist to localStorage so the same build
    can be deployed for any client. */
 const BRAND_KEY = "lms_brand";
@@ -33,9 +33,12 @@ export function StoreProvider({ children }) {
     });
   }, []);
 
-  const login = useCallback((email) => {
-    const key = email.trim().toLowerCase();
-    if (users[key]) { setUser(key); return { ok: true, role: users[key].role }; }
+  const login = useCallback((username, password) => {
+    const u = username.trim().toLowerCase();
+    const entry = Object.entries(users).find(
+      ([, acc]) => acc.username && acc.username.toLowerCase() === u && acc.password === password
+    );
+    if (entry) { setUser(entry[0]); return { ok: true, role: entry[1].role }; }
     return { ok: false };
   }, [users]);
 
@@ -51,12 +54,17 @@ export function StoreProvider({ children }) {
   }, []);
 
   /* ---- admin: students ---- */
-  const addStudent = useCallback((name, email) => {
+  const addStudent = useCallback((name, email, username, password) => {
     const e = email.trim().toLowerCase();
+    const un = username.trim().toLowerCase();
     if (!name.trim() || !e.includes("@")) return { ok: false, msg: "Enter a name and a valid email." };
+    if (!un || !password) return { ok: false, msg: "Enter a username and a password." };
     if (users[e]) return { ok: false, msg: "That email already exists." };
-    setUsers((u) => ({ ...u, [e]: { name: name.trim(), role: "student", enrolled: [], status: "invited" } }));
-    return { ok: true, msg: `Magic-link invite sent to ${e}.` };
+    if (Object.values(users).some((acc) => acc.username && acc.username.toLowerCase() === un)) {
+      return { ok: false, msg: "That username is already taken." };
+    }
+    setUsers((u) => ({ ...u, [e]: { name: name.trim(), username: un, password, role: "student", enrolled: [], status: "active" } }));
+    return { ok: true, msg: `Student ${name.trim()} added. They can sign in now.` };
   }, [users]);
 
   const removeStudent = useCallback((email) => {
@@ -80,9 +88,9 @@ export function StoreProvider({ children }) {
     const v = value.trim();
     if (!v) return;
     const item =
-      bucket === "recordings" ? { t: v, d: "—", len: "—" } :
+      bucket === "recordings" ? { t: v, d: "n/a", len: "n/a" } :
       bucket === "links"      ? { t: v, u: "#" } :
-                                { t: v, size: "—", ext: "PDF" };
+                                { t: v, size: "n/a", ext: "PDF" };
     setCourses((c) => ({ ...c, [cid]: { ...c[cid], [bucket]: [...c[cid][bucket], item] } }));
   }, []);
 

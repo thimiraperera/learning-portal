@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Send, Trash2, CheckCircle, AlertTriangle, Users } from "lucide-react";
+import { UserPlus, Trash2, CheckCircle, AlertTriangle, Users } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 
@@ -7,28 +7,32 @@ export default function Students() {
   const { users, addStudent, removeStudent } = useStore();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [msg, setMsg] = useState(null); // { ok, msg }
 
   const students = Object.entries(users).filter(([, u]) => u.role === "student");
 
-  const invite = () => {
-    const r = addStudent(name, email);
+  const add = () => {
+    const r = addStudent(name, email, username, password);
     setMsg(r);
-    if (r.ok) { setName(""); setEmail(""); }
+    if (r.ok) { setName(""); setEmail(""); setUsername(""); setPassword(""); }
   };
 
   return (
     <Layout title="Students">
       <div className="page-hero">
         <h1>Students</h1>
-        <p>Add a student by email — an invite goes out automatically. No passwords are ever stored.</p>
+        <p>Add a student and set their sign-in credentials. They can log in with the username and password right away.</p>
       </div>
 
       <div className="card">
         <div className="toolbar">
           <input className="form-control" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
           <input className="form-control" placeholder="email@address.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <button className="btn btn-primary" onClick={invite}><Send /> Invite</button>
+          <input className="form-control" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input className="form-control" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <button className="btn btn-primary" onClick={add}><UserPlus /> Add student</button>
         </div>
 
         {msg && (
@@ -43,12 +47,13 @@ export default function Students() {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Student</th><th>Email</th><th>Status</th><th>Courses</th><th></th></tr>
+                <tr><th>Student</th><th>Username</th><th>Email</th><th>Status</th><th>Courses</th><th></th></tr>
               </thead>
               <tbody>
                 {students.map(([email, s]) => (
                   <tr key={email}>
                     <td style={{ fontWeight: 700, color: "var(--title)" }}>{s.name}</td>
+                    <td style={{ color: "#6B7280" }}>{s.username}</td>
                     <td style={{ color: "#6B7280" }}>{email}</td>
                     <td>
                       <span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")}>

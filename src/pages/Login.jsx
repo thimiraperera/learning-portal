@@ -2,28 +2,21 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../state.jsx";
 
-/* Split-screen login ported from invoice-workflow login.html.
+/* Split-screen login. Username + password for both students and admins.
    Styles are scoped here via a <style> tag so they don't leak into the app. */
 export default function Login() {
-  const { login, users, brand } = useStore();
+  const { login, brand } = useStore();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const submit = (e) => {
     e?.preventDefault?.();
-    const r = login(email);
-    if (!r.ok) { setError("No enrolment found for that email."); return; }
+    const r = login(username, password);
+    if (!r.ok) { setError("Incorrect username or password."); return; }
     navigate(r.role === "admin" ? "/admin" : "/");
   };
-
-  const quick = (e) => {
-    setEmail(e);
-    const r = login(e);
-    navigate(r.role === "admin" ? "/admin" : "/");
-  };
-
-  const demos = Object.entries(users);
 
   return (
     <div className="login-page">
@@ -56,7 +49,7 @@ export default function Login() {
             )}
           <div className="brand-divider" />
           <div className="brand-sub">
-            Your courses, session recordings and materials in one place — all your learning, in one secure portal.
+            Your courses, session recordings and materials in one place. All your learning, in one secure portal.
           </div>
           <div className="brand-features">
             <div className="brand-feature"><div className="feature-dot" /> Role-based access for students &amp; administrators</div>
@@ -70,31 +63,24 @@ export default function Login() {
         <div className="login-box">
           <div className="login-header">
             <h1>Welcome back</h1>
-            <p>Sign in with the email you enrolled with</p>
+            <p>Sign in to your account to continue</p>
           </div>
 
           {error && <div className="error-box">{error}</div>}
 
           <form onSubmit={submit}>
             <div className="form-group">
-              <label htmlFor="email">Email address</label>
-              <input id="email" type="text" placeholder="you@email.com" autoComplete="username"
-                value={email} onChange={(e) => setEmail(e.target.value)} />
+              <label htmlFor="username">Username</label>
+              <input id="username" type="text" placeholder="Enter your username" autoComplete="username"
+                value={username} onChange={(e) => setUsername(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label htmlFor="password">Password</label>
+              <input id="password" type="password" placeholder="Enter your password" autoComplete="current-password"
+                value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             <button type="submit" className="btn-login">Sign In</button>
           </form>
-
-          <div className="demo-block">
-            <div className="demo-label">Demo accounts — tap to sign in</div>
-            {demos.map(([e, u]) => (
-              <button key={e} className="demo-btn" onClick={() => quick(e)} type="button">
-                <span className="db-name">{u.name}
-                  <span className={"db-role " + (u.role === "admin" ? "is-admin" : "")}>{u.role}</span>
-                </span>
-                <span className="db-meta">{u.role === "admin" ? "Full console access" : `${u.enrolled.length} courses`} · {e}</span>
-              </button>
-            ))}
-          </div>
 
           <div className="login-footer">
             {[brand.company, brand.name || "Learning Portal"].filter(Boolean).join("  ·  ")}
@@ -152,7 +138,7 @@ const LOGIN_CSS = `
 .login-header h1 { font-size: 30px; font-weight: 800; color: #121212; margin-bottom: 8px; }
 .login-header p { font-size: 14.5px; color: #888; }
 .login-box label { display:block; font-size:13px; font-weight:600; color:#3D3D3D; margin-bottom:8px; }
-.login-box input[type="text"] {
+.login-box input[type="text"], .login-box input[type="password"] {
   width:100%; padding:13px 16px; border:1.5px solid #D8E2F0; border-radius:10px;
   font-family:'Figtree',sans-serif; font-size:15px; color:#121212; background:white;
   transition:border-color 0.2s, box-shadow 0.2s; outline:none;
@@ -165,18 +151,6 @@ const LOGIN_CSS = `
 }
 .btn-login:hover { opacity:0.92; transform:translateY(-1px); }
 .error-box { background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:14px; color:#991B1B; font-weight:500; }
-.demo-block { border-top:1px solid #E2EAF4; margin-top:28px; padding-top:20px; }
-.demo-label { font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#9CA3AF; margin-bottom:12px; }
-.demo-btn {
-  width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:3px;
-  background:#F4F7FB; border:1.5px solid #E2EAF4; border-radius:10px; padding:11px 14px;
-  margin-bottom:9px; cursor:pointer; text-align:left; font-family:'Figtree',sans-serif; transition:border-color .15s;
-}
-.demo-btn:hover { border-color:#1E509B; }
-.db-name { font-size:14px; font-weight:700; color:#121212; display:flex; align-items:center; gap:8px; }
-.db-role { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#6B7280; background:#E2EAF4; padding:1px 7px; border-radius:999px; }
-.db-role.is-admin { color:#1E509B; background:#EBF2FF; }
-.db-meta { font-size:11.5px; color:#9CA3AF; font-weight:500; }
 .login-footer { margin-top:28px; text-align:center; font-size:12px; color:#aaa; }
 @media (max-width:768px) { .login-left { display:none; } .login-right { width:100%; padding:32px 24px; } }
 `;

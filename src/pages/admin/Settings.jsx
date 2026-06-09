@@ -53,14 +53,14 @@ export default function Settings() {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Company line <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(small text above the name — optional)</span></label>
+            <label className="form-label">Company line <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(small text above the name, optional)</span></label>
             <input className="form-control" value={company} placeholder="e.g. Acme Education (Pvt) Ltd"
               onChange={(e) => setCompany(e.target.value)} />
           </div>
 
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20, marginBottom: 20 }}>
             <label className="form-label">
-              Logo <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(max 2 MB — PNG, JPG, SVG. Replaces the name if set)</span>
+              Logo <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(max 2 MB, PNG / JPG / SVG. Replaces the name if set)</span>
             </label>
             {logo && (
               <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>

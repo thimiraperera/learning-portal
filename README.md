@@ -25,16 +25,16 @@ npm run build
 npm run preview
 ```
 
-## Demo accounts
+## Seed accounts
 
-Sign in with any of these emails (tap a card on the login screen):
+Sign in with a username and password (both students and admins use the same form):
 
-| Email             | Role          | Notes                  |
-| ----------------- | ------------- | ---------------------- |
-| `chamira@demo.lk` | Administrator | Full admin console     |
-| `ravi@demo.lk`    | Student       | Enrolled in 2 courses  |
-| `amara@demo.lk`   | Student       | Enrolled in 3 courses  |
-| `dilan@demo.lk`   | Student       | Invited, no courses    |
+| Username  | Password    | Role          | Notes                 |
+| --------- | ----------- | ------------- | --------------------- |
+| `admin`   | `admin123`  | Administrator | Full admin console    |
+| `ravi`    | `ravi123`   | Student       | Enrolled in 2 courses |
+| `amara`   | `amara123`  | Student       | Enrolled in 3 courses |
+| `dilan`   | `dilan123`  | Student       | No courses yet        |
 
 ## Features
 
@@ -44,10 +44,10 @@ Sign in with any of these emails (tap a card on the login screen):
 - Locked courses shown to make the access boundary visible
 
 **Admin console**
-- Access control — enrolment matrix (the source of truth)
-- Students — invite / remove, status badges
-- Courses — create courses, attach & remove recordings/links/materials
-- Settings — white-label branding (portal name, company line, logo)
+- Access control: enrolment matrix (the source of truth)
+- Students: add with username + password, remove, status badges
+- Courses: create courses, attach & remove recordings/links/materials
+- Settings: white-label branding (portal name, company line, logo)
 
 > All data is in-memory mock data and resets on reload. Branding persists in
 > `localStorage`. In production the enrolments table would be enforced by
