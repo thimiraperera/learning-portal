@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut,
+  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut, GraduationCap, UserCog,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -21,13 +21,16 @@ export default function Layout({ title, children }) {
   const onLogout = () => { logout(); navigate("/login"); };
 
   const studentNav = [
-    { to: "/", label: "My Courses", icon: LayoutDashboard, end: true },
+    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+    { to: "/courses", label: "My Courses", icon: GraduationCap },
+    { to: "/account", label: "My Account", icon: UserCog },
   ];
   const adminNav = [
     { to: "/admin", label: "Access Control", icon: KeyRound, end: true },
     { to: "/admin/students", label: "Students", icon: Users },
     { to: "/admin/courses", label: "Courses", icon: BookOpen },
     { to: "/admin/settings", label: "Settings", icon: Settings },
+    { to: "/account", label: "My Account", icon: UserCog },
   ];
   const items = isAdmin ? adminNav : studentNav;
 

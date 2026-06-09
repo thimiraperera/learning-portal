@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Plus, X, PlayCircle, Link2, FileDown } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
+
+const PER_PAGE = 5;
 
 const BUCKETS = {
   recordings: { label: "Recording", icon: PlayCircle },
@@ -13,8 +16,14 @@ export default function Courses() {
   const { courses, addCourse, addItem, removeItem } = useStore();
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
+  const [page, setPage] = useState(1);
 
   const create = async () => { if (await addCourse(title, code)) { setTitle(""); setCode(""); } };
+
+  const entries = Object.entries(courses);
+  const pageCount = Math.max(1, Math.ceil(entries.length / PER_PAGE));
+  const safePage = Math.min(page, pageCount);
+  const slice = entries.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
   return (
     <Layout title="Courses">
@@ -34,10 +43,11 @@ export default function Courses() {
       </div>
 
       <div style={{ display: "grid", gap: 16 }}>
-        {Object.entries(courses).map(([id, c]) => (
+        {slice.map(([id, c]) => (
           <CourseBlock key={id} id={id} c={c} addItem={addItem} removeItem={removeItem} />
         ))}
       </div>
+      <Pagination page={safePage} pageCount={pageCount} onChange={setPage} />
     </Layout>
   );
 }

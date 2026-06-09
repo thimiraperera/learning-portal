@@ -1,9 +1,11 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
-  BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock,
+  BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock, ArrowRight,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
+
+const RECENT_COUNT = 6;
 
 export default function Dashboard() {
   const { currentUser, courses, locked } = useStore();
@@ -13,10 +15,14 @@ export default function Dashboard() {
   const totalRecordings = my.reduce((n, id) => n + (courses[id]?.recordings.length || 0), 0);
   const totalMaterials = my.reduce((n, id) => n + (courses[id]?.materials.length || 0), 0);
 
+  // Most recent enrolments first; show only the latest few on the dashboard.
+  const recent = [...my].reverse().slice(0, RECENT_COUNT);
+  const greeting = currentUser.firstName || currentUser.nickname || currentUser.name.split(" ")[0];
+
   return (
-    <Layout title="My Courses">
+    <Layout title="Dashboard">
       <div className="page-hero">
-        <h1>Welcome back, {currentUser.name.split(" ")[0]}.</h1>
+        <h1>Welcome back, {greeting}.</h1>
         <p>You're enrolled in {my.length} {my.length === 1 ? "course" : "courses"}.</p>
       </div>
 
@@ -24,7 +30,7 @@ export default function Dashboard() {
         <Stat label="Enrolled Courses" value={my.length} sub="Active enrolments" icon={BookOpen} bg="#EBF2FF" color="#1E509B" />
         <Stat label="Recordings" value={totalRecordings} sub="Across your courses" icon={PlayCircle} bg="#EFF6FF" color="#2563EB" />
         <Stat label="Materials" value={totalMaterials} sub="Downloads available" icon={FileDown} bg="#F0FDF4" color="#16A34A" />
-        <Stat label="Locked" value={locked.length} sub="Not enrolled" icon={Lock} bg="#FFFBEB" color="#D97706" />
+        <Stat label="Other Courses" value={locked.length} sub="Not enrolled" icon={Lock} bg="#FFFBEB" color="#D97706" />
       </div>
 
       {my.length === 0 ? (
@@ -35,33 +41,25 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className="course-grid">
-          {my.map((id) => {
-            const c = courses[id];
-            return (
-              <button key={id} className="course-card" onClick={() => navigate(`/courses/${id}`)}>
-                <div className="cc-top">
-                  <span className="cc-code">{c.code}</span>
-                  <span className="cc-sessions">{c.sessions} sessions</span>
-                </div>
-                <h3>{c.title}</h3>
-                <div className="cc-blurb">{c.blurb}</div>
-                <div className="cc-foot">
-                  <span className="cc-stat"><PlayCircle /> {c.recordings.length}</span>
-                  <span className="cc-stat"><Link2 /> {c.links.length}</span>
-                  <span className="cc-stat"><FileDown /> {c.materials.length}</span>
-                  <span className="cc-enter">Enter <ChevronRight /></span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <>
+          <div className="section-header">
+            <div className="card-title">Recent courses</div>
+            {my.length > RECENT_COUNT && (
+              <Link to="/courses" className="view-all">View all {my.length} <ArrowRight /></Link>
+            )}
+          </div>
+          <div className="course-grid">
+            {recent.map((id) => courses[id] && (
+              <CourseCard key={id} c={courses[id]} onClick={() => navigate(`/courses/${id}`)} />
+            ))}
+          </div>
+        </>
       )}
 
       {locked.length > 0 && (
         <div style={{ marginTop: 30 }}>
           <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 4px" }}>
-            NOT ENROLLED (HIDDEN FROM THIS ACCOUNT)
+            OTHER COURSES (NOT ENROLLED)
           </div>
           <div className="locked-list">
             {locked.map((c) => (
@@ -71,6 +69,25 @@ export default function Dashboard() {
         </div>
       )}
     </Layout>
+  );
+}
+
+export function CourseCard({ c, onClick }) {
+  return (
+    <button className="course-card" onClick={onClick}>
+      <div className="cc-top">
+        <span className="cc-code">{c.code}</span>
+        <span className="cc-sessions">{c.sessions} sessions</span>
+      </div>
+      <h3>{c.title}</h3>
+      <div className="cc-blurb">{c.blurb}</div>
+      <div className="cc-foot">
+        <span className="cc-stat"><PlayCircle /> {c.recordings.length}</span>
+        <span className="cc-stat"><Link2 /> {c.links.length}</span>
+        <span className="cc-stat"><FileDown /> {c.materials.length}</span>
+        <span className="cc-enter">Enter <ChevronRight /></span>
+      </div>
+    </button>
   );
 }
 

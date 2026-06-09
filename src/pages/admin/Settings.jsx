@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand } = useStore();
+  const { brand, setBrand, smtp, saveSmtp } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
@@ -48,7 +48,7 @@ export default function Settings() {
         {/* Branding form */}
         <div className="card">
           <div className="card-title">Branding</div>
-          <div className="card-subtitle">These values are stored on this device and used everywhere the brand appears.</div>
+          <div className="card-subtitle">Stored on the server and used everywhere the brand appears, on every device.</div>
 
           <div className="form-group">
             <label className="form-label">Portal name</label>
@@ -101,6 +101,79 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <SmtpCard smtp={smtp} saveSmtp={saveSmtp} />
     </Layout>
+  );
+}
+
+function SmtpCard({ smtp, saveSmtp }) {
+  const s = smtp || {};
+  const [host, setHost] = useState(s.host || "");
+  const [port, setPort] = useState(s.port || "587");
+  const [username, setUsername] = useState(s.username || "");
+  const [password, setPassword] = useState("");
+  const [fromEmail, setFromEmail] = useState(s.fromEmail || "");
+  const [fromName, setFromName] = useState(s.fromName || "");
+  const [useTls, setUseTls] = useState(s.useTls !== false);
+  const [useSsl, setUseSsl] = useState(!!s.useSsl);
+  const [msg, setMsg] = useState(null);
+
+  const save = async () => {
+    setMsg(await saveSmtp({ host, port, username, password, fromEmail, fromName, useTls, useSsl }));
+    setPassword("");
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><Mail style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />SMTP email</div>
+      <div className="card-subtitle">Outgoing email for invites and notifications. Stored on the server.</div>
+
+      {msg && (
+        <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>
+          {msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}
+        </div>
+      )}
+
+      <div className="field-row">
+        <div className="form-group">
+          <label className="form-label">SMTP host</label>
+          <input className="form-control" value={host} placeholder="e.g. smtp.gmail.com" onChange={(e) => setHost(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Port</label>
+          <input className="form-control" value={port} placeholder="587" onChange={(e) => setPort(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="field-row">
+        <div className="form-group">
+          <label className="form-label">Username</label>
+          <input className="form-control" value={username} placeholder="you@example.com" onChange={(e) => setUsername(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Password {s.hasPassword && <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(leave blank to keep current)</span>}</label>
+          <input className="form-control" type="password" value={password} placeholder={s.hasPassword ? "********" : ""} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="field-row">
+        <div className="form-group">
+          <label className="form-label">From email</label>
+          <input className="form-control" type="email" value={fromEmail} placeholder="noreply@example.com" onChange={(e) => setFromEmail(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">From name</label>
+          <input className="form-control" value={fromName} placeholder="Learning Portal" onChange={(e) => setFromName(e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 28, marginBottom: 20 }}>
+        <label className="check-row"><input type="checkbox" checked={useTls} onChange={(e) => setUseTls(e.target.checked)} /> Use TLS (port 587)</label>
+        <label className="check-row"><input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} /> Use SSL (port 465)</label>
+      </div>
+
+      <button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</button>
+    </div>
   );
 }

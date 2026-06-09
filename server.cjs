@@ -17,7 +17,12 @@ const dist = path.join(__dirname, "dist");
 const tokens = new Map(); // token -> userId
 
 function publicUser(u) {
-  return { name: u.name, username: u.username, role: u.role, status: u.status, enrolled: dbmod.enrolledIds(u.id) };
+  return {
+    name: dbmod.displayName(u),
+    firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "",
+    email: u.email, username: u.username, role: u.role, status: u.status,
+    enrolled: dbmod.enrolledIds(u.id),
+  };
 }
 function auth(req, res, next) {
   const h = req.headers.authorization || "";
@@ -56,7 +61,7 @@ app.post("/api/logout", auth, (req, res) => { tokens.delete(req.token); res.json
 app.get("/api/bootstrap", auth, (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: publicUser(u), courses: dbmod.coursesMap(), users: dbmod.usersMap(), brand: dbmod.getBrand() });
+    res.json({ currentUser: publicUser(u), courses: dbmod.coursesMap(), users: dbmod.usersMap(), brand: dbmod.getBrand(), smtp: dbmod.getSmtpForClient() });
   } else {
     const ids = dbmod.enrolledIds(u.id);
     res.json({ currentUser: publicUser(u), courses: dbmod.coursesMap(ids), locked: dbmod.lockedCourses(ids), brand: dbmod.getBrand() });
@@ -128,6 +133,43 @@ app.delete("/api/admin/items", auth, adminOnly, (req, res) => {
   if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
   db.prepare(`DELETE FROM ${BUCKET[bucket]} WHERE id=? AND course_id=?`).run(itemId, courseId);
   res.json(adminState());
+});
+
+/* ---- account self-service (any signed-in user; username cannot change) ---- */
+app.put("/api/account", auth, (req, res) => {
+  const { firstName, lastName, nickname, email } = req.body || {};
+  const e = String(email || "").trim().toLowerCase();
+  if (!e.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  const clash = db.prepare("SELECT 1 FROM users WHERE lower(email)=? AND id<>?").get(e, req.user.id);
+  if (clash) return res.status(409).json({ error: "That email is already in use." });
+  const first = String(firstName || "").trim();
+  const last = String(lastName || "").trim();
+  const nick = String(nickname || "").trim();
+  const name = nick || [first, last].filter(Boolean).join(" ") || req.user.username;
+  db.prepare("UPDATE users SET first_name=?, last_name=?, nickname=?, email=?, name=? WHERE id=?")
+    .run(first, last, nick, e, name, req.user.id);
+  res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(req.user.id)) });
+});
+
+app.post("/api/account/password", auth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!bcrypt.compareSync(String(currentPassword || ""), req.user.password_hash)) {
+    return res.status(400).json({ error: "Your current password is incorrect." });
+  }
+  if (String(newPassword || "").length < 6) return res.status(400).json({ error: "New password must be at least 6 characters." });
+  db.prepare("UPDATE users SET password_hash=? WHERE id=?").run(bcrypt.hashSync(String(newPassword), 10), req.user.id);
+  res.json({ ok: true });
+});
+
+/* ---- SMTP settings (admins) ---- */
+app.put("/api/admin/smtp", auth, adminOnly, (req, res) => {
+  const b = req.body || {};
+  res.json(dbmod.setSmtp({
+    host: String(b.host || ""), port: String(b.port || ""),
+    username: String(b.username || ""), password: b.password === undefined ? "" : String(b.password),
+    fromEmail: String(b.fromEmail || ""), fromName: String(b.fromName || ""),
+    useTls: !!b.useTls, useSsl: !!b.useSsl,
+  }));
 });
 
 /* ---- branding (stored in the DB, shared across devices) ---- */

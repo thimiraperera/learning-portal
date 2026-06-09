@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { StoreProvider, useStore } from "./state.jsx";
 import Login from "./pages/Login.jsx";
+import Account from "./pages/Account.jsx";
 import Dashboard from "./pages/student/Dashboard.jsx";
+import MyCourses from "./pages/student/MyCourses.jsx";
 import CourseDetail from "./pages/student/CourseDetail.jsx";
 import Access from "./pages/admin/Access.jsx";
 import Students from "./pages/admin/Students.jsx";
@@ -15,6 +17,13 @@ function RequireRole({ role, children }) {
   if (currentUser.role !== role) {
     return <Navigate to={currentUser.role === "admin" ? "/admin" : "/"} replace />;
   }
+  return children;
+}
+
+/* Any signed-in user (used by the shared account page). */
+function RequireAuth({ children }) {
+  const { currentUser } = useStore();
+  if (!currentUser) return <Navigate to="/login" replace />;
   return children;
 }
 
@@ -34,7 +43,11 @@ function Routed() {
 
       {/* student */}
       <Route path="/" element={<RequireRole role="student"><Dashboard /></RequireRole>} />
+      <Route path="/courses" element={<RequireRole role="student"><MyCourses /></RequireRole>} />
       <Route path="/courses/:id" element={<RequireRole role="student"><CourseDetail /></RequireRole>} />
+
+      {/* shared */}
+      <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
 
       {/* admin */}
       <Route path="/admin" element={<RequireRole role="admin"><Access /></RequireRole>} />

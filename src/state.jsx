@@ -28,6 +28,7 @@ export function StoreProvider({ children }) {
   const [users, setUsers] = useState({});
   const [locked, setLocked] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
+  const [smtp, setSmtpLocal] = useState(null);
   const [ready, setReady] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -36,6 +37,7 @@ export function StoreProvider({ children }) {
     setUsers(data.users || {});
     setLocked(data.locked || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
+    if (data.smtp) setSmtpLocal(data.smtp);
   };
   const applyAdmin = (data) => {
     if (data.courses) setCourses(data.courses);
@@ -123,11 +125,36 @@ export function StoreProvider({ children }) {
     setBrandLocal({ ...DEFAULT_BRAND, ...saved });
   }, [brand, token]);
 
+  /* ---- account self-service (any role) ---- */
+  const updateAccount = useCallback(async (fields) => {
+    try {
+      const { user } = await api("/account", { method: "PUT", token, body: fields });
+      setCurrentUser(user);
+      return { ok: true, msg: "Profile updated." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    try {
+      await api("/account/password", { method: "POST", token, body: { currentPassword, newPassword } });
+      return { ok: true, msg: "Password changed." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  const saveSmtp = useCallback(async (fields) => {
+    try {
+      const saved = await api("/admin/smtp", { method: "PUT", token, body: fields });
+      setSmtpLocal(saved);
+      return { ok: true, msg: "SMTP settings saved." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const value = {
-    ready, currentUser, courses, users, locked, brand,
+    ready, currentUser, courses, users, locked, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent,
     addCourse, addItem, removeItem,
+    updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

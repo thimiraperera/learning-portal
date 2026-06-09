@@ -1,7 +1,8 @@
 /* SQLite data layer for the Learning Portal.
-   Creates the schema on first run and seeds demo data with hashed passwords.
-   The database file (data.sqlite) lives next to this file and persists on
-   the server across deploys (it is gitignored, so git pull never touches it). */
+   Creates the schema on first run, runs lightweight migrations for existing
+   databases, and seeds demo data with hashed passwords. The database file
+   (data.sqlite) lives next to this file and persists across deploys (it is
+   gitignored, so git pull never touches it). */
 const path = require("path");
 const Database = require("better-sqlite3");
 const bcrypt = require("bcryptjs");
@@ -13,6 +14,9 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
+  first_name    TEXT DEFAULT '',
+  last_name     TEXT DEFAULT '',
+  nickname      TEXT DEFAULT '',
   username      TEXT NOT NULL UNIQUE,
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
@@ -20,12 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   status        TEXT NOT NULL DEFAULT 'active'
 );
 CREATE TABLE IF NOT EXISTS courses (
-  id         TEXT PRIMARY KEY,
-  code       TEXT NOT NULL,
-  title      TEXT NOT NULL,
-  instructor TEXT,
-  blurb      TEXT,
-  sessions   INTEGER DEFAULT 0
+  id TEXT PRIMARY KEY, code TEXT NOT NULL, title TEXT NOT NULL, instructor TEXT, blurb TEXT, sessions INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS recordings (
   id INTEGER PRIMARY KEY AUTOINCREMENT, course_id TEXT NOT NULL, title TEXT NOT NULL, date TEXT, length TEXT
@@ -42,17 +41,38 @@ CREATE TABLE IF NOT EXISTS enrolments (
 CREATE TABLE IF NOT EXISTS settings ( key TEXT PRIMARY KEY, value TEXT );
 `);
 
+/* ---- migrations for databases created before these columns existed ---- */
+function hasColumn(table, col) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+}
+for (const col of ["first_name", "last_name", "nickname"]) {
+  if (!hasColumn("users", col)) db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT DEFAULT ''`);
+}
+// Backfill first/last name from the existing single name field.
+const needsName = db.prepare("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''").all();
+const setNames = db.prepare("UPDATE users SET first_name=?, last_name=? WHERE id=?");
+for (const u of needsName) {
+  const parts = String(u.name || "").trim().split(/\s+/);
+  setNames.run(parts.shift() || "", parts.join(" "), u.id);
+}
+
+function displayName(u) {
+  const full = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+  return (u.nickname && u.nickname.trim()) || full || u.username;
+}
+
 /* ---- one-time seed ---- */
 function seedIfEmpty() {
   const { n } = db.prepare("SELECT COUNT(*) AS n FROM users").get();
   if (n > 0) return;
 
-  const insUser = db.prepare("INSERT INTO users (name,username,email,password_hash,role,status) VALUES (?,?,?,?,?,'active')");
-  const mk = (name, username, email, pw, role) => insUser.run(name, username, email, bcrypt.hashSync(pw, 10), role).lastInsertRowid;
-  mk("Chamira H.", "admin", "chamira@demo.lk", "admin123", "admin");
-  const ravi  = mk("Ravi Perera", "ravi", "ravi@demo.lk", "ravi123", "student");
-  const amara = mk("Amara Silva", "amara", "amara@demo.lk", "amara123", "student");
-  mk("Dilan Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
+  const ins = db.prepare("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?,?,?,?,?,?, 'active')");
+  const mk = (first, last, username, email, pw, role) =>
+    ins.run(`${first} ${last}`.trim(), first, last, "", username, email, bcrypt.hashSync(pw, 10), role).lastInsertRowid;
+  mk("Chamira", "H.", "admin", "chamira@demo.lk", "admin123", "admin");
+  const ravi  = mk("Ravi", "Perera", "ravi", "ravi@demo.lk", "ravi123", "student");
+  const amara = mk("Amara", "Silva", "amara", "amara@demo.lk", "amara123", "student");
+  mk("Dilan", "Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
 
   const insCourse = db.prepare("INSERT INTO courses (id,code,title,instructor,blurb,sessions) VALUES (?,?,?,?,?,?)");
   const insRec = db.prepare("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?,?,?)");
@@ -93,12 +113,11 @@ function seedIfEmpty() {
   insEnrol.run(ravi, "c1"); insEnrol.run(ravi, "c2");
   insEnrol.run(amara, "c2"); insEnrol.run(amara, "c3"); insEnrol.run(amara, "c4");
 
-  db.prepare("INSERT INTO settings (key,value) VALUES ('brand',?)")
-    .run(JSON.stringify({ company: "", name: "Learning Portal", logo: "" }));
+  db.prepare("INSERT INTO settings (key,value) VALUES ('brand',?)").run(JSON.stringify({ company: "", name: "Learning Portal", logo: "" }));
 }
 seedIfEmpty();
 
-/* ---- read helpers (assemble the shapes the frontend expects) ---- */
+/* ---- read helpers ---- */
 function courseFull(id) {
   const c = db.prepare("SELECT * FROM courses WHERE id=?").get(id);
   if (!c) return null;
@@ -124,7 +143,7 @@ function lockedCourses(ids) {
 function usersMap() {
   const rows = db.prepare("SELECT * FROM users WHERE role='student' ORDER BY id").all();
   const map = {};
-  for (const u of rows) map[u.email] = { id: u.id, name: u.name, username: u.username, role: u.role, status: u.status, enrolled: enrolledIds(u.id) };
+  for (const u of rows) map[u.email] = { id: u.id, name: displayName(u), username: u.username, role: u.role, status: u.status, enrolled: enrolledIds(u.id) };
   return map;
 }
 function getBrand() {
@@ -132,4 +151,26 @@ function getBrand() {
   return row ? JSON.parse(row.value) : { company: "", name: "Learning Portal", logo: "" };
 }
 
-module.exports = { db, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap, getBrand };
+const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", useTls: true, useSsl: false };
+function getSmtp() {
+  const row = db.prepare("SELECT value FROM settings WHERE key='smtp'").get();
+  return row ? { ...SMTP_DEFAULT, ...JSON.parse(row.value) } : { ...SMTP_DEFAULT };
+}
+function getSmtpForClient() {
+  const s = getSmtp();
+  const { password, ...rest } = s;
+  return { ...rest, hasPassword: !!password };
+}
+function setSmtp(next) {
+  const cur = getSmtp();
+  const merged = { ...cur, ...next };
+  // Keep the existing password when the form leaves it blank.
+  if (next.password === undefined || next.password === "") merged.password = cur.password;
+  db.prepare("INSERT INTO settings (key,value) VALUES ('smtp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(merged));
+  return getSmtpForClient();
+}
+
+module.exports = {
+  db, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
+  getBrand, getSmtp, getSmtpForClient, setSmtp,
+};
