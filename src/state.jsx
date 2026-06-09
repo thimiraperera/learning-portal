@@ -1,106 +1,130 @@
-import { createContext, useContext, useState, useCallback } from "react";
-import { seedCourses, seedUsers } from "./data.js";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+
+/* Store backed by the server API (see server.cjs / db.cjs).
+   Data is no longer hard-coded in the browser; it lives in the SQLite
+   database and is fetched after sign-in. Passwords never reach the client. */
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
-/* White-label branding. No client name is hard-coded. An administrator
-   sets these in Settings; they persist to localStorage so the same build
-   can be deployed for any client. */
-const BRAND_KEY = "lms_brand";
+const TOKEN_KEY = "lms_token";
 const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "" };
 
-function loadBrand() {
-  try {
-    const raw = localStorage.getItem(BRAND_KEY);
-    return raw ? { ...DEFAULT_BRAND, ...JSON.parse(raw) } : { ...DEFAULT_BRAND };
-  } catch {
-    return { ...DEFAULT_BRAND };
-  }
+async function api(path, { method = "GET", body, token } = {}) {
+  const res = await fetch("/api" + path, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
 }
 
 export function StoreProvider({ children }) {
-  const [users, setUsers] = useState(() => structuredClone(seedUsers));
-  const [courses, setCourses] = useState(() => structuredClone(seedCourses));
-  const [user, setUser] = useState(null); // logged-in email
-  const [brand, setBrandState] = useState(loadBrand);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [courses, setCourses] = useState({});
+  const [users, setUsers] = useState({});
+  const [locked, setLocked] = useState([]);
+  const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
+  const [ready, setReady] = useState(false);
 
-  const setBrand = useCallback((next) => {
-    setBrandState((prev) => {
-      const merged = { ...prev, ...next };
-      try { localStorage.setItem(BRAND_KEY, JSON.stringify(merged)); } catch { /* ignore */ }
-      return merged;
-    });
+  const applyBootstrap = (data) => {
+    setCurrentUser(data.currentUser || null);
+    setCourses(data.courses || {});
+    setUsers(data.users || {});
+    setLocked(data.locked || []);
+    if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
+  };
+  const applyAdmin = (data) => {
+    if (data.courses) setCourses(data.courses);
+    if (data.users) setUsers(data.users);
+  };
+
+  // On first load: fetch public brand, and restore the session if a token exists.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const b = await api("/brand"); if (alive) setBrandLocal({ ...DEFAULT_BRAND, ...b }); } catch { /* ignore */ }
+      if (token) {
+        try {
+          const data = await api("/bootstrap", { token });
+          if (alive) applyBootstrap(data);
+        } catch {
+          localStorage.removeItem(TOKEN_KEY);
+          if (alive) setToken(null);
+        }
+      }
+      if (alive) setReady(true);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = useCallback((username, password) => {
-    const u = username.trim().toLowerCase();
-    const entry = Object.entries(users).find(
-      ([, acc]) => acc.username && acc.username.toLowerCase() === u && acc.password === password
-    );
-    if (entry) { setUser(entry[0]); return { ok: true, role: entry[1].role }; }
-    return { ok: false };
-  }, [users]);
-
-  const logout = useCallback(() => setUser(null), []);
-
-  /* ---- admin: enrolment matrix ---- */
-  const toggleEnrol = useCallback((email, cid) => {
-    setUsers((u) => {
-      const cur = u[email].enrolled;
-      const next = cur.includes(cid) ? cur.filter((x) => x !== cid) : [...cur, cid];
-      return { ...u, [email]: { ...u[email], enrolled: next } };
-    });
-  }, []);
-
-  /* ---- admin: students ---- */
-  const addStudent = useCallback((name, email, username, password) => {
-    const e = email.trim().toLowerCase();
-    const un = username.trim().toLowerCase();
-    if (!name.trim() || !e.includes("@")) return { ok: false, msg: "Enter a name and a valid email." };
-    if (!un || !password) return { ok: false, msg: "Enter a username and a password." };
-    if (users[e]) return { ok: false, msg: "That email already exists." };
-    if (Object.values(users).some((acc) => acc.username && acc.username.toLowerCase() === un)) {
-      return { ok: false, msg: "That username is already taken." };
+  const login = useCallback(async (username, password) => {
+    try {
+      const { token: t, user } = await api("/login", { method: "POST", body: { username, password } });
+      localStorage.setItem(TOKEN_KEY, t);
+      setToken(t);
+      setCurrentUser(user);
+      const data = await api("/bootstrap", { token: t });
+      applyBootstrap(data);
+      return { ok: true, role: user.role };
+    } catch (e) {
+      return { ok: false, error: e.message };
     }
-    setUsers((u) => ({ ...u, [e]: { name: name.trim(), username: un, password, role: "student", enrolled: [], status: "active" } }));
-    return { ok: true, msg: `Student ${name.trim()} added. They can sign in now.` };
-  }, [users]);
-
-  const removeStudent = useCallback((email) => {
-    setUsers((u) => { const n = { ...u }; delete n[email]; return n; });
   }, []);
 
-  /* ---- admin: courses & materials ---- */
-  const addCourse = useCallback((title, code) => {
-    if (!title.trim() || !code.trim()) return false;
-    const id = "c" + Date.now().toString().slice(-6);
-    setCourses((c) => ({
-      ...c,
-      [id]: { title: title.trim(), code: code.trim().toUpperCase(), instructor: "C. Hettiarachchi",
-              blurb: "Newly created course.", sessions: 0, recordings: [], links: [], materials: [] },
-    }));
-    return true;
-  }, []);
+  const logout = useCallback(async () => {
+    try { if (token) await api("/logout", { method: "POST", token }); } catch { /* ignore */ }
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    setCurrentUser(null);
+    setCourses({});
+    setUsers({});
+    setLocked([]);
+  }, [token]);
 
-  // bucket: "recordings" | "links" | "materials"
-  const addItem = useCallback((cid, bucket, value) => {
-    const v = value.trim();
-    if (!v) return;
-    const item =
-      bucket === "recordings" ? { t: v, d: "n/a", len: "n/a" } :
-      bucket === "links"      ? { t: v, u: "#" } :
-                                { t: v, size: "n/a", ext: "PDF" };
-    setCourses((c) => ({ ...c, [cid]: { ...c[cid], [bucket]: [...c[cid][bucket], item] } }));
-  }, []);
+  /* ---- admin mutations (each returns the fresh admin state) ---- */
+  const toggleEnrol = useCallback(async (email, cid) => {
+    applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid } }));
+  }, [token]);
 
-  const removeItem = useCallback((cid, bucket, idx) => {
-    setCourses((c) => ({ ...c, [cid]: { ...c[cid], [bucket]: c[cid][bucket].filter((_, i) => i !== idx) } }));
-  }, []);
+  const addStudent = useCallback(async (name, email, username, password) => {
+    try {
+      const d = await api("/admin/students", { method: "POST", token, body: { name, email, username, password } });
+      applyAdmin(d);
+      return { ok: true, msg: d.msg };
+    } catch (e) {
+      return { ok: false, msg: e.message };
+    }
+  }, [token]);
+
+  const removeStudent = useCallback(async (email) => {
+    applyAdmin(await api("/admin/students", { method: "DELETE", token, body: { email } }));
+  }, [token]);
+
+  const addCourse = useCallback(async (title, code) => {
+    try { applyAdmin(await api("/admin/courses", { method: "POST", token, body: { title, code } })); return true; }
+    catch { return false; }
+  }, [token]);
+
+  const addItem = useCallback(async (cid, bucket, value) => {
+    applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, bucket, value } }));
+  }, [token]);
+
+  const removeItem = useCallback(async (cid, bucket, itemId) => {
+    applyAdmin(await api("/admin/items", { method: "DELETE", token, body: { courseId: cid, bucket, itemId } }));
+  }, [token]);
+
+  const setBrand = useCallback(async (next) => {
+    const saved = await api("/brand", { method: "PUT", token, body: { ...brand, ...next } });
+    setBrandLocal({ ...DEFAULT_BRAND, ...saved });
+  }, [brand, token]);
 
   const value = {
-    users, courses, user, brand,
-    currentUser: user ? users[user] : null,
+    ready, currentUser, courses, users, locked, brand,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent,
     addCourse, addItem, removeItem,

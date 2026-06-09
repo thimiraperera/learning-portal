@@ -22,9 +22,13 @@ export default function Settings() {
     reader.readAsDataURL(f);
   };
 
-  const save = () => {
-    setBrand({ company: company.trim(), name: name.trim(), logo });
-    setMsg({ ok: true, text: "Branding saved. It applies across the portal immediately." });
+  const save = async () => {
+    try {
+      await setBrand({ company: company.trim(), name: name.trim(), logo });
+      setMsg({ ok: true, text: "Branding saved. It applies across the portal immediately." });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || "Could not save branding." });
+    }
   };
 
   return (

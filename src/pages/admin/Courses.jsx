@@ -14,7 +14,7 @@ export default function Courses() {
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
 
-  const create = () => { if (addCourse(title, code)) { setTitle(""); setCode(""); } };
+  const create = async () => { if (await addCourse(title, code)) { setTitle(""); setCode(""); } };
 
   return (
     <Layout title="Courses">
@@ -47,12 +47,12 @@ function CourseBlock({ id, c, addItem, removeItem }) {
   const [value, setValue] = useState("");
   const total = c.recordings.length + c.links.length + c.materials.length;
 
-  const attach = () => { if (value.trim()) { addItem(id, bucket, value); setValue(""); } };
+  const attach = async () => { if (value.trim()) { await addItem(id, bucket, value); setValue(""); } };
 
   const rows = [
-    ...c.recordings.map((m, i) => ({ bucket: "recordings", i, t: m.t })),
-    ...c.links.map((m, i) => ({ bucket: "links", i, t: m.t })),
-    ...c.materials.map((m, i) => ({ bucket: "materials", i, t: m.t })),
+    ...c.recordings.map((m) => ({ bucket: "recordings", itemId: m.id, t: m.t })),
+    ...c.links.map((m) => ({ bucket: "links", itemId: m.id, t: m.t })),
+    ...c.materials.map((m) => ({ bucket: "materials", itemId: m.id, t: m.t })),
   ];
 
   return (
@@ -71,11 +71,11 @@ function CourseBlock({ id, c, addItem, removeItem }) {
           {rows.map((r) => {
             const B = BUCKETS[r.bucket];
             return (
-              <div key={r.bucket + r.i} className="media-row" style={{ marginBottom: 0, padding: "10px 14px" }}>
+              <div key={r.bucket + r.itemId} className="media-row" style={{ marginBottom: 0, padding: "10px 14px" }}>
                 <div className="mr-icon" style={{ width: 34, height: 34 }}><B.icon /></div>
                 <div className="mr-body"><div className="mr-title" style={{ marginBottom: 0 }}>{r.t}</div></div>
                 <span className="badge badge-info">{B.label}</span>
-                <button className="icon-btn-plain" onClick={() => removeItem(id, r.bucket, r.i)}>
+                <button className="icon-btn-plain" onClick={() => removeItem(id, r.bucket, r.itemId)}>
                   <X style={{ width: 16, height: 16 }} />
                 </button>
               </div>

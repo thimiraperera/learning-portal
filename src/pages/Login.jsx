@@ -11,10 +11,15 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
     e?.preventDefault?.();
-    const r = login(username, password);
-    if (!r.ok) { setError("Incorrect username or password."); return; }
+    if (busy) return;
+    setBusy(true);
+    const r = await login(username, password);
+    setBusy(false);
+    if (!r.ok) { setError(r.error || "Incorrect username or password."); return; }
     navigate(r.role === "admin" ? "/admin" : "/");
   };
 
@@ -79,7 +84,7 @@ export default function Login() {
               <input id="password" type="password" placeholder="Enter your password" autoComplete="current-password"
                 value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
-            <button type="submit" className="btn-login">Sign In</button>
+            <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
           </form>
 
           <div className="login-footer">

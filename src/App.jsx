@@ -19,6 +19,15 @@ function RequireRole({ role, children }) {
 }
 
 function Routed() {
+  const { ready } = useStore();
+  if (!ready) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#9CA3AF", fontFamily: "'Figtree', sans-serif", fontWeight: 600 }}>
+        Loading...
+      </div>
+    );
+  }
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

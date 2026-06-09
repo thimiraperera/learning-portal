@@ -13,8 +13,8 @@ export default function Students() {
 
   const students = Object.entries(users).filter(([, u]) => u.role === "student");
 
-  const add = () => {
-    const r = addStudent(name, email, username, password);
+  const add = async () => {
+    const r = await addStudent(name, email, username, password);
     setMsg(r);
     if (r.ok) { setName(""); setEmail(""); setUsername(""); setPassword(""); }
   };

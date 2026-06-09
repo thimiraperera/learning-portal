@@ -1,28 +1,32 @@
 # Learning Portal
 
-A white-label learning-management app (student portal + admin console) built
-with **React + Vite**. Branding (name and logo) is configurable in **Settings**,
-so the same build can be deployed for any client.
+A white-label learning-management app (student portal + admin console) with a
+**React + Vite** frontend and a small **Node + SQLite** backend. Branding (name
+and logo) is configurable in **Settings**, so the same build serves any client.
 
 ## Stack
 
-- React 18 + React Router 6
-- Vite 5 (dev server / build)
-- lucide-react icons
+- Frontend: React 18 + React Router 6, Vite 5, lucide-react icons
+- Backend: Express server (`server.cjs`) + SQLite (`better-sqlite3`)
+- Auth: bcrypt-hashed passwords (`bcryptjs`), bearer-token sessions
 - Plain CSS design system (`src/styles.css`)
 
 ## Run locally
 
+The frontend and API run together through the Node server:
+
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run build        # build the frontend into dist/
+npm start            # serves API + dist on http://localhost:3000
 ```
 
-Build for production:
+For live frontend reloading during development, run the API and Vite together
+(the dev server proxies /api to port 3000):
 
 ```bash
-npm run build
-npm run preview
+npm start            # terminal 1: API on :3000
+npm run dev          # terminal 2: Vite on :5173
 ```
 
 ## Seed accounts
@@ -49,18 +53,22 @@ Sign in with a username and password (both students and admins use the same form
 - Courses: create courses, attach & remove recordings/links/materials
 - Settings: white-label branding (portal name, company line, logo)
 
-> All data is in-memory mock data and resets on reload. Branding persists in
-> `localStorage`. In production the enrolments table would be enforced by
-> row-level security server-side.
+## Data & auth
+
+All data lives in a SQLite database (`data.sqlite`, created on first run and
+gitignored so it persists across deploys). Passwords are stored as bcrypt
+hashes and never sent to the browser. After sign-in the client holds a bearer
+token; students only ever receive their enrolled courses from the API.
 
 ## Project structure
 
 ```
+server.cjs            Express API + serves the built frontend (Passenger entry)
+db.cjs                SQLite schema, seed data, and query helpers
 src/
   main.jsx            entry
-  App.jsx             router + role guards
-  state.jsx           in-memory store + branding (React context)
-  data.js             seed courses + users
+  App.jsx             router + role guards + load gate
+  state.jsx           API-backed store (React context)
   styles.css          design system
   components/Layout.jsx
   pages/Login.jsx

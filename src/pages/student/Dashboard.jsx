@@ -6,13 +6,12 @@ import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function Dashboard() {
-  const { currentUser, courses } = useStore();
+  const { currentUser, courses, locked } = useStore();
   const navigate = useNavigate();
   const my = currentUser.enrolled;
 
-  const totalRecordings = my.reduce((n, id) => n + courses[id].recordings.length, 0);
-  const totalMaterials = my.reduce((n, id) => n + courses[id].materials.length, 0);
-  const locked = Object.keys(courses).filter((id) => !my.includes(id));
+  const totalRecordings = my.reduce((n, id) => n + (courses[id]?.recordings.length || 0), 0);
+  const totalMaterials = my.reduce((n, id) => n + (courses[id]?.materials.length || 0), 0);
 
   return (
     <Layout title="My Courses">
@@ -65,8 +64,8 @@ export default function Dashboard() {
             NOT ENROLLED (HIDDEN FROM THIS ACCOUNT)
           </div>
           <div className="locked-list">
-            {locked.map((id) => (
-              <div key={id} className="locked-pill"><Lock /> {courses[id].title}</div>
+            {locked.map((c) => (
+              <div key={c.id} className="locked-pill"><Lock /> {c.title}</div>
             ))}
           </div>
         </div>
