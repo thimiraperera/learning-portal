@@ -130,6 +130,27 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   res.json(await adminState());
 }));
 
+app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
+  const id = req.params.id;
+  const [[c]] = await q("SELECT id FROM courses WHERE id=?", [id]);
+  if (!c) return res.status(404).json({ error: "Course not found." });
+  const code = String(req.body?.code || "").trim().toUpperCase();
+  const title = String(req.body?.title || "").trim();
+  if (!code || !title) return res.status(400).json({ error: "Code and title are required." });
+  await dbmod.updateCourse(id, {
+    code, title,
+    instructor: String(req.body?.instructor || ""),
+    blurb: String(req.body?.blurb || ""),
+    sessions: Number.parseInt(req.body?.sessions, 10) || 0,
+  });
+  res.json(await adminState());
+}));
+
+app.delete("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.deleteCourse(req.params.id);
+  res.json(await adminState());
+}));
+
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   const { courseId, bucket, value } = req.body || {};

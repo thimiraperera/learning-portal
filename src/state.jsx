@@ -112,6 +112,15 @@ export function StoreProvider({ children }) {
     catch { return false; }
   }, [token]);
 
+  const updateCourse = useCallback(async (id, fields) => {
+    try { applyAdmin(await api(`/admin/courses/${id}`, { method: "PUT", token, body: fields })); return { ok: true, msg: "Course updated." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  const deleteCourse = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/courses/${id}`, { method: "DELETE", token }));
+  }, [token]);
+
   const addItem = useCallback(async (cid, bucket, value) => {
     applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, bucket, value } }));
   }, [token]);
@@ -153,7 +162,7 @@ export function StoreProvider({ children }) {
     ready, currentUser, courses, users, locked, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent,
-    addCourse, addItem, removeItem,
+    addCourse, updateCourse, deleteCourse, addItem, removeItem,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

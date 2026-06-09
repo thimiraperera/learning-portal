@@ -169,6 +169,17 @@ async function usersMap() {
   for (const u of rows) map[u.email] = { id: u.id, name: displayName(u), username: u.username, role: u.role, status: u.status, enrolled: await enrolledIds(u.id) };
   return map;
 }
+async function updateCourse(id, f) {
+  await q("UPDATE courses SET code=?, title=?, instructor=?, blurb=?, sessions=? WHERE id=?",
+    [f.code, f.title, f.instructor, f.blurb, f.sessions, id]);
+}
+async function deleteCourse(id) {
+  await q("DELETE FROM recordings WHERE course_id=?", [id]);
+  await q("DELETE FROM links WHERE course_id=?", [id]);
+  await q("DELETE FROM materials WHERE course_id=?", [id]);
+  await q("DELETE FROM enrolments WHERE course_id=?", [id]);
+  await q("DELETE FROM courses WHERE id=?", [id]);
+}
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -197,5 +208,5 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
+  updateCourse, deleteCourse, getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

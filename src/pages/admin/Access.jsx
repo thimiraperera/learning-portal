@@ -6,6 +6,7 @@ export default function Access() {
   const { users, courses, toggleEnrol } = useStore();
   const cids = Object.keys(courses);
   const students = Object.entries(users).filter(([, u]) => u.role === "student");
+  const enrolledCount = (c) => students.filter(([, s]) => s.enrolled.includes(c)).length;
 
   return (
     <Layout title="Access Control">
@@ -20,7 +21,14 @@ export default function Access() {
             <thead>
               <tr>
                 <th style={{ minWidth: 200 }}>Student</th>
-                {cids.map((c) => <th key={c} style={{ textAlign: "center" }}>{courses[c].code}</th>)}
+                {cids.map((c) => (
+                  <th key={c} style={{ textAlign: "center" }}>
+                    <div>{courses[c].code}</div>
+                    <div style={{ fontWeight: 600, color: "var(--primary)", textTransform: "none", letterSpacing: 0, marginTop: 3 }}>
+                      {enrolledCount(c)} enrolled
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
