@@ -2,9 +2,9 @@
    Serves the JSON API + the prebuilt frontend in ./dist, with an SPA
    fallback so client-side routes work on refresh / deep links.
    Data lives in MySQL (see db.cjs); credentials come from env vars. */
-require("dotenv").config();
-const express = require("express");
 const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const dbmod = require("./db.cjs");

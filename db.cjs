@@ -3,7 +3,8 @@
    UI, or a local .env file). Nothing secret is committed to the repo.
    On first run it creates the schema, migrates older databases, and seeds
    demo data with hashed passwords. */
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 
