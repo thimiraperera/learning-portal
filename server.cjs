@@ -151,9 +151,13 @@ app.delete("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   res.json(await adminState());
 }));
 
-app.post("/api/admin/courses/:id/instructor", auth, adminOnly, wrap(async (req, res) => {
-  const instructorId = req.body?.instructorId ? Number(req.body.instructorId) : null;
-  await dbmod.assignInstructor(req.params.id, instructorId);
+app.post("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (req, res) => {
+  if (req.body?.instructorId) await dbmod.addCourseInstructor(req.params.id, req.body.instructorId);
+  res.json(await adminState());
+}));
+
+app.delete("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (req, res) => {
+  if (req.body?.instructorId) await dbmod.removeCourseInstructor(req.params.id, req.body.instructorId);
   res.json(await adminState());
 }));
 

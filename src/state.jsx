@@ -124,8 +124,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/courses/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const assignInstructor = useCallback(async (courseId, instructorId) => {
-    applyAdmin(await api(`/admin/courses/${courseId}/instructor`, { method: "POST", token, body: { instructorId } }));
+  const addCourseInstructor = useCallback(async (courseId, instructorId) => {
+    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "POST", token, body: { instructorId } }));
+  }, [token]);
+  const removeCourseInstructor = useCallback(async (courseId, instructorId) => {
+    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "DELETE", token, body: { instructorId } }));
   }, [token]);
 
   const addInstructor = useCallback(async (fields) => {
@@ -182,7 +185,7 @@ export function StoreProvider({ children }) {
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem,
-    assignInstructor, addInstructor, updateInstructor, deleteInstructor,
+    addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

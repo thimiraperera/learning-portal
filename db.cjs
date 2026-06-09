@@ -42,6 +42,10 @@ const TABLES = [
      id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL,
      email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS course_instructors (
+     course_id VARCHAR(32) NOT NULL, instructor_id INT NOT NULL,
+     PRIMARY KEY (course_id, instructor_id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS recordings (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
@@ -156,21 +160,28 @@ async function init() {
       await q("UPDATE courses SET instructor_id=? WHERE instructor=?", [r.insertId, row.instructor]);
     }
   }
+  // Migrate the single instructor_id link into the many-to-many join table.
+  const [[{ nci }]] = await q("SELECT COUNT(*) AS nci FROM course_instructors");
+  if (nci === 0) {
+    const [linked] = await q("SELECT id, instructor_id FROM courses WHERE instructor_id IS NOT NULL");
+    for (const row of linked) await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [row.id, row.instructor_id]);
+  }
 }
 
 /* ---- read helpers (assemble the shapes the frontend expects) ---- */
 async function courseFull(id) {
   const [[c]] = await q("SELECT * FROM courses WHERE id=?", [id]);
   if (!c) return null;
-  let instructor = c.instructor || "";
-  if (c.instructor_id) {
-    const [[ins]] = await q("SELECT name FROM instructors WHERE id=?", [c.instructor_id]);
-    if (ins) instructor = ins.name;
-  }
+  const [instructors] = await q(
+    "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
   const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY id", [id]);
   const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY id", [id]);
   const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY id", [id]);
-  return { code: c.code, title: c.title, instructor, instructorId: c.instructor_id || null, blurb: c.blurb, sessions: c.sessions, recordings, links, materials };
+  return {
+    code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
+    instructors, instructor: instructors.map((x) => x.name).join(", "),
+    recordings, links, materials,
+  };
 }
 async function coursesMap(ids) {
   const [rows] = await q("SELECT id FROM courses ORDER BY id");
@@ -208,22 +219,22 @@ async function updateInstructor(id, f) {
   await q("UPDATE instructors SET name=?, email=?, phone=?, title=?, bio=? WHERE id=?", [f.name, f.email, f.phone, f.title, f.bio, id]);
 }
 async function deleteInstructor(id) {
+  await q("DELETE FROM course_instructors WHERE instructor_id=?", [id]);
   await q("UPDATE courses SET instructor_id=NULL WHERE instructor_id=?", [id]);
   await q("DELETE FROM instructors WHERE id=?", [id]);
 }
-async function assignInstructor(courseId, instructorId) {
-  if (instructorId) {
-    const [[ins]] = await q("SELECT name FROM instructors WHERE id=?", [instructorId]);
-    await q("UPDATE courses SET instructor_id=?, instructor=? WHERE id=?", [instructorId, ins ? ins.name : "", courseId]);
-  } else {
-    await q("UPDATE courses SET instructor_id=NULL WHERE id=?", [courseId]);
-  }
+async function addCourseInstructor(courseId, instructorId) {
+  await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [courseId, Number(instructorId)]);
+}
+async function removeCourseInstructor(courseId, instructorId) {
+  await q("DELETE FROM course_instructors WHERE course_id=? AND instructor_id=?", [courseId, Number(instructorId)]);
 }
 async function deleteCourse(id) {
   await q("DELETE FROM recordings WHERE course_id=?", [id]);
   await q("DELETE FROM links WHERE course_id=?", [id]);
   await q("DELETE FROM materials WHERE course_id=?", [id]);
   await q("DELETE FROM enrolments WHERE course_id=?", [id]);
+  await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 async function getBrand() {
@@ -254,6 +265,7 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  updateCourse, deleteCourse, instructorsList, addInstructor, updateInstructor, deleteInstructor, assignInstructor,
+  updateCourse, deleteCourse, instructorsList, addInstructor, updateInstructor, deleteInstructor,
+  addCourseInstructor, removeCourseInstructor,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

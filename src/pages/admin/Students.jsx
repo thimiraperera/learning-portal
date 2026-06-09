@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { UserPlus, Trash2, CheckCircle, AlertTriangle, Users } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import StudentProfile from "../../components/StudentProfile.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function Students() {
-  const { users, addStudent, removeStudent } = useStore();
+  const { users, courses, addStudent, removeStudent } = useStore();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState(null); // { ok, msg }
+  const [profile, setProfile] = useState(null);
 
   const students = Object.entries(users).filter(([, u]) => u.role === "student");
 
@@ -52,7 +54,12 @@ export default function Students() {
               <tbody>
                 {students.map(([email, s]) => (
                   <tr key={email}>
-                    <td style={{ fontWeight: 700, color: "var(--title)" }}>{s.name}</td>
+                    <td>
+                      <button onClick={() => setProfile([email, s])}
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: "var(--primary)", fontFamily: "inherit", fontSize: "inherit" }}>
+                        {s.name}
+                      </button>
+                    </td>
                     <td style={{ color: "#6B7280" }}>{s.username}</td>
                     <td style={{ color: "#6B7280" }}>{email}</td>
                     <td>
@@ -73,6 +80,8 @@ export default function Students() {
           </div>
         )}
       </div>
+
+      <StudentProfile student={profile} courses={courses} onClose={() => setProfile(null)} />
     </Layout>
   );
 }
