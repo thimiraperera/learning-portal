@@ -45,7 +45,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList() };
 }
 
 /* ---- public ---- */
@@ -72,7 +72,7 @@ app.post("/api/logout", auth, wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
     res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), brand: await dbmod.getBrand() });
@@ -148,6 +148,38 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
 
 app.delete("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.deleteCourse(req.params.id);
+  res.json(await adminState());
+}));
+
+app.post("/api/admin/courses/:id/instructor", auth, adminOnly, wrap(async (req, res) => {
+  const instructorId = req.body?.instructorId ? Number(req.body.instructorId) : null;
+  await dbmod.assignInstructor(req.params.id, instructorId);
+  res.json(await adminState());
+}));
+
+/* ---- instructors ---- */
+app.post("/api/admin/instructors", auth, adminOnly, wrap(async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Instructor name is required." });
+  await dbmod.addInstructor({
+    name, email: String(req.body?.email || ""), phone: String(req.body?.phone || ""),
+    title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
+  });
+  res.json(await adminState());
+}));
+
+app.put("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Instructor name is required." });
+  await dbmod.updateInstructor(req.params.id, {
+    name, email: String(req.body?.email || ""), phone: String(req.body?.phone || ""),
+    title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
+  });
+  res.json(await adminState());
+}));
+
+app.delete("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.deleteInstructor(req.params.id);
   res.json(await adminState());
 }));
 

@@ -27,6 +27,7 @@ export function StoreProvider({ children }) {
   const [courses, setCourses] = useState({});
   const [users, setUsers] = useState({});
   const [locked, setLocked] = useState([]);
+  const [instructors, setInstructors] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [ready, setReady] = useState(false);
@@ -35,6 +36,7 @@ export function StoreProvider({ children }) {
     setCurrentUser(data.currentUser || null);
     setCourses(data.courses || {});
     setUsers(data.users || {});
+    setInstructors(data.instructors || []);
     setLocked(data.locked || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
@@ -42,6 +44,7 @@ export function StoreProvider({ children }) {
   const applyAdmin = (data) => {
     if (data.courses) setCourses(data.courses);
     if (data.users) setUsers(data.users);
+    if (data.instructors) setInstructors(data.instructors);
   };
 
   // On first load: fetch public brand, and restore the session if a token exists.
@@ -121,6 +124,22 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/courses/${id}`, { method: "DELETE", token }));
   }, [token]);
 
+  const assignInstructor = useCallback(async (courseId, instructorId) => {
+    applyAdmin(await api(`/admin/courses/${courseId}/instructor`, { method: "POST", token, body: { instructorId } }));
+  }, [token]);
+
+  const addInstructor = useCallback(async (fields) => {
+    try { applyAdmin(await api("/admin/instructors", { method: "POST", token, body: fields })); return { ok: true, msg: "Instructor added." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const updateInstructor = useCallback(async (id, fields) => {
+    try { applyAdmin(await api(`/admin/instructors/${id}`, { method: "PUT", token, body: fields })); return { ok: true, msg: "Instructor updated." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const deleteInstructor = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
+  }, [token]);
+
   const addItem = useCallback(async (cid, bucket, value) => {
     applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, bucket, value } }));
   }, [token]);
@@ -159,10 +178,11 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, brand, smtp,
+    ready, currentUser, courses, users, locked, instructors, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem,
+    assignInstructor, addInstructor, updateInstructor, deleteInstructor,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

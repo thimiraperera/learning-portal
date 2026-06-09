@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown,
+  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -25,6 +25,7 @@ export default function Layout({ title, children }) {
     { to: "/admin", label: "Access Control", icon: KeyRound, end: true },
     { to: "/admin/students", label: "Students", icon: Users },
     { to: "/admin/courses", label: "Courses", icon: BookOpen },
+    { to: "/admin/instructors", label: "Instructors", icon: Presentation },
     { to: "/admin/settings", label: "Settings", icon: Settings },
     { to: "/account", label: "My Account", icon: UserCog },
   ];

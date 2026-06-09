@@ -36,7 +36,11 @@ const TABLES = [
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS courses (
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
-     instructor VARCHAR(255), blurb TEXT, sessions INT DEFAULT 0
+     instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS instructors (
+     id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL,
+     email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS recordings (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64)
@@ -87,8 +91,12 @@ async function seedIfEmpty() {
   const amara = await mk("Amara", "Silva", "amara", "amara@demo.lk", "amara123", "student");
   await mk("Dilan", "Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
 
+  const [insRes] = await q("INSERT INTO instructors (name,email,phone,title,bio) VALUES (?,?,?,?,?)",
+    ["C. Hettiarachchi", "chamira@demo.lk", "", "Lead Mentor", "Founder and lead mentor of the programme."]);
+  const instrId = insRes.insertId;
+
   const course = (id, code, title, blurb, sessions) =>
-    q("INSERT INTO courses (id,code,title,instructor,blurb,sessions) VALUES (?,?,?,?,?,?)", [id, code, title, "C. Hettiarachchi", blurb, sessions]);
+    q("INSERT INTO courses (id,code,title,instructor,instructor_id,blurb,sessions) VALUES (?,?,?,?,?,?,?)", [id, code, title, "C. Hettiarachchi", instrId, blurb, sessions]);
   const rec = (cid, t, d, len) => q("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?,?,?)", [cid, t, d, len]);
   const link = (cid, t, u) => q("INSERT INTO links (course_id,title,url) VALUES (?,?,?)", [cid, t, u]);
   const mat = (cid, t, size, ext) => q("INSERT INTO materials (course_id,title,size,ext) VALUES (?,?,?,?)", [cid, t, size, ext]);
@@ -132,22 +140,37 @@ async function seedIfEmpty() {
 async function init() {
   for (const sql of TABLES) await q(sql);
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
+  await ensureColumn("courses", "instructor_id", "INT");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
     const parts = String(u.name || "").trim().split(/\s+/);
     await q("UPDATE users SET first_name=?, last_name=? WHERE id=?", [parts.shift() || "", parts.join(" "), u.id]);
   }
   await seedIfEmpty();
+  // Migrate any free-text course instructors into the instructors table.
+  const [[{ ni }]] = await q("SELECT COUNT(*) AS ni FROM instructors");
+  if (ni === 0) {
+    const [names] = await q("SELECT DISTINCT instructor FROM courses WHERE instructor IS NOT NULL AND instructor<>''");
+    for (const row of names) {
+      const [r] = await q("INSERT INTO instructors (name) VALUES (?)", [row.instructor]);
+      await q("UPDATE courses SET instructor_id=? WHERE instructor=?", [r.insertId, row.instructor]);
+    }
+  }
 }
 
 /* ---- read helpers (assemble the shapes the frontend expects) ---- */
 async function courseFull(id) {
   const [[c]] = await q("SELECT * FROM courses WHERE id=?", [id]);
   if (!c) return null;
+  let instructor = c.instructor || "";
+  if (c.instructor_id) {
+    const [[ins]] = await q("SELECT name FROM instructors WHERE id=?", [c.instructor_id]);
+    if (ins) instructor = ins.name;
+  }
   const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY id", [id]);
   const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY id", [id]);
   const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY id", [id]);
-  return { code: c.code, title: c.title, instructor: c.instructor, blurb: c.blurb, sessions: c.sessions, recordings, links, materials };
+  return { code: c.code, title: c.title, instructor, instructorId: c.instructor_id || null, blurb: c.blurb, sessions: c.sessions, recordings, links, materials };
 }
 async function coursesMap(ids) {
   const [rows] = await q("SELECT id FROM courses ORDER BY id");
@@ -170,8 +193,31 @@ async function usersMap() {
   return map;
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, instructor=?, blurb=?, sessions=? WHERE id=?",
-    [f.code, f.title, f.instructor, f.blurb, f.sessions, id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, id]);
+}
+
+async function instructorsList() {
+  const [rows] = await q("SELECT id, name, email, phone, title, bio FROM instructors ORDER BY name");
+  return rows;
+}
+async function addInstructor(f) {
+  await q("INSERT INTO instructors (name,email,phone,title,bio) VALUES (?,?,?,?,?)", [f.name, f.email, f.phone, f.title, f.bio]);
+}
+async function updateInstructor(id, f) {
+  await q("UPDATE instructors SET name=?, email=?, phone=?, title=?, bio=? WHERE id=?", [f.name, f.email, f.phone, f.title, f.bio, id]);
+}
+async function deleteInstructor(id) {
+  await q("UPDATE courses SET instructor_id=NULL WHERE instructor_id=?", [id]);
+  await q("DELETE FROM instructors WHERE id=?", [id]);
+}
+async function assignInstructor(courseId, instructorId) {
+  if (instructorId) {
+    const [[ins]] = await q("SELECT name FROM instructors WHERE id=?", [instructorId]);
+    await q("UPDATE courses SET instructor_id=?, instructor=? WHERE id=?", [instructorId, ins ? ins.name : "", courseId]);
+  } else {
+    await q("UPDATE courses SET instructor_id=NULL WHERE id=?", [courseId]);
+  }
 }
 async function deleteCourse(id) {
   await q("DELETE FROM recordings WHERE course_id=?", [id]);
@@ -208,5 +254,6 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  updateCourse, deleteCourse, getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
+  updateCourse, deleteCourse, instructorsList, addInstructor, updateInstructor, deleteInstructor, assignInstructor,
+  getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };
