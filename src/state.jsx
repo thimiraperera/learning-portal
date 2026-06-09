@@ -96,11 +96,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid } }));
   }, [token]);
 
-  const addStudent = useCallback(async (name, email, username, password) => {
+  const addStudent = useCallback(async (name, email, username) => {
     try {
-      const d = await api("/admin/students", { method: "POST", token, body: { name, email, username, password } });
+      const d = await api("/admin/students", { method: "POST", token, body: { name, email, username } });
       applyAdmin(d);
-      return { ok: true, msg: d.msg };
+      return { ok: true, msg: d.msg, link: d.link, sent: d.sent };
     } catch (e) {
       return { ok: false, msg: e.message };
     }

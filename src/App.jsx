@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { StoreProvider, useStore } from "./state.jsx";
 import Login from "./pages/Login.jsx";
+import Register from "./pages/Register.jsx";
 import Account from "./pages/Account.jsx";
 import Dashboard from "./pages/student/Dashboard.jsx";
 import MyCourses from "./pages/student/MyCourses.jsx";
@@ -44,6 +45,7 @@ function Routed() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
       {/* student */}
       <Route path="/" element={<RequireRole role="student"><Dashboard /></RequireRole>} />

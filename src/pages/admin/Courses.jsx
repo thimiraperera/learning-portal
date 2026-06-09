@@ -5,23 +5,22 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
 
-const PER_PAGE = 8;
-
 export default function Courses() {
   const { courses, users, addCourse } = useStore();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const create = async () => { if (await addCourse(title, code)) { setTitle(""); setCode(""); } };
 
   const enrolledCount = (cid) => Object.values(users).filter((u) => u.enrolled.includes(cid)).length;
 
   const entries = Object.entries(courses);
-  const pageCount = Math.max(1, Math.ceil(entries.length / PER_PAGE));
+  const pageCount = Math.max(1, Math.ceil(entries.length / pageSize));
   const safePage = Math.min(page, pageCount);
-  const slice = entries.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const slice = entries.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <Layout title="Courses">
@@ -59,7 +58,8 @@ export default function Courses() {
           </button>
         ))}
       </div>
-      <Pagination page={safePage} pageCount={pageCount} onChange={setPage} />
+      <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+        pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={entries.length} />
     </Layout>
   );
 }

@@ -7,13 +7,34 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const nodemailer = require("nodemailer");
 const dbmod = require("./db.cjs");
 const { q } = dbmod;
 
 const app = express();
+app.set("trust proxy", true); // so req.protocol reflects the proxy (https)
 app.use(express.json({ limit: "6mb" })); // logo data URLs can be large
 
 const dist = path.join(__dirname, "dist");
+
+/* Send mail via the stored SMTP settings. Returns {sent, reason}. */
+async function sendMail(to, subject, html) {
+  const s = await dbmod.getSmtp();
+  if (!s.host) return { sent: false, reason: "SMTP is not configured" };
+  try {
+    const transporter = nodemailer.createTransport({
+      host: s.host,
+      port: Number(s.port) || 587,
+      secure: !!s.useSsl, // true for 465, false uses STARTTLS on 587
+      auth: s.username ? { user: s.username, pass: s.password } : undefined,
+    });
+    const from = s.fromName ? `"${s.fromName}" <${s.fromEmail || s.username}>` : (s.fromEmail || s.username);
+    await transporter.sendMail({ from, to, subject, html });
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, reason: e.message };
+  }
+}
 
 /* small async wrapper so thrown errors become 500s instead of hanging.
    Passes next through so it works for middleware (auth) and handlers alike. */
@@ -68,6 +89,24 @@ app.post("/api/logout", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* ---- public registration (invite link) ---- */
+app.get("/api/register/:token", wrap(async (req, res) => {
+  const invite = await dbmod.getInvite(req.params.token);
+  if (!invite) return res.status(404).json({ error: "This registration link is invalid or has already been used." });
+  res.json({ name: invite.name, email: invite.email, username: invite.username });
+}));
+
+app.post("/api/register/:token", wrap(async (req, res) => {
+  const invite = await dbmod.getInvite(req.params.token);
+  if (!invite) return res.status(404).json({ error: "This registration link is invalid or has already been used." });
+  const name = String(req.body?.name || "").trim();
+  const password = String(req.body?.password || "");
+  if (!name) return res.status(400).json({ error: "Please confirm your full name." });
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  await dbmod.completeRegistration(req.params.token, name, bcrypt.hashSync(password, 10));
+  res.json({ ok: true });
+}));
+
 /* ---- bootstrap ---- */
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
@@ -79,21 +118,34 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   }
 }));
 
-/* ---- admin: students ---- */
+/* ---- admin: invite a student (sends a registration link, no password set here) ---- */
 app.post("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
-  const { name, email, username, password } = req.body || {};
+  const { name, email, username } = req.body || {};
   const nm = String(name || "").trim();
   const e = String(email || "").trim().toLowerCase();
   const un = String(username || "").trim().toLowerCase();
-  if (!nm || !e.includes("@")) return res.status(400).json({ error: "Enter a name and a valid email." });
-  if (!un || !password) return res.status(400).json({ error: "Enter a username and a password." });
+  if (!nm || !e.includes("@")) return res.status(400).json({ error: "Enter a full name and a valid email." });
+  if (!un) return res.status(400).json({ error: "Enter a username." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? OR lower(username)=? LIMIT 1", [e, un]);
   if (clash) return res.status(409).json({ error: "That email or username is already taken." });
-  const parts = nm.split(/\s+/);
-  const first = parts.shift() || ""; const last = parts.join(" ");
-  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'student','active')",
-    [nm, first, last, un, e, bcrypt.hashSync(String(password), 10)]);
-  res.json({ ok: true, msg: `Student ${nm} added. They can sign in now.`, ...(await adminState()) });
+
+  const token = crypto.randomBytes(24).toString("hex");
+  await dbmod.inviteStudent({ name: nm, email: e, username: un, token });
+
+  const link = `${req.protocol}://${req.get("host")}/register?token=${token}`;
+  const html = `<p>Hello ${nm},</p>
+    <p>You have been invited to the learning portal. Click the link below to confirm your details and set your password:</p>
+    <p><a href="${link}">${link}</a></p>
+    <p>If you did not expect this, you can ignore this email.</p>`;
+  const mail = await sendMail(e, "Complete your registration", html);
+
+  res.json({
+    ok: true,
+    sent: mail.sent,
+    link,
+    msg: mail.sent ? `Invitation email sent to ${e}.` : `Student invited, but email was not sent (${mail.reason}). Share this link:`,
+    ...(await adminState()),
+  });
 }));
 
 app.delete("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {

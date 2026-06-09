@@ -33,7 +33,8 @@ const TABLES = [
      email VARCHAR(190) NOT NULL UNIQUE,
      password_hash VARCHAR(255) NOT NULL,
      role VARCHAR(20) NOT NULL DEFAULT 'student',
-     status VARCHAR(20) NOT NULL DEFAULT 'active'
+     status VARCHAR(20) NOT NULL DEFAULT 'active',
+     reg_token VARCHAR(64)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS courses (
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
@@ -146,6 +147,7 @@ async function init() {
   for (const sql of TABLES) await q(sql);
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
   await ensureColumn("users", "phone", "VARCHAR(60) DEFAULT ''");
+  await ensureColumn("users", "reg_token", "VARCHAR(64)");
   await ensureColumn("courses", "instructor_id", "INT");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
@@ -210,6 +212,25 @@ async function usersMap() {
     };
   }
   return map;
+}
+async function inviteStudent({ name, email, username, token }) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts.shift() || "";
+  const last = parts.join(" ");
+  await q("INSERT INTO users (name,first_name,last_name,nickname,phone,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '','', ?,?, '', 'student','invited', ?)",
+    [name.trim(), first, last, username, email, token]);
+}
+async function getInvite(token) {
+  const [[u]] = await q("SELECT id, name, email, username FROM users WHERE reg_token=? AND status='invited'", [token]);
+  return u || null;
+}
+async function completeRegistration(token, name, passwordHash) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts.shift() || "";
+  const last = parts.join(" ");
+  const [r] = await q("UPDATE users SET name=?, first_name=?, last_name=?, password_hash=?, status='active', reg_token=NULL WHERE reg_token=? AND status='invited'",
+    [name.trim(), first, last, passwordHash, token]);
+  return r.affectedRows > 0;
 }
 async function updateStudentProfile(id, f) {
   const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
@@ -278,7 +299,8 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  updateCourse, deleteCourse, updateStudentProfile, instructorsList, addInstructor, updateInstructor, deleteInstructor,
+  updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration,
+  instructorsList, addInstructor, updateInstructor, deleteInstructor,
   addCourseInstructor, removeCourseInstructor,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

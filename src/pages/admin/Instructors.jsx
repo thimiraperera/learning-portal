@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Presentation, Mail, Phone, CheckCircle, AlertTriangle, Plus, ChevronRight } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
 
 const EMPTY = { name: "", title: "", email: "", phone: "", bio: "" };
@@ -11,9 +12,15 @@ export default function Instructors() {
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
   const [msg, setMsg] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const courseCount = (instrId) => Object.values(courses).filter((c) => c.instructors.some((i) => i.id === instrId)).length;
+
+  const pageCount = Math.max(1, Math.ceil(instructors.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = instructors.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const submit = async () => {
     const r = await addInstructor(form);
@@ -52,23 +59,27 @@ export default function Instructors() {
       {instructors.length === 0 ? (
         <div className="card"><div className="empty-state"><div className="empty-icon"><Presentation /></div><p>No instructors yet. Add your first one above.</p></div></div>
       ) : (
-        <div className="course-grid">
-          {instructors.map((i) => (
-            <button key={i.id} className="course-card" onClick={() => navigate(`/admin/instructors/${i.id}`)}>
-              <div className="cc-top">
-                <span className="cc-code">{i.title || "Instructor"}</span>
-                <span className="cc-sessions">{courseCount(i.id)} course{courseCount(i.id) === 1 ? "" : "s"}</span>
-              </div>
-              <h3>{i.name}</h3>
-              <div className="cc-blurb">{i.bio || "No bio yet."}</div>
-              <div className="cc-foot">
-                {i.email && <span className="cc-stat"><Mail /> {i.email}</span>}
-                {i.phone && <span className="cc-stat"><Phone /> {i.phone}</span>}
-                <span className="cc-enter">Manage <ChevronRight /></span>
-              </div>
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="course-grid">
+            {slice.map((i) => (
+              <button key={i.id} className="course-card" onClick={() => navigate(`/admin/instructors/${i.id}`)}>
+                <div className="cc-top">
+                  <span className="cc-code">{i.title || "Instructor"}</span>
+                  <span className="cc-sessions">{courseCount(i.id)} course{courseCount(i.id) === 1 ? "" : "s"}</span>
+                </div>
+                <h3>{i.name}</h3>
+                <div className="cc-blurb">{i.bio || "No bio yet."}</div>
+                <div className="cc-foot">
+                  {i.email && <span className="cc-stat"><Mail /> {i.email}</span>}
+                  {i.phone && <span className="cc-stat"><Phone /> {i.phone}</span>}
+                  <span className="cc-enter">Manage <ChevronRight /></span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+            pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={instructors.length} />
+        </>
       )}
     </Layout>
   );

@@ -361,6 +361,12 @@ select.form-control { cursor: pointer; }
 .locked-pill svg { width: 13px; height: 13px; }
 
 /* pagination */
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; flex-wrap: wrap; }
+.page-size { font-size: 13px; color: #6B7280; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+.page-size select { border: 1.5px solid var(--border); border-radius: 8px; padding: 5px 8px; font-family: inherit; font-size: 13px; color: var(--text); background: white; cursor: pointer; }
+.pagination-bar .pagination { margin-top: 0; margin-left: auto; }
+.invite-link { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.invite-link code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: var(--mono, monospace); font-size: 12px; color: var(--primary); }
 .pagination { display: flex; align-items: center; gap: 6px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
 .page-btn {
   display: inline-flex; align-items: center; gap: 4px;
