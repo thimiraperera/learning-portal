@@ -28,6 +28,7 @@ const TABLES = [
      first_name VARCHAR(255) DEFAULT '',
      last_name VARCHAR(255) DEFAULT '',
      nickname VARCHAR(255) DEFAULT '',
+     phone VARCHAR(60) DEFAULT '',
      username VARCHAR(190) NOT NULL UNIQUE,
      email VARCHAR(190) NOT NULL UNIQUE,
      password_hash VARCHAR(255) NOT NULL,
@@ -144,6 +145,7 @@ async function seedIfEmpty() {
 async function init() {
   for (const sql of TABLES) await q(sql);
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
+  await ensureColumn("users", "phone", "VARCHAR(60) DEFAULT ''");
   await ensureColumn("courses", "instructor_id", "INT");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
@@ -200,8 +202,19 @@ async function lockedCourses(ids) {
 async function usersMap() {
   const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id");
   const map = {};
-  for (const u of rows) map[u.email] = { id: u.id, name: displayName(u), username: u.username, role: u.role, status: u.status, enrolled: await enrolledIds(u.id) };
+  for (const u of rows) {
+    map[u.email] = {
+      id: u.id, name: displayName(u), username: u.username, email: u.email,
+      firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
+      role: u.role, status: u.status, enrolled: await enrolledIds(u.id),
+    };
+  }
   return map;
+}
+async function updateStudentProfile(id, f) {
+  const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
+  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, email=?, name=? WHERE id=? AND role='student'",
+    [f.firstName, f.lastName, f.nickname, f.phone, f.email, name || f.email, id]);
 }
 async function updateCourse(id, f) {
   await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=? WHERE id=?",
@@ -265,7 +278,7 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
-  updateCourse, deleteCourse, instructorsList, addInstructor, updateInstructor, deleteInstructor,
+  updateCourse, deleteCourse, updateStudentProfile, instructorsList, addInstructor, updateInstructor, deleteInstructor,
   addCourseInstructor, removeCourseInstructor,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

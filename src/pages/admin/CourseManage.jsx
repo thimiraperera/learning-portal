@@ -5,7 +5,6 @@ import {
   CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
-import StudentProfile from "../../components/StudentProfile.jsx";
 import { useStore } from "../../state.jsx";
 
 const BUCKETS = {
@@ -61,8 +60,8 @@ export default function CourseManage() {
 
         {tab === "details" && <DetailsTab id={id} c={c} store={store} navigate={navigate} />}
         {tab === "content" && <ContentManager id={id} c={c} store={store} />}
-        {tab === "students" && <StudentsTab id={id} store={store} />}
-        {tab === "instructor" && <InstructorTab id={id} c={c} store={store} />}
+        {tab === "students" && <StudentsTab id={id} store={store} navigate={navigate} />}
+        {tab === "instructor" && <InstructorTab id={id} c={c} store={store} navigate={navigate} />}
       </div>
     </Layout>
   );
@@ -103,10 +102,9 @@ function DetailsTab({ id, c, store, navigate }) {
   );
 }
 
-function StudentsTab({ id, store }) {
-  const { users, courses, toggleEnrol } = store;
+function StudentsTab({ id, store, navigate }) {
+  const { users, toggleEnrol } = store;
   const [qy, setQy] = useState("");
-  const [profile, setProfile] = useState(null);
 
   const ql = qy.trim().toLowerCase();
   const students = Object.entries(users)
@@ -115,11 +113,11 @@ function StudentsTab({ id, store }) {
   const enrolled = students.filter(([, s]) => s.enrolled.includes(id));
   const others = students.filter(([, s]) => !s.enrolled.includes(id));
 
-  const Row = ({ email, s, action }) => (
+  const Row = ({ s, action }) => (
     <div className="assigned-row">
-      <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} onClick={() => setProfile([email, s])}>
+      <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} onClick={() => navigate(`/admin/students/${s.id}`)}>
         <div className="ar-title">{s.name}</div>
-        <div className="ar-sub">{email}</div>
+        <div className="ar-sub">{s.email}</div>
       </button>
       {action}
     </div>
@@ -137,7 +135,7 @@ function StudentsTab({ id, store }) {
       {enrolled.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 18 }}>No enrolled students match.</p> : (
         <div style={{ marginBottom: 22 }}>
           {enrolled.map(([email, s]) => (
-            <Row key={email} email={email} s={s}
+            <Row key={email} s={s}
               action={<button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id)}><UserMinus /> Remove</button>} />
           ))}
         </div>
@@ -146,17 +144,15 @@ function StudentsTab({ id, store }) {
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ADD STUDENTS</div>
       {others.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>No other students match.</p> : (
         others.map(([email, s]) => (
-          <Row key={email} email={email} s={s}
+          <Row key={email} s={s}
             action={<button className="btn btn-outline btn-sm" onClick={() => toggleEnrol(email, id)}><UserPlus /> Add</button>} />
         ))
       )}
-
-      <StudentProfile student={profile} courses={courses} onClose={() => setProfile(null)} />
     </>
   );
 }
 
-function InstructorTab({ id, c, store }) {
+function InstructorTab({ id, c, store, navigate }) {
   const { instructors, addCourseInstructor, removeCourseInstructor } = store;
   const [sel, setSel] = useState("");
   const assignedIds = c.instructors.map((i) => i.id);
@@ -171,11 +167,14 @@ function InstructorTab({ id, c, store }) {
         <div style={{ marginBottom: 22 }}>
           {c.instructors.map((i) => (
             <div key={i.id} className="assigned-row">
-              <div className="mr-icon" style={{ width: 34, height: 34 }}><Presentation /></div>
-              <div className="ar-body">
-                <div className="ar-title">{i.name}</div>
-                {i.title && <div className="ar-sub">{i.title}</div>}
-              </div>
+              <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                onClick={() => navigate(`/admin/instructors/${i.id}`)}>
+                <span className="mr-icon" style={{ width: 34, height: 34 }}><Presentation /></span>
+                <span>
+                  <span className="ar-title" style={{ display: "block" }}>{i.name}</span>
+                  {i.title && <span className="ar-sub">{i.title}</span>}
+                </span>
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, i.id)}><UserMinus /> Remove</button>
             </div>
           ))}

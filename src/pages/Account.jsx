@@ -10,6 +10,7 @@ export default function Account() {
   const [lastName, setLastName] = useState(currentUser.lastName || "");
   const [nickname, setNickname] = useState(currentUser.nickname || "");
   const [email, setEmail] = useState(currentUser.email || "");
+  const [phone, setPhone] = useState(currentUser.phone || "");
   const [pmsg, setPmsg] = useState(null);
 
   const [cur, setCur] = useState("");
@@ -18,7 +19,7 @@ export default function Account() {
   const [wmsg, setWmsg] = useState(null);
 
   const saveProfile = async () => {
-    setPmsg(await updateAccount({ firstName, lastName, nickname, email }));
+    setPmsg(await updateAccount({ firstName, lastName, nickname, email, phone }));
   };
 
   const savePassword = async () => {
@@ -68,9 +69,15 @@ export default function Account() {
             <input className="form-control" value={nickname} onChange={(e) => setNickname(e.target.value)} />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <div className="field-row">
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Phone</label>
+              <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+94 ..." />
+            </div>
           </div>
 
           <button className="btn btn-primary" onClick={saveProfile}><Save /> Save profile</button>

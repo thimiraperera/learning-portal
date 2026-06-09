@@ -41,7 +41,7 @@ export default function InstructorManage() {
           ))}
         </div>
         {tab === "profile" && <ProfileTab instr={instr} store={store} navigate={navigate} />}
-        {tab === "courses" && <CoursesTab iid={iid} taught={taught} store={store} />}
+        {tab === "courses" && <CoursesTab iid={iid} taught={taught} store={store} navigate={navigate} />}
       </div>
     </Layout>
   );
@@ -87,7 +87,7 @@ function ProfileTab({ instr, store, navigate }) {
   );
 }
 
-function CoursesTab({ iid, taught, store }) {
+function CoursesTab({ iid, taught, store, navigate }) {
   const { courses, addCourseInstructor, removeCourseInstructor } = store;
   const [sel, setSel] = useState("");
   const taughtIds = taught.map(([id]) => id);
@@ -102,11 +102,14 @@ function CoursesTab({ iid, taught, store }) {
         <div style={{ marginBottom: 22 }}>
           {taught.map(([id, c]) => (
             <div key={id} className="assigned-row">
-              <div className="mr-icon" style={{ width: 34, height: 34 }}><BookOpen /></div>
-              <div className="ar-body">
-                <div className="ar-title">{c.title}</div>
-                <div className="ar-sub">{c.code}</div>
-              </div>
+              <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                onClick={() => navigate(`/admin/courses/${id}`)}>
+                <span className="mr-icon" style={{ width: 34, height: 34 }}><BookOpen /></span>
+                <span>
+                  <span className="ar-title" style={{ display: "block" }}>{c.title}</span>
+                  <span className="ar-sub">{c.code}</span>
+                </span>
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, iid)}><UserMinus /> Remove</button>
             </div>
           ))}

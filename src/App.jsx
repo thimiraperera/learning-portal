@@ -7,6 +7,7 @@ import MyCourses from "./pages/student/MyCourses.jsx";
 import CourseDetail from "./pages/student/CourseDetail.jsx";
 import Access from "./pages/admin/Access.jsx";
 import Students from "./pages/admin/Students.jsx";
+import StudentManage from "./pages/admin/StudentManage.jsx";
 import Courses from "./pages/admin/Courses.jsx";
 import CourseManage from "./pages/admin/CourseManage.jsx";
 import Instructors from "./pages/admin/Instructors.jsx";
@@ -55,6 +56,7 @@ function Routed() {
       {/* admin */}
       <Route path="/admin" element={<RequireRole role="admin"><Access /></RequireRole>} />
       <Route path="/admin/students" element={<RequireRole role="admin"><Students /></RequireRole>} />
+      <Route path="/admin/students/:id" element={<RequireRole role="admin"><StudentManage /></RequireRole>} />
       <Route path="/admin/courses" element={<RequireRole role="admin"><Courses /></RequireRole>} />
       <Route path="/admin/courses/:id" element={<RequireRole role="admin"><CourseManage /></RequireRole>} />
       <Route path="/admin/instructors" element={<RequireRole role="admin"><Instructors /></RequireRole>} />

@@ -110,6 +110,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/students", { method: "DELETE", token, body: { email } }));
   }, [token]);
 
+  const updateStudent = useCallback(async (id, fields) => {
+    try { applyAdmin(await api(`/admin/students/${id}`, { method: "PUT", token, body: fields })); return { ok: true, msg: "Student updated." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const addCourse = useCallback(async (title, code) => {
     try { applyAdmin(await api("/admin/courses", { method: "POST", token, body: { title, code } })); return true; }
     catch { return false; }
@@ -183,7 +188,7 @@ export function StoreProvider({ children }) {
   const value = {
     ready, currentUser, courses, users, locked, instructors, brand, smtp,
     login, logout, setBrand,
-    toggleEnrol, addStudent, removeStudent,
+    toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     updateAccount, changePassword, saveSmtp,
