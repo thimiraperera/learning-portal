@@ -13,9 +13,7 @@ app.use(express.json({ limit: "6mb" })); // logo data URLs can be large
 
 const dist = path.join(__dirname, "dist");
 
-/* ---- auth (in-memory bearer tokens; reset on restart) ---- */
-const tokens = new Map(); // token -> userId
-
+/* ---- auth (bearer tokens persisted in the DB so they survive restarts) ---- */
 function publicUser(u) {
   return {
     name: dbmod.displayName(u),
@@ -27,8 +25,8 @@ function publicUser(u) {
 function auth(req, res, next) {
   const h = req.headers.authorization || "";
   const t = h.startsWith("Bearer ") ? h.slice(7) : null;
-  const uid = t && tokens.get(t);
-  const u = uid && db.prepare("SELECT * FROM users WHERE id=?").get(uid);
+  const sess = t && db.prepare("SELECT user_id FROM sessions WHERE token=?").get(t);
+  const u = sess && db.prepare("SELECT * FROM users WHERE id=?").get(sess.user_id);
   if (!u) return res.status(401).json({ error: "Not authenticated" });
   req.user = u; req.token = t; next();
 }
@@ -51,11 +49,14 @@ app.post("/api/login", (req, res) => {
     return res.status(401).json({ error: "Incorrect username or password." });
   }
   const token = crypto.randomBytes(24).toString("hex");
-  tokens.set(token, u.id);
+  db.prepare("INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)").run(token, u.id, Date.now());
   res.json({ token, user: publicUser(u) });
 });
 
-app.post("/api/logout", auth, (req, res) => { tokens.delete(req.token); res.json({ ok: true }); });
+app.post("/api/logout", auth, (req, res) => {
+  db.prepare("DELETE FROM sessions WHERE token=?").run(req.token);
+  res.json({ ok: true });
+});
 
 /* ---- bootstrap: everything the logged-in user needs ---- */
 app.get("/api/bootstrap", auth, (req, res) => {

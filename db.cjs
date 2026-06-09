@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS enrolments (
   user_id INTEGER NOT NULL, course_id TEXT NOT NULL, PRIMARY KEY (user_id, course_id)
 );
 CREATE TABLE IF NOT EXISTS settings ( key TEXT PRIMARY KEY, value TEXT );
+CREATE TABLE IF NOT EXISTS sessions ( token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at INTEGER );
 `);
 
 /* ---- migrations for databases created before these columns existed ---- */

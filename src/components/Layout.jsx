@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut, GraduationCap, UserCog,
+  LayoutDashboard, BookOpen, KeyRound, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -14,17 +15,12 @@ function initials(name) {
 
 /* Sidebar nav differs by role; same chrome as invoice-workflow base.html */
 export default function Layout({ title, children }) {
-  const { currentUser, brand, logout } = useStore();
+  const { currentUser, courses, brand, logout } = useStore();
   const navigate = useNavigate();
   const isAdmin = currentUser?.role === "admin";
 
   const onLogout = () => { logout(); navigate("/login"); };
 
-  const studentNav = [
-    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-    { to: "/courses", label: "My Courses", icon: GraduationCap },
-    { to: "/account", label: "My Account", icon: UserCog },
-  ];
   const adminNav = [
     { to: "/admin", label: "Access Control", icon: KeyRound, end: true },
     { to: "/admin/students", label: "Students", icon: Users },
@@ -32,7 +28,6 @@ export default function Layout({ title, children }) {
     { to: "/admin/settings", label: "Settings", icon: Settings },
     { to: "/account", label: "My Account", icon: UserCog },
   ];
-  const items = isAdmin ? adminNav : studentNav;
 
   return (
     <>
@@ -58,12 +53,24 @@ export default function Layout({ title, children }) {
 
         <nav className="sidebar-nav">
           <div className="nav-label">Menu</div>
-          {items.map((it) => (
-            <NavLink key={it.to} to={it.to} end={it.end}
-              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-              <it.icon className="nav-icon" /> {it.label}
-            </NavLink>
-          ))}
+          {isAdmin
+            ? adminNav.map((it) => (
+                <NavLink key={it.to} to={it.to} end={it.end}
+                  className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                  <it.icon className="nav-icon" /> {it.label}
+                </NavLink>
+              ))
+            : (
+              <>
+                <NavLink to="/" end className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                  <LayoutDashboard className="nav-icon" /> Dashboard
+                </NavLink>
+                <CoursesAccordion courses={courses} enrolled={currentUser.enrolled} />
+                <NavLink to="/account" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                  <UserCog className="nav-icon" /> My Account
+                </NavLink>
+              </>
+            )}
         </nav>
 
         <div className="sidebar-footer">
@@ -81,5 +88,35 @@ export default function Layout({ title, children }) {
         <div className="page-content">{children}</div>
       </div>
     </>
+  );
+}
+
+/* Expandable "My Courses" in the sidebar: click to expand/collapse the
+   student's enrolled courses; each sub-item opens that course. */
+function CoursesAccordion({ courses, enrolled }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div>
+      <button type="button" className="nav-item" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <GraduationCap className="nav-icon" /> My Courses
+        <ChevronDown className={"nav-chevron" + (open ? " open" : "")} />
+      </button>
+      {open && (
+        <div className="nav-sub">
+          {enrolled.length === 0 && <div className="nav-sub-empty">No courses yet</div>}
+          {enrolled.map((id) => courses[id] && (
+            <NavLink key={id} to={`/courses/${id}`}
+              className={({ isActive }) => "nav-subitem" + (isActive ? " active" : "")}>
+              {courses[id].title}
+            </NavLink>
+          ))}
+          {enrolled.length > 0 && (
+            <NavLink to="/courses" end className={({ isActive }) => "nav-subitem nav-sub-all" + (isActive ? " active" : "")}>
+              View all courses
+            </NavLink>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
