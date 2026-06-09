@@ -29,6 +29,8 @@ const TABLES = [
      last_name VARCHAR(255) DEFAULT '',
      nickname VARCHAR(255) DEFAULT '',
      phone VARCHAR(60) DEFAULT '',
+     gender VARCHAR(20) DEFAULT '',
+     notes TEXT,
      username VARCHAR(190) NOT NULL UNIQUE,
      email VARCHAR(190) NOT NULL UNIQUE,
      password_hash VARCHAR(255) NOT NULL,
@@ -42,7 +44,8 @@ const TABLES = [
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS instructors (
      id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL,
-     email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT
+     email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT,
+     gender VARCHAR(20) DEFAULT '', notes TEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS course_instructors (
      course_id VARCHAR(32) NOT NULL, instructor_id INT NOT NULL,
@@ -148,6 +151,10 @@ async function init() {
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
   await ensureColumn("users", "phone", "VARCHAR(60) DEFAULT ''");
   await ensureColumn("users", "reg_token", "VARCHAR(64)");
+  await ensureColumn("users", "gender", "VARCHAR(20) DEFAULT ''");
+  await ensureColumn("users", "notes", "TEXT");
+  await ensureColumn("instructors", "gender", "VARCHAR(20) DEFAULT ''");
+  await ensureColumn("instructors", "notes", "TEXT");
   await ensureColumn("courses", "instructor_id", "INT");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
@@ -208,6 +215,7 @@ async function usersMap() {
     map[u.email] = {
       id: u.id, name: displayName(u), username: u.username, email: u.email,
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
+      gender: u.gender || "", notes: u.notes || "",
       role: u.role, status: u.status, enrolled: await enrolledIds(u.id),
     };
   }
@@ -234,8 +242,8 @@ async function completeRegistration(token, name, passwordHash) {
 }
 async function updateStudentProfile(id, f) {
   const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
-  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, email=?, name=? WHERE id=? AND role='student'",
-    [f.firstName, f.lastName, f.nickname, f.phone, f.email, name || f.email, id]);
+  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, notes=?, email=?, name=? WHERE id=? AND role='student'",
+    [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.email, name || f.email, id]);
 }
 async function updateCourse(id, f) {
   await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=? WHERE id=?",
@@ -243,14 +251,16 @@ async function updateCourse(id, f) {
 }
 
 async function instructorsList() {
-  const [rows] = await q("SELECT id, name, email, phone, title, bio FROM instructors ORDER BY name");
+  const [rows] = await q("SELECT id, name, email, phone, title, bio, gender, notes FROM instructors ORDER BY name");
   return rows;
 }
 async function addInstructor(f) {
-  await q("INSERT INTO instructors (name,email,phone,title,bio) VALUES (?,?,?,?,?)", [f.name, f.email, f.phone, f.title, f.bio]);
+  await q("INSERT INTO instructors (name,email,phone,title,bio,gender,notes) VALUES (?,?,?,?,?,?,?)",
+    [f.name, f.email, f.phone, f.title, f.bio, f.gender || "", f.notes || ""]);
 }
 async function updateInstructor(id, f) {
-  await q("UPDATE instructors SET name=?, email=?, phone=?, title=?, bio=? WHERE id=?", [f.name, f.email, f.phone, f.title, f.bio, id]);
+  await q("UPDATE instructors SET name=?, email=?, phone=?, title=?, bio=?, gender=?, notes=? WHERE id=?",
+    [f.name, f.email, f.phone, f.title, f.bio, f.gender || "", f.notes || "", id]);
 }
 async function deleteInstructor(id) {
   await q("DELETE FROM course_instructors WHERE instructor_id=?", [id]);

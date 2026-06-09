@@ -53,9 +53,11 @@ function ProfileTab({ instr, store, navigate }) {
   const [email, setEmail] = useState(instr.email || "");
   const [phone, setPhone] = useState(instr.phone || "");
   const [bio, setBio] = useState(instr.bio || "");
+  const [gender, setGender] = useState(instr.gender || "");
+  const [notes, setNotes] = useState(instr.notes || "");
   const [msg, setMsg] = useState(null);
 
-  const save = async () => setMsg(await store.updateInstructor(instr.id, { name, title, email, phone, bio }));
+  const save = async () => setMsg(await store.updateInstructor(instr.id, { name, title, email, phone, bio, gender, notes }));
   const remove = async () => {
     if (!window.confirm(`Remove ${instr.name}? They will be unassigned from all courses.`)) return;
     await store.deleteInstructor(instr.id);
@@ -77,8 +79,16 @@ function ProfileTab({ instr, store, navigate }) {
         <div className="form-group"><label className="form-label">Phone</label>
           <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
       </div>
+      <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
+        <select className="form-control" value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">Not specified</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select></div>
       <div className="form-group"><label className="form-label">Bio</label>
         <textarea className="form-control" rows="3" value={bio} onChange={(e) => setBio(e.target.value)} /></div>
+      <div className="form-group"><label className="form-label">Notes <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(admin only)</span></label>
+        <textarea className="form-control" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this instructor." /></div>
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove instructor</button>

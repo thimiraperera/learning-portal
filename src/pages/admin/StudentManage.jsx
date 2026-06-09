@@ -53,9 +53,11 @@ function ProfileTab({ id, s, store, navigate }) {
   const [nickname, setNickname] = useState(s.nickname || "");
   const [email, setEmail] = useState(s.email || "");
   const [phone, setPhone] = useState(s.phone || "");
+  const [gender, setGender] = useState(s.gender || "");
+  const [notes, setNotes] = useState(s.notes || "");
   const [msg, setMsg] = useState(null);
 
-  const save = async () => setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone }));
+  const save = async () => setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes }));
   const remove = async () => {
     if (!window.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`)) return;
     await store.removeStudent(s.email);
@@ -85,6 +87,14 @@ function ProfileTab({ id, s, store, navigate }) {
         <div className="form-group"><label className="form-label">Phone</label>
           <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+94 ..." /></div>
       </div>
+      <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
+        <select className="form-control" value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">Not specified</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select></div>
+      <div className="form-group"><label className="form-label">Notes <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(admin only)</span></label>
+        <textarea className="form-control" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this student." /></div>
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove student</button>

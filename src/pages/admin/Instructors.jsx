@@ -5,7 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
 
-const EMPTY = { name: "", title: "", email: "", phone: "", bio: "" };
+const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "" };
 
 export default function Instructors() {
   const { instructors, courses, addInstructor } = useStore();
@@ -51,6 +51,12 @@ export default function Instructors() {
           <div className="form-group"><label className="form-label">Phone</label>
             <input className="form-control" value={form.phone} onChange={set("phone")} placeholder="+94 ..." /></div>
         </div>
+        <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
+          <select className="form-control" value={form.gender} onChange={set("gender")}>
+            <option value="">Not specified</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select></div>
         <div className="form-group"><label className="form-label">Bio</label>
           <textarea className="form-control" rows="2" value={form.bio} onChange={set("bio")} placeholder="Short background and expertise." /></div>
         <button className="btn btn-primary" onClick={submit}><Plus /> Add instructor</button>

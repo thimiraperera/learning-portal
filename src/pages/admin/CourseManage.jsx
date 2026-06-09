@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, Phone,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
 
 const BUCKETS = {
@@ -105,48 +106,42 @@ function DetailsTab({ id, c, store, navigate }) {
 function StudentsTab({ id, store, navigate }) {
   const { users, toggleEnrol } = store;
   const [qy, setQy] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const ql = qy.trim().toLowerCase();
-  const students = Object.entries(users)
-    .filter(([, u]) => u.role === "student")
+  const enrolled = Object.entries(users)
+    .filter(([, u]) => u.role === "student" && u.enrolled.includes(id))
     .filter(([email, s]) => !ql || s.name.toLowerCase().includes(ql) || email.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
-  const enrolled = students.filter(([, s]) => s.enrolled.includes(id));
-  const others = students.filter(([, s]) => !s.enrolled.includes(id));
 
-  const Row = ({ s, action }) => (
-    <div className="assigned-row">
-      <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} onClick={() => navigate(`/admin/students/${s.id}`)}>
-        <div className="ar-title">{s.name}</div>
-        <div className="ar-sub">{s.email}</div>
-      </button>
-      {action}
-    </div>
-  );
+  const pageCount = Math.max(1, Math.ceil(enrolled.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = enrolled.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <>
       <div style={{ position: "relative", marginBottom: 16 }}>
         <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
-        <input className="form-control" style={{ paddingLeft: 36 }} placeholder="Search students by name, email or username"
-          value={qy} onChange={(e) => setQy(e.target.value)} />
+        <input className="form-control" style={{ paddingLeft: 36 }} placeholder="Search enrolled students by name, email or username"
+          value={qy} onChange={(e) => { setQy(e.target.value); setPage(1); }} />
       </div>
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROLLED ({enrolled.length})</div>
-      {enrolled.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 18 }}>No enrolled students match.</p> : (
-        <div style={{ marginBottom: 22 }}>
-          {enrolled.map(([email, s]) => (
-            <Row key={email} s={s}
-              action={<button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id)}><UserMinus /> Remove</button>} />
+      {enrolled.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>No enrolled students match.</p> : (
+        <>
+          {slice.map(([email, s]) => (
+            <div key={email} className="assigned-row">
+              <div className="ar-body">
+                <div className="ar-title">{s.name}</div>
+                <div className="ar-sub">{s.email}{s.phone ? ` · ${s.phone}` : ""}</div>
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View profile</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id)}><UserMinus /> Remove</button>
+            </div>
           ))}
-        </div>
-      )}
-
-      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ADD STUDENTS</div>
-      {others.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>No other students match.</p> : (
-        others.map(([email, s]) => (
-          <Row key={email} s={s}
-            action={<button className="btn btn-outline btn-sm" onClick={() => toggleEnrol(email, id)}><UserPlus /> Add</button>} />
-        ))
+          <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+            pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={enrolled.length} />
+        </>
       )}
     </>
   );
@@ -154,11 +149,12 @@ function StudentsTab({ id, store, navigate }) {
 
 function InstructorTab({ id, c, store, navigate }) {
   const { instructors, addCourseInstructor, removeCourseInstructor } = store;
-  const [sel, setSel] = useState("");
+  const [qy, setQy] = useState("");
   const assignedIds = c.instructors.map((i) => i.id);
-  const available = instructors.filter((i) => !assignedIds.includes(i.id));
-
-  const add = async () => { if (sel) { await addCourseInstructor(id, Number(sel)); setSel(""); } };
+  const ql = qy.trim().toLowerCase();
+  const available = instructors
+    .filter((i) => !assignedIds.includes(i.id))
+    .filter((i) => !ql || i.name.toLowerCase().includes(ql) || (i.title || "").toLowerCase().includes(ql) || (i.email || "").toLowerCase().includes(ql));
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -175,6 +171,7 @@ function InstructorTab({ id, c, store, navigate }) {
                   {i.title && <span className="ar-sub">{i.title}</span>}
                 </span>
               </button>
+              <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/instructors/${i.id}`)}><Eye /> View</button>
               <button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, i.id)}><UserMinus /> Remove</button>
             </div>
           ))}
@@ -184,16 +181,25 @@ function InstructorTab({ id, c, store, navigate }) {
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ADD INSTRUCTOR</div>
       {instructors.length === 0 ? (
         <p style={{ color: "#9CA3AF", fontSize: 13 }}>No instructors exist yet. Create them in the Instructors section.</p>
-      ) : available.length === 0 ? (
-        <p style={{ color: "#9CA3AF", fontSize: 13 }}>All instructors are already assigned.</p>
       ) : (
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <select className="form-control" value={sel} onChange={(e) => setSel(e.target.value)}>
-            <option value="">Select an instructor...</option>
-            {available.map((i) => <option key={i.id} value={i.id}>{i.name}{i.title ? ` (${i.title})` : ""}</option>)}
-          </select>
-          <button className="btn btn-primary" onClick={add}><Plus /> Add instructor</button>
-        </div>
+        <>
+          <div style={{ position: "relative", marginBottom: 12 }}>
+            <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+            <input className="form-control" style={{ paddingLeft: 36 }} placeholder="Search instructors to add"
+              value={qy} onChange={(e) => setQy(e.target.value)} />
+          </div>
+          {available.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>No matching instructors available.</p> : (
+            available.map((i) => (
+              <div key={i.id} className="assigned-row">
+                <div className="ar-body">
+                  <div className="ar-title">{i.name}</div>
+                  {i.title && <div className="ar-sub">{i.title}</div>}
+                </div>
+                <button className="btn btn-outline btn-sm" onClick={() => addCourseInstructor(id, i.id)}><UserPlus /> Add</button>
+              </div>
+            ))
+          )}
+        </>
       )}
     </div>
   );

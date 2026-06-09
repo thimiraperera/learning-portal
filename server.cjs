@@ -46,7 +46,7 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 async function publicUser(u) {
   return {
     name: dbmod.displayName(u),
-    firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
+    firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "", gender: u.gender || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
     enrolled: await dbmod.enrolledIds(u.id),
   };
@@ -171,6 +171,8 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
     lastName: String(req.body?.lastName || "").trim(),
     nickname: String(req.body?.nickname || "").trim(),
     phone: String(req.body?.phone || "").trim(),
+    gender: String(req.body?.gender || ""),
+    notes: String(req.body?.notes || ""),
     email,
   });
   res.json(await adminState());
@@ -238,6 +240,7 @@ app.post("/api/admin/instructors", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.addInstructor({
     name, email: String(req.body?.email || ""), phone: String(req.body?.phone || ""),
     title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
+    gender: String(req.body?.gender || ""), notes: String(req.body?.notes || ""),
   });
   res.json(await adminState());
 }));
@@ -248,6 +251,7 @@ app.put("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => 
   await dbmod.updateInstructor(req.params.id, {
     name, email: String(req.body?.email || ""), phone: String(req.body?.phone || ""),
     title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
+    gender: String(req.body?.gender || ""), notes: String(req.body?.notes || ""),
   });
   res.json(await adminState());
 }));
@@ -277,7 +281,7 @@ app.delete("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
 
 /* ---- account self-service (any signed-in user; username cannot change) ---- */
 app.put("/api/account", auth, wrap(async (req, res) => {
-  const { firstName, lastName, nickname, email, phone } = req.body || {};
+  const { firstName, lastName, nickname, email, phone, gender } = req.body || {};
   const e = String(email || "").trim().toLowerCase();
   if (!e.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? AND id<>?", [e, req.user.id]);
@@ -286,8 +290,9 @@ app.put("/api/account", auth, wrap(async (req, res) => {
   const last = String(lastName || "").trim();
   const nick = String(nickname || "").trim();
   const ph = String(phone || "").trim();
+  const g = String(gender || "");
   const name = nick || [first, last].filter(Boolean).join(" ") || req.user.username;
-  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, email=?, name=? WHERE id=?", [first, last, nick, ph, e, name, req.user.id]);
+  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, email=?, name=? WHERE id=?", [first, last, nick, ph, g, e, name, req.user.id]);
   const [[u]] = await q("SELECT * FROM users WHERE id=?", [req.user.id]);
   res.json({ user: await publicUser(u) });
 }));
