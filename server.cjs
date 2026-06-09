@@ -47,6 +47,7 @@ async function publicUser(u) {
   return {
     name: dbmod.displayName(u),
     firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "", gender: u.gender || "",
+    avatar: u.avatar || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
     enrolled: await dbmod.enrolledIds(u.id),
   };
@@ -266,16 +267,21 @@ app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   const { courseId, bucket, value } = req.body || {};
   const v = String(value || "").trim();
   if (!BUCKET[bucket] || !v) return res.status(400).json({ error: "Invalid item." });
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?, 'n/a','n/a')", [courseId, v]);
-  else if (bucket === "links") await q("INSERT INTO links (course_id,title,url) VALUES (?,?, '#')", [courseId, v]);
-  else await q("INSERT INTO materials (course_id,title,size,ext) VALUES (?,?, 'n/a','PDF')", [courseId, v]);
+  await dbmod.addCourseItem(courseId, bucket, v);
   res.json(await adminState());
 }));
 
 app.delete("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   const { courseId, bucket, itemId } = req.body || {};
   if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
-  await q(`DELETE FROM ${BUCKET[bucket]} WHERE id=? AND course_id=?`, [itemId, courseId]);
+  await dbmod.removeCourseItem(courseId, bucket, itemId);
+  res.json(await adminState());
+}));
+
+app.post("/api/admin/items/reorder", auth, adminOnly, wrap(async (req, res) => {
+  const { courseId, bucket, orderedIds } = req.body || {};
+  if (!BUCKET[bucket] || !Array.isArray(orderedIds)) return res.status(400).json({ error: "Invalid reorder." });
+  await dbmod.reorderItems(courseId, bucket, orderedIds);
   res.json(await adminState());
 }));
 
@@ -293,6 +299,7 @@ app.put("/api/account", auth, wrap(async (req, res) => {
   const g = String(gender || "");
   const name = nick || [first, last].filter(Boolean).join(" ") || req.user.username;
   await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, email=?, name=? WHERE id=?", [first, last, nick, ph, g, e, name, req.user.id]);
+  if (req.body?.avatar !== undefined) await q("UPDATE users SET avatar=? WHERE id=?", [String(req.body.avatar || ""), req.user.id]);
   const [[u]] = await q("SELECT * FROM users WHERE id=?", [req.user.id]);
   res.json({ user: await publicUser(u) });
 }));

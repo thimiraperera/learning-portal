@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Search, Eye, X } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
+import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function Students() {
@@ -50,8 +51,10 @@ export default function Students() {
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="card-title">Invite a student</div>
         <div className="card-subtitle">No password is set here. The student creates it from the registration link.</div>
+        <div className="form-group" style={{ marginBottom: 10 }}>
+          <input className="form-control" style={{ width: "100%" }} placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <input className="form-control" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
           <input className="form-control" placeholder="email@address.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className="form-control" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
           <button className="btn btn-primary" onClick={invite}><Mail /> Send invite</button>
@@ -83,10 +86,9 @@ export default function Students() {
             <option value="active">Active</option>
             <option value="invited">Invited</option>
           </select>
-          <select className="form-control" style={{ flex: "0 0 180px" }} value={course} onChange={(e) => { setCourse(e.target.value); resetPage(); }}>
-            <option value="all">All courses</option>
-            {Object.entries(courses).map(([cid, c]) => <option key={cid} value={cid}>{c.code} - {c.title}</option>)}
-          </select>
+          <SearchSelect style={{ flex: "0 0 200px" }} value={course} placeholder="All courses" allLabel="All courses"
+            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            onChange={(v) => { setCourse(v); resetPage(); }} />
           <select className="form-control" style={{ flex: "0 0 140px" }} value={gender} onChange={(e) => { setGender(e.target.value); resetPage(); }}>
             <option value="all">Any gender</option>
             <option value="Male">Male</option>

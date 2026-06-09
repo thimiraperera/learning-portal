@@ -156,6 +156,10 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/items", { method: "DELETE", token, body: { courseId: cid, bucket, itemId } }));
   }, [token]);
 
+  const reorderItems = useCallback(async (cid, bucket, orderedIds) => {
+    applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
+  }, [token]);
+
   const setBrand = useCallback(async (next) => {
     const saved = await api("/brand", { method: "PUT", token, body: { ...brand, ...next } });
     setBrandLocal({ ...DEFAULT_BRAND, ...saved });
@@ -189,7 +193,7 @@ export function StoreProvider({ children }) {
     ready, currentUser, courses, users, locked, instructors, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent, updateStudent,
-    addCourse, updateCourse, deleteCourse, addItem, removeItem,
+    addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     updateAccount, changePassword, saveSmtp,
   };

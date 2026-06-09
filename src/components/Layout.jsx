@@ -45,7 +45,9 @@ export default function Layout({ title, children }) {
         </div>
 
         <div className="sidebar-user">
-          <div className="avatar">{initials(currentUser.name)}</div>
+          {currentUser.avatar
+            ? <img src={currentUser.avatar} alt="" className="avatar avatar-img" />
+            : <div className="avatar">{initials(currentUser.name)}</div>}
           <div className="info">
             <div className="name">{currentUser.name}</div>
             <span className="role-badge">{isAdmin ? "Administrator" : "Student"}</span>

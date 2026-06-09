@@ -2,17 +2,11 @@ import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, Phone,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
-
-const BUCKETS = {
-  recordings: { label: "Recording", icon: PlayCircle },
-  links: { label: "Link", icon: Link2 },
-  materials: { label: "Material", icon: FileDown },
-};
 
 export default function CourseManage() {
   const { id } = useParams();
@@ -206,46 +200,62 @@ function InstructorTab({ id, c, store, navigate }) {
 }
 
 function ContentManager({ id, c, store }) {
-  const { addItem, removeItem } = store;
-  const [bucket, setBucket] = useState("recordings");
-  const [value, setValue] = useState("");
-
-  const attach = async () => { if (value.trim()) { await addItem(id, bucket, value); setValue(""); } };
-
-  const rows = [
-    ...c.recordings.map((m) => ({ bucket: "recordings", itemId: m.id, t: m.t })),
-    ...c.links.map((m) => ({ bucket: "links", itemId: m.id, t: m.t })),
-    ...c.materials.map((m) => ({ bucket: "materials", itemId: m.id, t: m.t })),
-  ];
-
   return (
     <>
-      {rows.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-          {rows.map((r) => {
-            const B = BUCKETS[r.bucket];
-            return (
-              <div key={r.bucket + r.itemId} className="media-row" style={{ marginBottom: 0, padding: "10px 14px" }}>
-                <div className="mr-icon" style={{ width: 34, height: 34 }}><B.icon /></div>
-                <div className="mr-body"><div className="mr-title" style={{ marginBottom: 0 }}>{r.t}</div></div>
-                <span className="badge badge-info">{B.label}</span>
-                <button className="icon-btn-plain" onClick={() => removeItem(id, r.bucket, r.itemId)}><X style={{ width: 16, height: 16 }} /></button>
-              </div>
-            );
-          })}
+      <p style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Add items to each category. Drag the handle to reorder within a category.</p>
+      <ContentSection id={id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title or URL" />
+      <ContentSection id={id} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title or URL" />
+      <ContentSection id={id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title or filename" />
+    </>
+  );
+}
+
+function ContentSection({ id, store, bucket, title, Icon, items, placeholder }) {
+  const { addItem, removeItem, reorderItems } = store;
+  const [value, setValue] = useState("");
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+
+  const add = async () => { if (value.trim()) { await addItem(id, bucket, value); setValue(""); } };
+
+  const onDrop = async (targetId) => {
+    setOverId(null);
+    if (dragId == null || dragId === targetId) { setDragId(null); return; }
+    const ids = items.map((it) => it.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setDragId(null);
+    await reorderItems(id, bucket, ids);
+  };
+
+  return (
+    <div className="content-section">
+      <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
+      {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
+        <div>
+          {items.map((it) => (
+            <div key={it.id}
+              className={"media-row drag-row" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
+              draggable
+              onDragStart={() => setDragId(it.id)}
+              onDragOver={(e) => { e.preventDefault(); setOverId(it.id); }}
+              onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
+              onDrop={() => onDrop(it.id)}
+              onDragEnd={() => { setDragId(null); setOverId(null); }}>
+              <span className="drag-handle"><GripVertical /></span>
+              <div className="mr-body"><div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div></div>
+              <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+            </div>
+          ))}
         </div>
       )}
-      <div className="toolbar" style={{ marginBottom: 0 }}>
-        <select className="form-control" value={bucket} onChange={(e) => setBucket(e.target.value)}>
-          <option value="recordings">Recording</option>
-          <option value="links">Link</option>
-          <option value="materials">Material</option>
-        </select>
-        <input className="form-control" placeholder="Title / URL" value={value}
-          onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") attach(); }} />
-        <button className="btn btn-ghost" onClick={attach}><Plus /> Attach</button>
+      <div className="toolbar" style={{ marginTop: 10, marginBottom: 0 }}>
+        <input className="form-control" placeholder={placeholder} value={value}
+          onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
       </div>
-    </>
+    </div>
   );
 }
 

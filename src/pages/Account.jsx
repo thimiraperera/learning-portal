@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { Save, CheckCircle, AlertTriangle, KeyRound, User } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, KeyRound, User, Upload, Trash2 } from "lucide-react";
 import Layout from "../components/Layout.jsx";
+import { resizeToWebp } from "../lib/image.js";
 import { useStore } from "../state.jsx";
+
+function initials(name) { return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase(); }
 
 export default function Account() {
   const { currentUser, updateAccount, changePassword } = useStore();
@@ -12,7 +15,15 @@ export default function Account() {
   const [email, setEmail] = useState(currentUser.email || "");
   const [phone, setPhone] = useState(currentUser.phone || "");
   const [gender, setGender] = useState(currentUser.gender || "");
+  const [avatar, setAvatar] = useState(currentUser.avatar || "");
   const [pmsg, setPmsg] = useState(null);
+
+  const onAvatar = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try { setAvatar(await resizeToWebp(f, 256)); setPmsg(null); }
+    catch (err) { setPmsg({ ok: false, msg: err.message }); }
+  };
 
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
@@ -20,7 +31,7 @@ export default function Account() {
   const [wmsg, setWmsg] = useState(null);
 
   const saveProfile = async () => {
-    setPmsg(await updateAccount({ firstName, lastName, nickname, email, phone, gender }));
+    setPmsg(await updateAccount({ firstName, lastName, nickname, email, phone, gender, avatar }));
   };
 
   const savePassword = async () => {
@@ -48,6 +59,20 @@ export default function Account() {
               {pmsg.ok ? <CheckCircle /> : <AlertTriangle />} {pmsg.msg}
             </div>
           )}
+
+          <div className="avatar-edit">
+            {avatar
+              ? <img src={avatar} alt="Profile" className="avatar-preview" />
+              : <div className="avatar-preview avatar-fallback">{initials(currentUser.name)}</div>}
+            <div>
+              <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+                <Upload /> Upload photo
+                <input type="file" accept="image/*" onChange={onAvatar} style={{ display: "none" }} />
+              </label>
+              {avatar && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setAvatar("")}><Trash2 /> Remove</button>}
+              <div style={{ fontSize: 11.5, color: "#9CA3AF", marginTop: 6 }}>Max 1 MB. Saved as WebP. Remember to Save profile.</div>
+            </div>
+          </div>
 
           <div className="form-group">
             <label className="form-label">Username</label>

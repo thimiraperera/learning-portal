@@ -31,6 +31,7 @@ const TABLES = [
      phone VARCHAR(60) DEFAULT '',
      gender VARCHAR(20) DEFAULT '',
      notes TEXT,
+     avatar LONGTEXT,
      username VARCHAR(190) NOT NULL UNIQUE,
      email VARCHAR(190) NOT NULL UNIQUE,
      password_hash VARCHAR(255) NOT NULL,
@@ -52,13 +53,13 @@ const TABLES = [
      PRIMARY KEY (course_id, instructor_id)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS recordings (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64)
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS links (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, url TEXT
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS materials (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16)
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS enrolments (
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, PRIMARY KEY (user_id, course_id)
@@ -153,8 +154,12 @@ async function init() {
   await ensureColumn("users", "reg_token", "VARCHAR(64)");
   await ensureColumn("users", "gender", "VARCHAR(20) DEFAULT ''");
   await ensureColumn("users", "notes", "TEXT");
+  await ensureColumn("users", "avatar", "LONGTEXT");
   await ensureColumn("instructors", "gender", "VARCHAR(20) DEFAULT ''");
   await ensureColumn("instructors", "notes", "TEXT");
+  await ensureColumn("recordings", "position", "INT DEFAULT 0");
+  await ensureColumn("links", "position", "INT DEFAULT 0");
+  await ensureColumn("materials", "position", "INT DEFAULT 0");
   await ensureColumn("courses", "instructor_id", "INT");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
@@ -185,9 +190,9 @@ async function courseFull(id) {
   if (!c) return null;
   const [instructors] = await q(
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
-  const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY id", [id]);
-  const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY id", [id]);
-  const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY id", [id]);
+  const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
+  const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
+  const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY position, id", [id]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
     instructors, instructor: instructors.map((x) => x.name).join(", "),
@@ -215,7 +220,7 @@ async function usersMap() {
     map[u.email] = {
       id: u.id, name: displayName(u), username: u.username, email: u.email,
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
-      gender: u.gender || "", notes: u.notes || "",
+      gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
       role: u.role, status: u.status, enrolled: await enrolledIds(u.id),
     };
   }
@@ -281,6 +286,24 @@ async function deleteCourse(id) {
   await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
+const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
+async function addCourseItem(courseId, bucket, value) {
+  const t = ITEM_TABLE[bucket];
+  if (!t) return;
+  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=?`, [courseId]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,title,date,length,position) VALUES (?,?, 'n/a','n/a', ?)", [courseId, value, p]);
+  else if (bucket === "links") await q("INSERT INTO links (course_id,title,url,position) VALUES (?,?, '#', ?)", [courseId, value, p]);
+  else await q("INSERT INTO materials (course_id,title,size,ext,position) VALUES (?,?, 'n/a','PDF', ?)", [courseId, value, p]);
+}
+async function removeCourseItem(courseId, bucket, itemId) {
+  const t = ITEM_TABLE[bucket];
+  if (t) await q(`DELETE FROM ${t} WHERE id=? AND course_id=?`, [itemId, courseId]);
+}
+async function reorderItems(courseId, bucket, orderedIds) {
+  const t = ITEM_TABLE[bucket];
+  if (!t || !Array.isArray(orderedIds)) return;
+  for (let i = 0; i < orderedIds.length; i++) await q(`UPDATE ${t} SET position=? WHERE id=? AND course_id=?`, [i, orderedIds[i], courseId]);
+}
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -312,5 +335,6 @@ module.exports = {
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   addCourseInstructor, removeCourseInstructor,
+  addCourseItem, removeCourseItem, reorderItems,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };
