@@ -17,6 +17,7 @@ node_modules
 # Environment
 .env
 .env.*
+!.env.example
 
 # Local database (lives on the server, never committed)
 *.sqlite
