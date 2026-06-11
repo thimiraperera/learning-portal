@@ -67,7 +67,7 @@ function ProfileTab({ instr, store, navigate }) {
   };
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
       <div className="field-row">
         <div className="form-group"><label className="form-label">Full name</label>
@@ -153,7 +153,7 @@ function CoursesTab({ iid, taught, store, navigate }) {
   const add = async () => { if (sel) { await addCourseInstructor(sel, iid); setSel(""); } };
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div>
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>TEACHING ({taught.length})</div>
       {taught.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 18 }}>Not assigned to any course yet.</p> : (
         <div style={{ marginBottom: 22 }}>

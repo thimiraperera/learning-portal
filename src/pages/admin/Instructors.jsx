@@ -66,24 +66,33 @@ export default function Instructors() {
         <div className="card-subtitle">Name is required; the rest is profile information shown across the portal.</div>
         {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
         <div className="form-group" style={{ marginBottom: 10 }}>
+          <label className="form-label">Full name <span className="req">*</span></label>
           <input className={"form-control" + (fieldErr.name ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Full name" value={form.name} onChange={set("name")} />
           {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}
         </div>
-        <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-start" }}>
+        <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
           <div style={{ flex: "1 1 180px" }}>
+            <label className="form-label">Title / role <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.title ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Title / role" value={form.title} onChange={set("title")} />
             {fieldErr.title && <div className="field-error">{fieldErr.title}</div>}
           </div>
           <div style={{ flex: "1 1 180px" }}>
+            <label className="form-label">Email <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="email@address.com" value={form.email} onChange={set("email")} />
             {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}
           </div>
-          <PhoneInput style={{ flex: "1 1 200px" }} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-          <select className="form-control" style={{ flex: "0 0 140px" }} value={form.gender} onChange={set("gender")}>
-            <option value="">Gender</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-          </select>
+          <div style={{ flex: "1 1 200px" }}>
+            <label className="form-label">Phone</label>
+            <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+          </div>
+          <div style={{ flex: "0 0 140px" }}>
+            <label className="form-label">Gender</label>
+            <select className="form-control" value={form.gender} onChange={set("gender")}>
+              <option value="">Not set</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
           <button className="btn btn-primary" onClick={submit}><Plus /> Add instructor</button>
         </div>
         <label className="check-row" style={{ marginTop: 12 }}>

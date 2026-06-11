@@ -98,22 +98,22 @@ export default function Register() {
             <form onSubmit={submit}>
               <div className="reg-row">
                 <div>
-                  <label>First name</label>
+                  <label>First name <span className="req">*</span></label>
                   <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" />
                 </div>
                 <div>
-                  <label>Last name</label>
+                  <label>Last name <span className="req">*</span></label>
                   <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" />
                 </div>
               </div>
 
-              <label>Full name <span className="reg-hint">(used on certificates)</span></label>
+              <label>Full name <span className="req">*</span> <span className="reg-hint">(used on certificates)</span></label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" />
 
-              <label>Phone</label>
+              <label>Phone <span className="req">*</span></label>
               <PhoneInput value={phone} onChange={setPhone} />
 
-              <label>Gender</label>
+              <label>Gender <span className="req">*</span></label>
               <select value={gender} onChange={(e) => setGender(e.target.value)}>
                 <option value="">Select...</option>
                 <option value="Male">Male</option>
@@ -126,10 +126,10 @@ export default function Register() {
               <label>Username <span className="reg-hint">(cannot be changed)</span></label>
               <input type="text" value={invite.username} readOnly disabled />
 
-              <label>Password</label>
+              <label>Password <span className="req">*</span></label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
 
-              <label>Confirm password</label>
+              <label>Confirm password <span className="req">*</span></label>
               <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" autoComplete="new-password" />
 
               {hcaptcha.enabled && hcaptcha.siteKey && (

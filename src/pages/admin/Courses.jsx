@@ -91,11 +91,11 @@ export default function Courses() {
         {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
         <div className="field-row">
-          <div className="form-group"><label className="form-label">Title</label>
+          <div className="form-group"><label className="form-label">Title <span className="req">*</span></label>
             <input className={"form-control" + (errors.title ? " is-invalid" : "")} placeholder="Course title" value={form.title} onChange={set("title")} />
             {errors.title && <div className="field-error">{errors.title}</div>}</div>
           <div className="field-row">
-            <div className="form-group"><label className="form-label">Code</label>
+            <div className="form-group"><label className="form-label">Code <span className="req">*</span></label>
               <input className={"form-control" + (errors.code ? " is-invalid" : "")} placeholder="EQ-101" value={form.code} onChange={set("code")} />
               {errors.code && <div className="field-error">{errors.code}</div>}</div>
             <div className="form-group"><label className="form-label">Sessions</label>
@@ -112,7 +112,7 @@ export default function Courses() {
               <option value="">Default ({defaultName})</option>
               {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select></div>
-          <div className="form-group"><label className="form-label">Instructors <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(at least one)</span></label>
+          <div className="form-group"><label className="form-label">Instructors <span className="req">*</span> <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(at least one)</span></label>
             {instructors.length === 0
               ? <input className="form-control locked-input" value="No instructors created yet" readOnly disabled />
               : <SearchSelect value={instrSel} placeholder="Add an instructor..." showAll={false}

@@ -45,7 +45,8 @@ export default function Settings() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 24, alignItems: "start" }}>
+      <div className="settings-grid">
+        <div className="settings-col">
         {/* Branding form */}
         <div className="card">
           <div className="card-title">Branding</div>
@@ -82,6 +83,10 @@ export default function Settings() {
           <button className="btn btn-primary" onClick={save}><Save /> Save Settings</button>
         </div>
 
+        <SmtpCard smtp={smtp} saveSmtp={saveSmtp} />
+        </div>
+
+        <div className="settings-col">
         {/* Live preview */}
         <div className="card">
           <div className="card-title">Sidebar preview</div>
@@ -101,11 +106,11 @@ export default function Settings() {
             Use a transparent PNG/SVG for the cleanest result on the dark sidebar.
           </div>
         </div>
-      </div>
 
-      <SmtpCard smtp={smtp} saveSmtp={saveSmtp} />
-      <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
-      <div style={{ marginTop: 24 }}><TwoFactor /></div>
+        <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
+        <TwoFactor />
+        </div>
+      </div>
     </Layout>
   );
 }
