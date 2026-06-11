@@ -182,8 +182,8 @@ export function StoreProvider({ children }) {
     try { const d = await api("/admin/certificates", { method: "POST", token, body: { studentId, courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const bulkIssueCertificates = useCallback(async (courseId, studentIds) => {
-    try { const d = await api("/admin/certificates/bulk", { method: "POST", token, body: { courseId, studentIds } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
+  const issueManyCertificates = useCallback(async (pairs) => {
+    try { const d = await api("/admin/certificates/issue-many", { method: "POST", token, body: { pairs } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const unlockCertificate = useCallback(async (id) => {
@@ -235,7 +235,7 @@ export function StoreProvider({ children }) {
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
-    issueCertificate, bulkIssueCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
+    issueCertificate, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

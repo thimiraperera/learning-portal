@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Award, Plus, Eye, Download, Send, LockOpen, CheckCircle, AlertTriangle, Search } from "lucide-react";
+import { Award, Plus, Eye, Download, Send, LockOpen, CheckCircle, AlertTriangle, Search, X } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -8,175 +8,139 @@ import { useStore } from "../../state.jsx";
 function fmt(ts) { return new Date(Number(ts) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
 
 export default function Certificates() {
-  const store = useStore();
-  const { users, courses, certificates, issueCertificate, bulkIssueCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
+  const { users, courses, certificates, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = useStore();
 
-  const [student, setStudent] = useState("all");
-  const [course, setCourse] = useState("all");
-  const [bulkCourse, setBulkCourse] = useState("all");
-  const [bulkSelected, setBulkSelected] = useState(new Set());
-  const [bulkSearch, setBulkSearch] = useState("");
+  const [courseF, setCourseF] = useState("all");
+  const [statusF, setStatusF] = useState("all");
+  const [qy, setQy] = useState("");
+  const [selected, setSelected] = useState(new Set());
   const [msg, setMsg] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const hasCert = (studentId, courseId) => certificates.some((c) => c.student_id === studentId && c.course_id === courseId);
+  // Build one row per student-course pairing (enrolled courses + any issued certificate).
+  const rows = [];
+  const seen = new Set();
+  for (const u of Object.values(users)) {
+    if (u.role !== "student") continue;
+    for (const cid of u.enrolled) {
+      if (!courses[cid]) continue;
+      const cert = certificates.find((c) => c.student_id === u.id && c.course_id === cid) || null;
+      rows.push({ key: `${u.id}-${cid}`, studentId: u.id, name: u.name, email: u.email, courseId: cid, code: courses[cid].code, title: courses[cid].title, cert });
+      seen.add(`${u.id}-${cid}`);
+    }
+  }
+  for (const c of certificates) {
+    const k = `${c.student_id}-${c.course_id}`;
+    if (!seen.has(k)) rows.push({ key: k, studentId: c.student_id, name: c.studentName, email: c.studentEmail, courseId: c.course_id, code: c.courseCode, title: c.courseTitle, cert: c });
+  }
 
-  const studentOptions = Object.values(users).filter((u) => u.role === "student").map((u) => ({ value: String(u.id), label: `${u.name} · ${u.email}` }));
-  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
+  const ql = qy.trim().toLowerCase();
+  const filtered = rows
+    .filter((r) => courseF === "all" || r.courseId === courseF)
+    .filter((r) => statusF === "all" || (statusF === "issued" ? r.cert : !r.cert))
+    .filter((r) => !ql || r.name.toLowerCase().includes(ql) || r.title.toLowerCase().includes(ql) || r.code.toLowerCase().includes(ql));
 
-  // Course options for the picked student: their enrolled courses without a certificate yet.
-  const selStudent = student !== "all" ? Object.values(users).find((u) => String(u.id) === student) : null;
-  const studentCourseOptions = selStudent
-    ? selStudent.enrolled.filter((cid) => courses[cid] && !hasCert(selStudent.id, cid)).map((cid) => ({ value: cid, label: `${courses[cid].code} - ${courses[cid].title}` }))
-    : [];
+  const selectableKeys = filtered.filter((r) => !r.cert).map((r) => r.key);
+  const allChecked = selectableKeys.length > 0 && selectableKeys.every((k) => selected.has(k));
 
-  // All students enrolled in the picked course (certified ones are shown but not selectable).
-  const bulkStudents = bulkCourse !== "all"
-    ? Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(bulkCourse))
-    : [];
-  const eligibleIds = (cid) => Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(cid) && !hasCert(u.id, cid)).map((u) => u.id);
-  const bq = bulkSearch.trim().toLowerCase();
-  const bulkVisible = bulkStudents.filter((u) => !bq || u.name.toLowerCase().includes(bq) || u.email.toLowerCase().includes(bq));
-  const eligibleVisible = bulkVisible.filter((u) => !hasCert(u.id, bulkCourse));
-  const allEligibleChecked = eligibleVisible.length > 0 && eligibleVisible.every((u) => bulkSelected.has(u.id));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
-  const onStudent = (v) => { setStudent(v); setCourse("all"); };
-
-  // Selecting a course pre-checks every eligible student.
-  const onBulkCourse = (v) => {
-    setBulkCourse(v);
-    setBulkSearch("");
-    setBulkSelected(v === "all" ? new Set() : new Set(eligibleIds(v)));
-  };
-  const toggleStudent = (id) => setBulkSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setBulkSelected((s) => {
+  const reset = () => setPage(1);
+  const toggle = (k) => setSelected((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleAll = () => setSelected((s) => {
     const n = new Set(s);
-    if (allEligibleChecked) eligibleVisible.forEach((u) => n.delete(u.id));
-    else eligibleVisible.forEach((u) => n.add(u.id));
+    if (allChecked) selectableKeys.forEach((k) => n.delete(k));
+    else selectableKeys.forEach((k) => n.add(k));
     return n;
   });
 
   const issue = async () => {
-    if (student === "all" || course === "all") { setMsg({ ok: false, msg: "Pick a student and a course." }); return; }
-    const r = await issueCertificate(Number(student), course);
+    const pairs = filtered.filter((r) => !r.cert && selected.has(r.key)).map((r) => ({ studentId: r.studentId, courseId: r.courseId }));
+    if (pairs.length === 0) { setMsg({ ok: false, msg: "Select at least one student to certify." }); return; }
+    const r = await issueManyCertificates(pairs);
     setMsg(r);
-    if (r.ok) { setStudent("all"); setCourse("all"); }
-  };
-
-  const bulkIssue = async () => {
-    if (bulkCourse === "all" || bulkSelected.size === 0) { setMsg({ ok: false, msg: "Pick a course and at least one student." }); return; }
-    const r = await bulkIssueCertificates(bulkCourse, [...bulkSelected]);
-    setMsg(r);
-    if (r.ok) setBulkSelected(new Set());
+    if (r.ok) setSelected(new Set());
   };
 
   const act = async (fn) => { try { const r = await fn(); if (r) setMsg(r); } catch (e) { setMsg({ ok: false, msg: e.message }); } };
 
-  const pageCount = Math.max(1, Math.ceil(certificates.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const slice = certificates.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  const statusBadge = (c) => {
-    if (c.unlocked) return <span className="badge badge-verify">Unlocked</span>;
-    if (c.downloaded) return <span className="badge badge-muted">Downloaded</span>;
+  const statusBadge = (cert) => {
+    if (!cert) return <span className="badge badge-pending">Not issued</span>;
+    if (cert.unlocked) return <span className="badge badge-verify">Unlocked</span>;
+    if (cert.downloaded) return <span className="badge badge-muted">Downloaded</span>;
     return <span className="badge badge-accepted">Available</span>;
   };
+
+  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
+  const activeFilters = (courseF !== "all") + (statusF !== "all") + (ql ? 1 : 0);
 
   return (
     <Layout title="Certificates">
       <div className="page-hero">
         <h1>Certificates</h1>
-        <p>Issue course-completion certificates, email them, and manage student downloads.</p>
+        <p>Filter students, tick who to certify, and issue. Students download each certificate once; use Unlock for a one-time re-download.</p>
       </div>
 
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-title">Issue certificates</div>
-        <div className="card-subtitle">Pick a course, then tick the students to certify. Eligible students are pre-ticked.</div>
-        <div className="toolbar" style={{ marginBottom: bulkCourse !== "all" ? 14 : 0 }}>
-          <SearchSelect style={{ flex: "1 1 260px" }} value={bulkCourse} placeholder="Select course" allLabel="Select course"
-            options={courseOptions} onChange={onBulkCourse} />
-          {bulkCourse !== "all" && bulkStudents.length > 0 && (
-            <div style={{ position: "relative", flex: "1 1 200px" }}>
-              <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
-              <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search students" value={bulkSearch} onChange={(e) => setBulkSearch(e.target.value)} />
-            </div>
-          )}
-          <button className="btn btn-primary" onClick={bulkIssue} disabled={bulkSelected.size === 0}>
-            <Plus /> Issue {bulkSelected.size} certificate{bulkSelected.size === 1 ? "" : "s"}
+      <div className="card">
+        <div className="toolbar" style={{ marginBottom: 14 }}>
+          <SearchSelect style={{ flex: "1 1 220px" }} value={courseF} placeholder="All courses" allLabel="All courses"
+            options={courseOptions} onChange={(v) => { setCourseF(v); reset(); }} />
+          <select className="form-control" style={{ flex: "0 0 150px" }} value={statusF} onChange={(e) => { setStatusF(e.target.value); reset(); }}>
+            <option value="all">All statuses</option>
+            <option value="issued">Issued</option>
+            <option value="notissued">Not issued</option>
+          </select>
+          <div style={{ position: "relative", flex: "1 1 200px" }}>
+            <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+            <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student or course" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
+          </div>
+          {activeFilters > 0 && <button className="btn btn-ghost btn-sm" onClick={() => { setCourseF("all"); setStatusF("all"); setQy(""); reset(); }}><X /> Clear</button>}
+          <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
+            <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
           </button>
         </div>
+        <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 14 }}>{filtered.length} row{filtered.length === 1 ? "" : "s"}</div>
 
-        {bulkCourse !== "all" && (
-          bulkStudents.length === 0 ? (
-            <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students are enrolled in this course.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: 44, textAlign: "center" }}>
-                      <input type="checkbox" checked={allEligibleChecked} disabled={eligibleVisible.length === 0} onChange={toggleAll}
-                        style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: eligibleVisible.length ? "pointer" : "default" }} />
-                    </th>
-                    <th>Student</th><th>Email</th><th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkVisible.map((u) => {
-                    const certified = hasCert(u.id, bulkCourse);
-                    return (
-                      <tr key={u.id} style={{ opacity: certified ? 0.6 : 1 }}>
-                        <td style={{ textAlign: "center" }}>
-                          <input type="checkbox" disabled={certified} checked={certified ? false : bulkSelected.has(u.id)} onChange={() => toggleStudent(u.id)}
-                            style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: certified ? "default" : "pointer" }} />
-                        </td>
-                        <td style={{ fontWeight: 700, color: "var(--title)" }}>{u.name}</td>
-                        <td style={{ color: "#6B7280" }}>{u.email}</td>
-                        <td>{certified ? <span className="badge badge-muted">Already issued</span> : <span className="badge badge-accepted">Eligible</span>}</td>
-                      </tr>
-                    );
-                  })}
-                  {bulkVisible.length === 0 && <tr><td colSpan="4" style={{ color: "#9CA3AF" }}>No students match.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )
-        )}
-      </div>
-
-      <div className="card">
-        <div className="alert alert-warning" style={{ marginBottom: 18 }}>
-          <AlertTriangle />
-          <span>Students can download each certificate <strong>once</strong>. Use <strong>Unlock</strong> to grant a one-time re-download in an emergency.</span>
-        </div>
-
-        {certificates.length === 0 ? (
-          <div className="empty-state"><div className="empty-icon"><Award /></div><p>No certificates issued yet.</p></div>
+        {filtered.length === 0 ? (
+          <div className="empty-state"><div className="empty-icon"><Award /></div><p>No students match these filters.</p></div>
         ) : (
           <>
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Certificate</th><th>Student</th><th>Course</th><th>Issued</th><th>Status</th><th></th></tr>
+                  <tr>
+                    <th style={{ width: 44, textAlign: "center" }}>
+                      <input type="checkbox" checked={allChecked} disabled={selectableKeys.length === 0} onChange={toggleAll}
+                        style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: selectableKeys.length ? "pointer" : "default" }} />
+                    </th>
+                    <th>Student</th><th>Course</th><th>Status</th><th></th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {slice.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ fontFamily: "monospace", fontSize: 12 }}>{c.cert_no}</td>
-                      <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{c.studentName}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{c.studentEmail}</div></td>
-                      <td>{c.courseCode}</td>
-                      <td style={{ color: "#6B7280", fontSize: 13 }}>{fmt(c.issued_at)}</td>
-                      <td>{statusBadge(c)}</td>
+                  {slice.map((r) => (
+                    <tr key={r.key} style={{ opacity: r.cert ? 0.85 : 1 }}>
+                      <td style={{ textAlign: "center" }}>
+                        {r.cert
+                          ? <CheckCircle style={{ width: 15, height: 15, color: "#16A34A" }} />
+                          : <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: "pointer" }} />}
+                      </td>
+                      <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
+                      <td><span className="cc-code">{r.code}</span> <span style={{ color: "#6B7280", fontSize: 13 }}>{r.title}</span></td>
+                      <td>{statusBadge(r.cert)}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmt(r.cert.issued_at)}</div>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(c.id))}><Eye style={{ width: 16, height: 16 }} /></button>
-                        <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(c.id, c.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
-                        <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(c.id))}><Send style={{ width: 16, height: 16 }} /></button>
-                        {c.downloaded && !c.unlocked && (
-                          <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(c.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
-                        )}
+                        {r.cert && <>
+                          <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(r.cert.id))}><Eye style={{ width: 16, height: 16 }} /></button>
+                          <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(r.cert.id, r.cert.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
+                          <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(r.cert.id))}><Send style={{ width: 16, height: 16 }} /></button>
+                          {r.cert.downloaded && !r.cert.unlocked && (
+                            <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(r.cert.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
+                          )}
+                        </>}
                       </td>
                     </tr>
                   ))}
@@ -184,7 +148,7 @@ export default function Certificates() {
               </table>
             </div>
             <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
-              pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={certificates.length} />
+              pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={filtered.length} />
           </>
         )}
       </div>

@@ -313,6 +313,24 @@ app.post("/api/admin/certificates/bulk", auth, adminOnly, wrap(async (req, res) 
   res.json({ ok: true, msg: `Issued ${issued} new certificate${issued === 1 ? "" : "s"} for ${course.title}.`, ...(await adminState()) });
 }));
 
+app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req, res) => {
+  const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
+  let issued = 0;
+  for (const p of pairs) {
+    const sid = Number(p.studentId);
+    const cid = String(p.courseId || "");
+    const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [sid]);
+    const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
+    if (!stu || !course || await dbmod.certExists(sid, cid)) continue;
+    const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+    await dbmod.issueCertificate(sid, cid, certNo, Date.now());
+    await sendMail(stu.email, "Your certificate has been issued",
+      `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
+    issued++;
+  }
+  res.json({ ok: true, msg: `Issued ${issued} certificate${issued === 1 ? "" : "s"}.`, ...(await adminState()) });
+}));
+
 app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert) return res.status(404).json({ error: "Certificate not found." });
