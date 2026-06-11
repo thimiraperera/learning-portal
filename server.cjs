@@ -9,7 +9,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const dbmod = require("./db.cjs");
-const { generateCertificate } = require("./cert.cjs");
+const { generateCertificate, templatesList, defaultTemplateId } = require("./cert.cjs");
 const { q } = dbmod;
 
 const app = express();
@@ -43,7 +43,7 @@ async function certPdf(cert) {
     brandName: brand.name, studentName: cert.studentName,
     courseTitle: cert.courseTitle, courseCode: cert.courseCode,
     certNo: cert.cert_no, issuedAt: cert.issued_at,
-  });
+  }, cert.certTemplate);
 }
 
 /* small async wrapper so thrown errors become 500s instead of hanging.
@@ -77,7 +77,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList() };
 }
 
 /* ---- public ---- */
@@ -122,10 +122,10 @@ app.post("/api/register/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient() });
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), ...(await adminState()) });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), brand: await dbmod.getBrand() });
   }
 }));
 
@@ -164,6 +164,7 @@ app.delete("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
   const [[u]] = await q("SELECT id FROM users WHERE lower(email)=? AND role='student'", [e]);
   if (u) {
     await q("DELETE FROM enrolments WHERE user_id=?", [u.id]);
+    await q("DELETE FROM exam_attempts WHERE user_id=?", [u.id]);
     await q("DELETE FROM users WHERE id=?", [u.id]);
   }
   res.json(await adminState());
@@ -220,8 +221,12 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   const code = String(req.body?.code || "").trim().toUpperCase();
   const title = String(req.body?.title || "").trim();
   if (!code || !title) return res.status(400).json({ error: "Code and title are required." });
+  const certTemplate = String(req.body?.certTemplate || "");
+  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
+    return res.status(400).json({ error: "Unknown certificate template." });
+  }
   await dbmod.updateCourse(id, {
-    code, title,
+    code, title, certTemplate,
     instructor: String(req.body?.instructor || ""),
     blurb: String(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
@@ -289,6 +294,12 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [sid]);
     const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
     if (!stu || !course || await dbmod.certExists(sid, cid)) continue;
+    // First issue for a course locks in the default template so future
+    // certificates for that course keep using the same design.
+    if (!course.cert_template && defaultTemplateId()) {
+      course.cert_template = defaultTemplateId();
+      await q("UPDATE courses SET cert_template=? WHERE id=?", [course.cert_template, cid]);
+    }
     const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
     await dbmod.issueCertificate(sid, cid, certNo, Date.now());
     await sendMail(stu.email, "Your certificate has been issued",
@@ -332,6 +343,249 @@ app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${cert.cert_no}.pdf"`);
   res.send(pdf);
+}));
+
+/* ---- certificate templates (admin) ---- */
+app.get("/api/admin/cert-templates", auth, adminOnly, wrap(async (_req, res) => {
+  res.json({ templates: templatesList(), defaultId: defaultTemplateId() });
+}));
+
+app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (req, res) => {
+  if (!templatesList().some((t) => t.id === req.params.id)) return res.status(404).json({ error: "Template not found." });
+  const brand = await dbmod.getBrand();
+  const pdf = await generateCertificate({
+    brandName: brand.name, studentName: "Student Name",
+    courseTitle: "Sample Course Title", courseCode: "SC-100",
+    certNo: "CERT-SAMPLE", issuedAt: Date.now(),
+  }, req.params.id);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="template-${req.params.id}.pdf"`);
+  res.send(pdf);
+}));
+
+/* ---- exams (admin) ---- */
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* Minimal CSV reader that understands quoted fields. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  const s = String(text || "");
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && s[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some((c) => c.trim() !== "")) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.some((c) => c.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F"];
+function questionsFromCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { questions: [], errors: ["The file has no data rows."] };
+  const head = rows[0].map((h) => h.trim().toLowerCase());
+  const qi = head.indexOf("question");
+  const ci = head.indexOf("correct");
+  const oi = OPTION_LETTERS.map((L) => head.indexOf("option_" + L.toLowerCase()));
+  if (qi === -1 || ci === -1 || oi[0] === -1 || oi[1] === -1) {
+    return { questions: [], errors: ["The header row must contain: question, option_a, option_b (up to option_f) and correct."] };
+  }
+  const questions = [], errors = [];
+  rows.slice(1).forEach((r, idx) => {
+    const line = idx + 2;
+    const question = (r[qi] || "").trim();
+    const options = oi.filter((i) => i !== -1).map((i) => (r[i] || "").trim()).filter(Boolean);
+    const correct = OPTION_LETTERS.indexOf((r[ci] || "").trim().toUpperCase());
+    if (!question) { errors.push(`Line ${line}: question is empty.`); return; }
+    if (options.length < 2) { errors.push(`Line ${line}: at least two options are required.`); return; }
+    if (correct === -1 || correct >= options.length) { errors.push(`Line ${line}: correct must be a letter between A and ${OPTION_LETTERS[options.length - 1]}.`); return; }
+    questions.push({ question, options, correct });
+  });
+  return { questions, errors };
+}
+
+function cleanQuestion(body) {
+  const question = String(body?.question || "").trim();
+  const options = (Array.isArray(body?.options) ? body.options : []).map((o) => String(o || "").trim()).filter(Boolean);
+  const correct = Number(body?.correct);
+  if (!question) return { error: "Enter the question text." };
+  if (options.length < 2 || options.length > 6) return { error: "Provide between 2 and 6 answer options." };
+  if (!Number.isInteger(correct) || correct < 0 || correct >= options.length) return { error: "Mark which option is correct." };
+  return { question, options, correct };
+}
+
+app.post("/api/admin/exams", auth, adminOnly, wrap(async (req, res) => {
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Enter an exam title." });
+  const courseId = String(req.body?.courseId || "");
+  if (courseId) {
+    const [[c]] = await q("SELECT id FROM courses WHERE id=?", [courseId]);
+    if (!c) return res.status(400).json({ error: "Pick a valid course." });
+  }
+  const [r] = await q("INSERT INTO exams (course_id,title,question_count,time_limit,created_at) VALUES (?,?,0,0,?)", [courseId, title, Date.now()]);
+  res.json({ ok: true, examId: r.insertId, ...(await adminState()) });
+}));
+
+app.get("/api/admin/exams/:id", auth, adminOnly, wrap(async (req, res) => {
+  const exam = await dbmod.examFull(Number(req.params.id));
+  if (!exam) return res.status(404).json({ error: "Exam not found." });
+  res.json({ exam });
+}));
+
+app.put("/api/admin/exams/:id", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!(await dbmod.examMeta(id))) return res.status(404).json({ error: "Exam not found." });
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Enter an exam title." });
+  const courseId = String(req.body?.courseId || "");
+  if (courseId) {
+    const [[c]] = await q("SELECT id FROM courses WHERE id=?", [courseId]);
+    if (!c) return res.status(400).json({ error: "Pick a valid course." });
+  }
+  const questionCount = Math.max(0, Number.parseInt(req.body?.questionCount, 10) || 0);
+  const timeLimit = Math.max(0, Number.parseInt(req.body?.timeLimit, 10) || 0);
+  await q("UPDATE exams SET title=?, course_id=?, question_count=?, time_limit=? WHERE id=?", [title, courseId, questionCount, timeLimit, id]);
+  res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
+}));
+
+app.delete("/api/admin/exams/:id", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.deleteExam(Number(req.params.id));
+  res.json(await adminState());
+}));
+
+app.post("/api/admin/exams/:id/questions", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!(await dbmod.examMeta(id))) return res.status(404).json({ error: "Exam not found." });
+  const c = cleanQuestion(req.body);
+  if (c.error) return res.status(400).json({ error: c.error });
+  await dbmod.addExamQuestion(id, c.question, c.options, c.correct);
+  res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
+}));
+
+app.put("/api/admin/exams/:id/questions/:qid", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const c = cleanQuestion(req.body);
+  if (c.error) return res.status(400).json({ error: c.error });
+  await dbmod.updateExamQuestion(id, Number(req.params.qid), c.question, c.options, c.correct);
+  res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
+}));
+
+app.delete("/api/admin/exams/:id/questions/:qid", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  await dbmod.deleteExamQuestion(id, Number(req.params.qid));
+  res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
+}));
+
+app.post("/api/admin/exams/:id/import", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!(await dbmod.examMeta(id))) return res.status(404).json({ error: "Exam not found." });
+  const { questions, errors } = questionsFromCsv(String(req.body?.csv || ""));
+  if (questions.length === 0) {
+    return res.status(400).json({ error: "No questions could be imported.", errors });
+  }
+  if (req.body?.mode === "replace") await dbmod.clearExamQuestions(id);
+  for (const qn of questions) await dbmod.addExamQuestion(id, qn.question, qn.options, qn.correct);
+  res.json({ ok: true, imported: questions.length, errors, exam: await dbmod.examFull(id), ...(await adminState()) });
+}));
+
+app.get("/api/admin/exams/:id/export", auth, adminOnly, wrap(async (req, res) => {
+  const exam = await dbmod.examFull(Number(req.params.id));
+  if (!exam) return res.status(404).json({ error: "Exam not found." });
+  const cell = (v) => {
+    const s = String(v == null ? "" : v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = ["question,option_a,option_b,option_c,option_d,option_e,option_f,correct"];
+  for (const qn of exam.questions) {
+    const opts = OPTION_LETTERS.map((_, i) => cell(qn.options[i] || ""));
+    lines.push([cell(qn.question), ...opts, OPTION_LETTERS[qn.correct]].join(","));
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="exam-${exam.id}.csv"`);
+  res.send(lines.join("\r\n") + "\r\n");
+}));
+
+/* ---- exams (student) ---- */
+app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
+  const eid = Number(req.params.id);
+  const exam = await dbmod.examMeta(eid);
+  if (!exam || !exam.course_id) return res.status(404).json({ error: "Exam not found." });
+  const enrolled = await dbmod.enrolledIds(req.user.id);
+  if (!enrolled.includes(exam.course_id)) return res.status(403).json({ error: "You are not enrolled in this course." });
+  const [bank] = await q("SELECT id, question, options, correct FROM exam_questions WHERE exam_id=?", [eid]);
+  if (bank.length === 0) return res.status(400).json({ error: "This exam has no questions yet." });
+
+  const limitMs = exam.time_limit > 0 ? exam.time_limit * 60000 : 0;
+  let attempt = await dbmod.latestAttempt(eid, req.user.id);
+
+  // An unfinished attempt whose time ran out is closed with no answers.
+  if (attempt && !attempt.finished_at && limitMs && Date.now() > attempt.started_at + limitMs + 30000) {
+    const snap = JSON.parse(attempt.snapshot);
+    await dbmod.finishAttempt(attempt.id, 0, snap.questions.length, []);
+    attempt = await dbmod.latestAttempt(eid, req.user.id);
+  }
+  const meta = { title: exam.title, courseId: exam.course_id, courseTitle: exam.courseTitle, courseCode: exam.courseCode };
+  if (attempt && attempt.finished_at) {
+    return res.json({ finished: true, score: attempt.score, total: attempt.total, ...meta });
+  }
+
+  let snap;
+  if (attempt) {
+    snap = JSON.parse(attempt.snapshot);
+  } else {
+    // Draw a random subset of the bank and shuffle each question's answers.
+    const pool = shuffle(bank.slice());
+    const count = exam.question_count > 0 ? Math.min(exam.question_count, pool.length) : pool.length;
+    const qs = pool.slice(0, count).map((row) => {
+      const opts = JSON.parse(row.options).map((text, i) => ({ text, i }));
+      shuffle(opts);
+      return { qid: row.id, question: row.question, options: opts.map((o) => o.text), correct: opts.findIndex((o) => o.i === row.correct) };
+    });
+    snap = { questions: qs };
+    attempt = await dbmod.createAttempt(eid, req.user.id, Date.now(), JSON.stringify(snap));
+  }
+  res.json({
+    ...meta,
+    timeLimit: exam.time_limit, startedAt: attempt.started_at,
+    endsAt: limitMs ? attempt.started_at + limitMs : null,
+    questions: snap.questions.map((qq) => ({ question: qq.question, options: qq.options })),
+  });
+}));
+
+app.post("/api/exams/:id/submit", auth, wrap(async (req, res) => {
+  const eid = Number(req.params.id);
+  const exam = await dbmod.examMeta(eid);
+  if (!exam) return res.status(404).json({ error: "Exam not found." });
+  const attempt = await dbmod.latestAttempt(eid, req.user.id);
+  if (!attempt) return res.status(400).json({ error: "Start the exam first." });
+  if (attempt.finished_at) return res.json({ finished: true, score: attempt.score, total: attempt.total });
+  const snap = JSON.parse(attempt.snapshot);
+  const limitMs = exam.time_limit > 0 ? exam.time_limit * 60000 : 0;
+  const expired = limitMs && Date.now() > attempt.started_at + limitMs + 30000;
+  const answers = expired ? [] : (Array.isArray(req.body?.answers) ? req.body.answers : []);
+  let score = 0;
+  snap.questions.forEach((qq, i) => { if (Number(answers[i]) === qq.correct) score++; });
+  await dbmod.finishAttempt(attempt.id, score, snap.questions.length, answers);
+  res.json({ finished: true, score, total: snap.questions.length });
 }));
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };

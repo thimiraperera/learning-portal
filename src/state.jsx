@@ -29,6 +29,7 @@ export function StoreProvider({ children }) {
   const [locked, setLocked] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  const [exams, setExams] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [ready, setReady] = useState(false);
@@ -39,6 +40,7 @@ export function StoreProvider({ children }) {
     setUsers(data.users || {});
     setInstructors(data.instructors || []);
     setCertificates(data.certificates || []);
+    setExams(data.exams || []);
     setLocked(data.locked || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
@@ -48,6 +50,7 @@ export function StoreProvider({ children }) {
     if (data.users) setUsers(data.users);
     if (data.instructors) setInstructors(data.instructors);
     if (data.certificates) setCertificates(data.certificates);
+    if (data.exams) setExams(data.exams);
   };
 
   async function fetchBlobDownload(path, filename) {
@@ -196,6 +199,49 @@ export function StoreProvider({ children }) {
     setCertificates((cs) => cs.map((c) => (c.id === id ? { ...c, downloaded: 1, unlocked: 0 } : c)));
   }, [token]);
 
+  /* ---- certificate templates ---- */
+  const fetchCertTemplates = useCallback(() => api("/admin/cert-templates", { token }), [token]);
+  const previewCertTemplate = useCallback((id) => fetchBlobOpen(`/admin/cert-templates/${id}/preview`), [token]);
+
+  /* ---- exams (admin) ---- */
+  const createExam = useCallback(async (title, courseId) => {
+    try { const d = await api("/admin/exams", { method: "POST", token, body: { title, courseId } }); applyAdmin(d); return { ok: true, id: d.examId }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const loadExam = useCallback((id) => api(`/admin/exams/${id}`, { token }).then((d) => d.exam), [token]);
+  const updateExam = useCallback(async (id, fields) => {
+    try { const d = await api(`/admin/exams/${id}`, { method: "PUT", token, body: fields }); applyAdmin(d); return { ok: true, msg: "Exam updated.", exam: d.exam }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const deleteExam = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/exams/${id}`, { method: "DELETE", token }));
+  }, [token]);
+  const addExamQuestion = useCallback(async (id, qn) => {
+    try { const d = await api(`/admin/exams/${id}/questions`, { method: "POST", token, body: qn }); applyAdmin(d); return { ok: true, exam: d.exam }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const updateExamQuestion = useCallback(async (id, qid, qn) => {
+    try { const d = await api(`/admin/exams/${id}/questions/${qid}`, { method: "PUT", token, body: qn }); applyAdmin(d); return { ok: true, exam: d.exam }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const deleteExamQuestion = useCallback(async (id, qid) => {
+    try { const d = await api(`/admin/exams/${id}/questions/${qid}`, { method: "DELETE", token }); applyAdmin(d); return { ok: true, exam: d.exam }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const importExamCsv = useCallback(async (id, csv, mode) => {
+    try { const d = await api(`/admin/exams/${id}/import`, { method: "POST", token, body: { csv, mode } }); applyAdmin(d); return { ok: true, imported: d.imported, errors: d.errors || [], exam: d.exam }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const exportExamCsv = useCallback((id) => fetchBlobDownload(`/admin/exams/${id}/export`, `exam-${id}.csv`), [token]);
+
+  /* ---- exams (student) ---- */
+  const startExam = useCallback((id) => api(`/exams/${id}/start`, { method: "POST", token }), [token]);
+  const submitExam = useCallback(async (id, answers) => {
+    const d = await api(`/exams/${id}/submit`, { method: "POST", token, body: { answers } });
+    setExams((xs) => xs.map((x) => (x.id === id ? { ...x, attempt: { ...(x.attempt || {}), finished_at: 1, score: d.score, total: d.total } } : x)));
+    return d;
+  }, [token]);
+
   const setBrand = useCallback(async (next) => {
     const saved = await api("/brand", { method: "PUT", token, body: { ...brand, ...next } });
     setBrandLocal({ ...DEFAULT_BRAND, ...saved });
@@ -226,12 +272,15 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, brand, smtp,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
+    fetchCertTemplates, previewCertTemplate,
+    createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
+    importExamCsv, exportExamCsv, startExam, submitExam,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

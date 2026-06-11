@@ -75,6 +75,32 @@ const TABLES = [
      student_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, issued_at BIGINT,
      downloaded TINYINT DEFAULT 0, unlocked TINYINT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS exams (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     course_id VARCHAR(32) DEFAULT '',
+     title VARCHAR(255) NOT NULL,
+     question_count INT DEFAULT 0,
+     time_limit INT DEFAULT 0,
+     created_at BIGINT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS exam_questions (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     exam_id INT NOT NULL,
+     question TEXT NOT NULL,
+     options TEXT NOT NULL,
+     correct INT DEFAULT 0,
+     position INT DEFAULT 0
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS exam_attempts (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     exam_id INT NOT NULL,
+     user_id INT NOT NULL,
+     started_at BIGINT,
+     finished_at BIGINT,
+     score INT DEFAULT 0,
+     total INT DEFAULT 0,
+     snapshot LONGTEXT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -166,6 +192,7 @@ async function init() {
   await ensureColumn("links", "position", "INT DEFAULT 0");
   await ensureColumn("materials", "position", "INT DEFAULT 0");
   await ensureColumn("courses", "instructor_id", "INT");
+  await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
     const parts = String(u.name || "").trim().split(/\s+/);
@@ -200,6 +227,7 @@ async function courseFull(id) {
   const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY position, id", [id]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
+    certTemplate: c.cert_template || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials,
   };
@@ -256,8 +284,8 @@ async function updateStudentProfile(id, f) {
     [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.email, name || f.email, id]);
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=? WHERE id=?",
-    [f.code, f.title, f.blurb, f.sessions, id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", id]);
 }
 
 async function instructorsList() {
@@ -289,6 +317,7 @@ async function deleteCourse(id) {
   await q("DELETE FROM materials WHERE course_id=?", [id]);
   await q("DELETE FROM enrolments WHERE course_id=?", [id]);
   await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
+  await q("UPDATE exams SET course_id='' WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
@@ -326,7 +355,7 @@ async function listCertificates() {
 }
 async function getCertificate(id) {
   const [[r]] = await q(`SELECT c.*, u.name AS studentName, u.email AS studentEmail,
-      co.title AS courseTitle, co.code AS courseCode
+      co.title AS courseTitle, co.code AS courseCode, co.cert_template AS certTemplate
     FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id WHERE c.id=?`, [id]);
   return r || null;
 }
@@ -338,6 +367,82 @@ async function studentCertificates(studentId) {
 }
 async function markCertDownloaded(id) { await q("UPDATE certificates SET downloaded=1, unlocked=0 WHERE id=?", [id]); }
 async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1 WHERE id=?", [id]); }
+
+/* ---- exams ---- */
+async function examsList() {
+  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit, e.created_at,
+      co.title AS courseTitle, co.code AS courseCode,
+      (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id=e.id) AS bankSize,
+      (SELECT COUNT(*) FROM exam_attempts ea WHERE ea.exam_id=e.id AND ea.finished_at IS NOT NULL) AS attempts
+    FROM exams e LEFT JOIN courses co ON co.id=e.course_id ORDER BY e.id DESC`);
+  return rows;
+}
+async function examMeta(id) {
+  const [[e]] = await q(`SELECT e.*, co.title AS courseTitle, co.code AS courseCode
+    FROM exams e LEFT JOIN courses co ON co.id=e.course_id WHERE e.id=?`, [id]);
+  return e || null;
+}
+async function examFull(id) {
+  const e = await examMeta(id);
+  if (!e) return null;
+  const [questions] = await q("SELECT id, question, options, correct FROM exam_questions WHERE exam_id=? ORDER BY position, id", [id]);
+  const [attempts] = await q(`SELECT a.id, a.user_id, a.started_at, a.finished_at, a.score, a.total,
+      u.name AS studentName, u.email AS studentEmail
+    FROM exam_attempts a JOIN users u ON u.id=a.user_id WHERE a.exam_id=? AND a.finished_at IS NOT NULL
+    ORDER BY a.finished_at DESC`, [id]);
+  return { ...e, questions: questions.map((r) => ({ ...r, options: JSON.parse(r.options) })), attempts };
+}
+async function addExamQuestion(examId, question, options, correct) {
+  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM exam_questions WHERE exam_id=?", [examId]);
+  await q("INSERT INTO exam_questions (exam_id,question,options,correct,position) VALUES (?,?,?,?,?)",
+    [examId, question, JSON.stringify(options), correct, p]);
+}
+async function updateExamQuestion(examId, qid, question, options, correct) {
+  await q("UPDATE exam_questions SET question=?, options=?, correct=? WHERE id=? AND exam_id=?",
+    [question, JSON.stringify(options), correct, qid, examId]);
+}
+async function deleteExamQuestion(examId, qid) {
+  await q("DELETE FROM exam_questions WHERE id=? AND exam_id=?", [qid, examId]);
+}
+async function clearExamQuestions(examId) {
+  await q("DELETE FROM exam_questions WHERE exam_id=?", [examId]);
+}
+async function deleteExam(id) {
+  await q("DELETE FROM exam_attempts WHERE exam_id=?", [id]);
+  await q("DELETE FROM exam_questions WHERE exam_id=?", [id]);
+  await q("DELETE FROM exams WHERE id=?", [id]);
+}
+async function latestAttempt(examId, userId) {
+  const [[a]] = await q("SELECT * FROM exam_attempts WHERE exam_id=? AND user_id=? ORDER BY id DESC LIMIT 1", [examId, userId]);
+  return a || null;
+}
+async function createAttempt(examId, userId, when, snapshot) {
+  const [r] = await q("INSERT INTO exam_attempts (exam_id,user_id,started_at,snapshot) VALUES (?,?,?,?)", [examId, userId, when, snapshot]);
+  return { id: r.insertId, started_at: when, snapshot };
+}
+async function finishAttempt(id, score, total, answers) {
+  const [[a]] = await q("SELECT snapshot FROM exam_attempts WHERE id=?", [id]);
+  let snap = {};
+  try { snap = JSON.parse(a?.snapshot || "{}"); } catch { /* keep empty */ }
+  snap.answers = answers;
+  await q("UPDATE exam_attempts SET finished_at=?, score=?, total=?, snapshot=? WHERE id=?",
+    [Date.now(), score, total, JSON.stringify(snap), id]);
+}
+async function studentExams(userId) {
+  const ids = await enrolledIds(userId);
+  if (ids.length === 0) return [];
+  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit,
+      co.title AS courseTitle, co.code AS courseCode,
+      (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id=e.id) AS bankSize
+    FROM exams e JOIN courses co ON co.id=e.course_id WHERE e.course_id IN (?) ORDER BY e.id DESC`, [ids]);
+  const out = [];
+  for (const r of rows) {
+    if (!r.bankSize) continue;
+    const [[a]] = await q("SELECT id, started_at, finished_at, score, total FROM exam_attempts WHERE exam_id=? AND user_id=? ORDER BY id DESC LIMIT 1", [r.id, userId]);
+    out.push({ ...r, attempt: a || null });
+  }
+  return out;
+}
 
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
@@ -372,5 +477,7 @@ module.exports = {
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
+  examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
+  latestAttempt, createAttempt, finishAttempt, studentExams,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

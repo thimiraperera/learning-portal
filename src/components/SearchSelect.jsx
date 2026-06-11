@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Search } from "lucide-react";
 
 /* A searchable dropdown (typeahead combobox).
-   options: [{ value, label }]; value "all" (or unset) shows the placeholder. */
-export default function SearchSelect({ value, onChange, options, placeholder = "All", allLabel = "All", style, limit = 10 }) {
+   options: [{ value, label }]; value "all" (or unset) shows the placeholder.
+   Pass showAll={false} to hide the "All" reset option (pick-one mode). */
+export default function SearchSelect({ value, onChange, options, placeholder = "All", allLabel = "All", showAll = true, style, limit = 10 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -36,7 +37,7 @@ export default function SearchSelect({ value, onChange, options, placeholder = "
             <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search..." />
           </div>
           <div className="ss-options">
-            <button type="button" className={"ss-option" + (!selected ? " on" : "")} onClick={() => pick("all")}>{allLabel}</button>
+            {showAll && <button type="button" className={"ss-option" + (!selected ? " on" : "")} onClick={() => pick("all")}>{allLabel}</button>}
             {shown.map((o) => (
               <button type="button" key={o.value} className={"ss-option" + (o.value === value ? " on" : "")} onClick={() => pick(o.value)}>{o.label}</button>
             ))}

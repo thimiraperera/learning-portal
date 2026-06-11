@@ -14,6 +14,9 @@ import Instructors from "./pages/admin/Instructors.jsx";
 import InstructorManage from "./pages/admin/InstructorManage.jsx";
 import Certificates from "./pages/admin/Certificates.jsx";
 import Settings from "./pages/admin/Settings.jsx";
+import Exams from "./pages/admin/Exams.jsx";
+import ExamManage from "./pages/admin/ExamManage.jsx";
+import ExamTake from "./pages/student/ExamTake.jsx";
 
 /* Route guards keyed off the logged-in user's role. */
 function RequireRole({ role, children }) {
@@ -51,6 +54,7 @@ function Routed() {
       <Route path="/" element={<RequireRole role="student"><Dashboard /></RequireRole>} />
       <Route path="/courses" element={<RequireRole role="student"><MyCourses /></RequireRole>} />
       <Route path="/courses/:id" element={<RequireRole role="student"><CourseDetail /></RequireRole>} />
+      <Route path="/exams/:id" element={<RequireRole role="student"><ExamTake /></RequireRole>} />
 
       {/* shared */}
       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
@@ -63,6 +67,8 @@ function Routed() {
       <Route path="/admin/courses/:id" element={<RequireRole role="admin"><CourseManage /></RequireRole>} />
       <Route path="/admin/instructors" element={<RequireRole role="admin"><Instructors /></RequireRole>} />
       <Route path="/admin/instructors/:id" element={<RequireRole role="admin"><InstructorManage /></RequireRole>} />
+      <Route path="/admin/exams" element={<RequireRole role="admin"><Exams /></RequireRole>} />
+      <Route path="/admin/exams/:id" element={<RequireRole role="admin"><ExamManage /></RequireRole>} />
       <Route path="/admin/certificates" element={<RequireRole role="admin"><Certificates /></RequireRole>} />
       <Route path="/admin/settings" element={<RequireRole role="admin"><Settings /></RequireRole>} />
 

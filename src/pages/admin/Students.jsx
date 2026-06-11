@@ -86,10 +86,10 @@ export default function Students() {
             <option value="active">Active</option>
             <option value="invited">Invited</option>
           </select>
-          <SearchSelect style={{ flex: "0 0 200px" }} value={course} placeholder="All courses" allLabel="All courses"
+          <SearchSelect style={{ flex: "1 1 220px" }} value={course} placeholder="All courses" allLabel="All courses"
             options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
             onChange={(v) => { setCourse(v); resetPage(); }} />
-          <select className="form-control" style={{ flex: "0 0 140px" }} value={gender} onChange={(e) => { setGender(e.target.value); resetPage(); }}>
+          <select className="form-control" style={{ flex: "0 0 150px" }} value={gender} onChange={(e) => { setGender(e.target.value); resetPage(); }}>
             <option value="all">Any gender</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>

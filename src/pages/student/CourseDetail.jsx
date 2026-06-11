@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Calendar, Clock,
+  ArrowLeft, PlayCircle, Link2, FileDown, Calendar, Clock, FileQuestion, Play,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
@@ -9,17 +9,19 @@ import { useStore } from "../../state.jsx";
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses } = useStore();
+  const { currentUser, courses, exams } = useStore();
   const [tab, setTab] = useState("rec");
 
   // Guard: never render a course the student isn't enrolled in.
   if (!currentUser.enrolled.includes(id)) return <Navigate to="/" replace />;
   const c = courses[id];
+  const myExams = exams.filter((x) => x.course_id === id);
 
   const tabs = [
     { k: "rec", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "lnk", label: "Course links", icon: Link2, n: c.links.length },
     { k: "mat", label: "Materials", icon: FileDown, n: c.materials.length },
+    ...(myExams.length > 0 ? [{ k: "exam", label: "Exams", icon: FileQuestion, n: myExams.length }] : []),
   ];
 
   return (
@@ -55,6 +57,29 @@ export default function CourseDetail() {
           <MediaRow key={i} icon={FileDown} title={r.t} action="Download"
             meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>} />
         ))}
+        {tab === "exam" && myExams.map((x) => {
+          const served = x.question_count > 0 ? Math.min(x.question_count, x.bankSize) : x.bankSize;
+          const done = x.attempt && x.attempt.finished_at;
+          return (
+            <div key={x.id} className="media-row">
+              <div className="mr-icon"><FileQuestion /></div>
+              <div className="mr-body">
+                <div className="mr-title">{x.title}</div>
+                <div className="mr-meta">
+                  {served} question{served === 1 ? "" : "s"}
+                  {x.time_limit > 0 && <><span className="dot" /> <Clock /> {x.time_limit} min</>}
+                </div>
+              </div>
+              {done
+                ? <span className="badge badge-accepted">Score {x.attempt.score}/{x.attempt.total}</span>
+                : (
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
+                    <Play /> {x.attempt ? "Resume" : "Start exam"}
+                  </button>
+                )}
+            </div>
+          );
+        })}
       </div>
     </Layout>
   );

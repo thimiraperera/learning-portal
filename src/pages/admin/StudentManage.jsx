@@ -4,6 +4,7 @@ import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function StudentManage() {
@@ -12,14 +13,14 @@ export default function StudentManage() {
   const navigate = useNavigate();
   const store = useStore();
   const entry = Object.entries(store.users).find(([, u]) => u.id === sid);
-  const [tab, setTab] = useState("profile");
+  const [tab, setTab] = useState("courses"); // courses is the default open tab
 
   if (!entry) return <Navigate to="/admin/students" replace />;
   const [email, s] = entry;
 
   const tabs = [
-    { k: "profile", label: "Profile", icon: SettingsIcon },
     { k: "courses", label: "Courses", icon: BookOpen, n: s.enrolled.length },
+    { k: "profile", label: "Profile", icon: SettingsIcon },
   ];
 
   return (
@@ -65,7 +66,7 @@ function ProfileTab({ id, s, store, navigate }) {
   };
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
       <div className="field-row">
         <div className="form-group"><label className="form-label">Username</label>
@@ -112,7 +113,7 @@ function CoursesTab({ email, s, store, navigate }) {
   const add = async () => { if (sel) { await toggleEnrol(email, sel); setSel(""); } };
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div>
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROLLED ({enrolled.length})</div>
       {enrolled.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 18 }}>Not enrolled in any course yet.</p> : (
         <div style={{ marginBottom: 22 }}>
@@ -136,10 +137,9 @@ function CoursesTab({ email, s, store, navigate }) {
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROL IN A COURSE</div>
       {available.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrolled in every course already.</p> : (
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <select className="form-control" value={sel} onChange={(e) => setSel(e.target.value)}>
-            <option value="">Select a course...</option>
-            {available.map(([cid, c]) => <option key={cid} value={cid}>{c.code} - {c.title}</option>)}
-          </select>
+          <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
+            options={available.map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            onChange={setSel} />
           <button className="btn btn-primary" onClick={add}><Plus /> Enrol</button>
         </div>
       )}

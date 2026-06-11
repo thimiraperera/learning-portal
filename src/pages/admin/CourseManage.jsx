@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
@@ -67,9 +67,27 @@ function DetailsTab({ id, c, store, navigate }) {
   const [title, setTitle] = useState(c.title);
   const [sessions, setSessions] = useState(c.sessions ?? 0);
   const [blurb, setBlurb] = useState(c.blurb || "");
+  const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
+  const [templates, setTemplates] = useState([]);
+  const [defaultId, setDefaultId] = useState("");
   const [msg, setMsg] = useState(null);
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions, blurb }));
+  useEffect(() => {
+    let alive = true;
+    store.fetchCertTemplates()
+      .then((d) => { if (alive) { setTemplates(d.templates || []); setDefaultId(d.defaultId || ""); } })
+      .catch(() => { /* selector just stays empty */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const defaultName = templates.find((t) => t.id === defaultId)?.name || "Classic";
+  const preview = async () => {
+    const tid = certTemplate || defaultId;
+    if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+  };
+
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions, blurb, certTemplate }));
   const remove = async () => {
     if (!window.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`)) return;
     await store.deleteCourse(id);
@@ -89,6 +107,16 @@ function DetailsTab({ id, c, store, navigate }) {
         <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Description</label>
         <textarea className="form-control" rows="3" value={blurb} onChange={(e) => setBlurb(e.target.value)} /></div>
+      <div className="form-group"><label className="form-label">Certificate template</label>
+        <div style={{ display: "flex", gap: 10 }}>
+          <select className="form-control" style={{ maxWidth: 300 }} value={certTemplate} onChange={(e) => setCertTemplate(e.target.value)}>
+            <option value="">Default ({defaultName})</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>
+        </div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
+      </div>
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-primary" onClick={save}><Save /> Save changes</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Delete course</button>
