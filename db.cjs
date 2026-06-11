@@ -89,6 +89,8 @@ const TABLES = [
      question TEXT NOT NULL,
      options TEXT NOT NULL,
      correct INT DEFAULT 0,
+     qtype VARCHAR(10) DEFAULT 'single',
+     corrects TEXT,
      position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS exam_attempts (
@@ -97,7 +99,7 @@ const TABLES = [
      user_id INT NOT NULL,
      started_at BIGINT,
      finished_at BIGINT,
-     score INT DEFAULT 0,
+     score DECIMAL(6,2) DEFAULT 0,
      total INT DEFAULT 0,
      snapshot LONGTEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
@@ -193,6 +195,10 @@ async function init() {
   await ensureColumn("materials", "position", "INT DEFAULT 0");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
+  await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
+  await ensureColumn("exam_questions", "corrects", "TEXT");
+  // Checkbox questions earn partial marks, so attempt scores can be fractional.
+  await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
     const parts = String(u.name || "").trim().split(/\s+/);
@@ -385,21 +391,29 @@ async function examMeta(id) {
 async function examFull(id) {
   const e = await examMeta(id);
   if (!e) return null;
-  const [questions] = await q("SELECT id, question, options, correct FROM exam_questions WHERE exam_id=? ORDER BY position, id", [id]);
+  const [questions] = await q("SELECT id, question, options, correct, qtype, corrects FROM exam_questions WHERE exam_id=? ORDER BY position, id", [id]);
   const [attempts] = await q(`SELECT a.id, a.user_id, a.started_at, a.finished_at, a.score, a.total,
       u.name AS studentName, u.email AS studentEmail
     FROM exam_attempts a JOIN users u ON u.id=a.user_id WHERE a.exam_id=? AND a.finished_at IS NOT NULL
     ORDER BY a.finished_at DESC`, [id]);
-  return { ...e, questions: questions.map((r) => ({ ...r, options: JSON.parse(r.options) })), attempts };
+  return {
+    ...e,
+    questions: questions.map((r) => ({
+      id: r.id, question: r.question, options: JSON.parse(r.options),
+      qtype: r.qtype || "single",
+      corrects: r.corrects ? JSON.parse(r.corrects) : [r.correct],
+    })),
+    attempts,
+  };
 }
-async function addExamQuestion(examId, question, options, correct) {
+async function addExamQuestion(examId, question, options, qtype, corrects) {
   const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM exam_questions WHERE exam_id=?", [examId]);
-  await q("INSERT INTO exam_questions (exam_id,question,options,correct,position) VALUES (?,?,?,?,?)",
-    [examId, question, JSON.stringify(options), correct, p]);
+  await q("INSERT INTO exam_questions (exam_id,question,options,correct,qtype,corrects,position) VALUES (?,?,?,?,?,?,?)",
+    [examId, question, JSON.stringify(options), corrects[0], qtype, JSON.stringify(corrects), p]);
 }
-async function updateExamQuestion(examId, qid, question, options, correct) {
-  await q("UPDATE exam_questions SET question=?, options=?, correct=? WHERE id=? AND exam_id=?",
-    [question, JSON.stringify(options), correct, qid, examId]);
+async function updateExamQuestion(examId, qid, question, options, qtype, corrects) {
+  await q("UPDATE exam_questions SET question=?, options=?, correct=?, qtype=?, corrects=? WHERE id=? AND exam_id=?",
+    [question, JSON.stringify(options), corrects[0], qtype, JSON.stringify(corrects), qid, examId]);
 }
 async function deleteExamQuestion(examId, qid) {
   await q("DELETE FROM exam_questions WHERE id=? AND exam_id=?", [qid, examId]);
@@ -427,6 +441,13 @@ async function finishAttempt(id, score, total, answers) {
   snap.answers = answers;
   await q("UPDATE exam_attempts SET finished_at=?, score=?, total=?, snapshot=? WHERE id=?",
     [Date.now(), score, total, JSON.stringify(snap), id]);
+}
+async function studentAttemptsAdmin(userId) {
+  const [rows] = await q(`SELECT a.id, a.exam_id, a.started_at, a.finished_at, a.score, a.total,
+      e.title AS examTitle, e.course_id, co.title AS courseTitle, co.code AS courseCode
+    FROM exam_attempts a JOIN exams e ON e.id=a.exam_id LEFT JOIN courses co ON co.id=e.course_id
+    WHERE a.user_id=? AND a.finished_at IS NOT NULL ORDER BY a.finished_at DESC`, [userId]);
+  return rows;
 }
 async function studentExams(userId) {
   const ids = await enrolledIds(userId);
@@ -478,6 +499,6 @@ module.exports = {
   addCourseItem, removeCourseItem, reorderItems,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
-  latestAttempt, createAttempt, finishAttempt, studentExams,
+  latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

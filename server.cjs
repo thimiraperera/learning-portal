@@ -414,23 +414,51 @@ function questionsFromCsv(text) {
     const line = idx + 2;
     const question = (r[qi] || "").trim();
     const options = oi.filter((i) => i !== -1).map((i) => (r[i] || "").trim()).filter(Boolean);
-    const correct = OPTION_LETTERS.indexOf((r[ci] || "").trim().toUpperCase());
+    const letters = ((r[ci] || "").toUpperCase().match(/[A-F]/g)) || [];
+    const corrects = [...new Set(letters.map((L) => OPTION_LETTERS.indexOf(L)))].sort((a, b) => a - b);
     if (!question) { errors.push(`Line ${line}: question is empty.`); return; }
     if (options.length < 2) { errors.push(`Line ${line}: at least two options are required.`); return; }
-    if (correct === -1 || correct >= options.length) { errors.push(`Line ${line}: correct must be a letter between A and ${OPTION_LETTERS[options.length - 1]}.`); return; }
-    questions.push({ question, options, correct });
+    if (corrects.length === 0 || corrects.some((c) => c >= options.length)) {
+      errors.push(`Line ${line}: correct must use letters between A and ${OPTION_LETTERS[options.length - 1]} (several letters make it a checkbox question).`);
+      return;
+    }
+    questions.push({ question, options, qtype: corrects.length > 1 ? "multi" : "single", corrects });
   });
   return { questions, errors };
+}
+
+/* One mark per question. Checkbox questions earn partial marks
+   (right picks minus wrong picks over the number of right answers),
+   clamped at zero so no question, and so no paper, can go negative. */
+function gradeAttempt(snapQuestions, answers) {
+  let score = 0;
+  snapQuestions.forEach((qq, i) => {
+    const corrects = qq.corrects || [qq.correct];
+    if ((qq.qtype || "single") === "multi") {
+      const sel = Array.isArray(answers[i]) ? [...new Set(answers[i].map(Number))] : [];
+      const right = sel.filter((x) => corrects.includes(x)).length;
+      const wrong = sel.length - right;
+      score += Math.max(0, (right - wrong) / corrects.length);
+    } else if (answers[i] != null && Number(answers[i]) === corrects[0]) {
+      score += 1;
+    }
+  });
+  return Math.round(score * 100) / 100;
 }
 
 function cleanQuestion(body) {
   const question = String(body?.question || "").trim();
   const options = (Array.isArray(body?.options) ? body.options : []).map((o) => String(o || "").trim()).filter(Boolean);
-  const correct = Number(body?.correct);
+  const qtype = body?.qtype === "multi" ? "multi" : "single";
+  const raw = Array.isArray(body?.corrects) ? body.corrects : [body?.correct];
+  const corrects = [...new Set(raw.map(Number))]
+    .filter((n) => Number.isInteger(n) && n >= 0 && n < options.length)
+    .sort((a, b) => a - b);
   if (!question) return { error: "Enter the question text." };
   if (options.length < 2 || options.length > 6) return { error: "Provide between 2 and 6 answer options." };
-  if (!Number.isInteger(correct) || correct < 0 || correct >= options.length) return { error: "Mark which option is correct." };
-  return { question, options, correct };
+  if (corrects.length === 0) return { error: "Mark which option is correct." };
+  if (qtype === "single" && corrects.length !== 1) return { error: "A single-answer question needs exactly one correct option." };
+  return { question, options, qtype, corrects };
 }
 
 app.post("/api/admin/exams", auth, adminOnly, wrap(async (req, res) => {
@@ -477,7 +505,7 @@ app.post("/api/admin/exams/:id/questions", auth, adminOnly, wrap(async (req, res
   if (!(await dbmod.examMeta(id))) return res.status(404).json({ error: "Exam not found." });
   const c = cleanQuestion(req.body);
   if (c.error) return res.status(400).json({ error: c.error });
-  await dbmod.addExamQuestion(id, c.question, c.options, c.correct);
+  await dbmod.addExamQuestion(id, c.question, c.options, c.qtype, c.corrects);
   res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
 }));
 
@@ -485,7 +513,7 @@ app.put("/api/admin/exams/:id/questions/:qid", auth, adminOnly, wrap(async (req,
   const id = Number(req.params.id);
   const c = cleanQuestion(req.body);
   if (c.error) return res.status(400).json({ error: c.error });
-  await dbmod.updateExamQuestion(id, Number(req.params.qid), c.question, c.options, c.correct);
+  await dbmod.updateExamQuestion(id, Number(req.params.qid), c.question, c.options, c.qtype, c.corrects);
   res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
 }));
 
@@ -503,7 +531,7 @@ app.post("/api/admin/exams/:id/import", auth, adminOnly, wrap(async (req, res) =
     return res.status(400).json({ error: "No questions could be imported.", errors });
   }
   if (req.body?.mode === "replace") await dbmod.clearExamQuestions(id);
-  for (const qn of questions) await dbmod.addExamQuestion(id, qn.question, qn.options, qn.correct);
+  for (const qn of questions) await dbmod.addExamQuestion(id, qn.question, qn.options, qn.qtype, qn.corrects);
   res.json({ ok: true, imported: questions.length, errors, exam: await dbmod.examFull(id), ...(await adminState()) });
 }));
 
@@ -517,11 +545,15 @@ app.get("/api/admin/exams/:id/export", auth, adminOnly, wrap(async (req, res) =>
   const lines = ["question,option_a,option_b,option_c,option_d,option_e,option_f,correct"];
   for (const qn of exam.questions) {
     const opts = OPTION_LETTERS.map((_, i) => cell(qn.options[i] || ""));
-    lines.push([cell(qn.question), ...opts, OPTION_LETTERS[qn.correct]].join(","));
+    lines.push([cell(qn.question), ...opts, qn.corrects.map((c) => OPTION_LETTERS[c]).join(";")].join(","));
   }
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="exam-${exam.id}.csv"`);
   res.send(lines.join("\r\n") + "\r\n");
+}));
+
+app.get("/api/admin/students/:id/exams", auth, adminOnly, wrap(async (req, res) => {
+  res.json({ attempts: await dbmod.studentAttemptsAdmin(Number(req.params.id)) });
 }));
 
 /* ---- exams (student) ---- */
@@ -531,7 +563,7 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
   if (!exam || !exam.course_id) return res.status(404).json({ error: "Exam not found." });
   const enrolled = await dbmod.enrolledIds(req.user.id);
   if (!enrolled.includes(exam.course_id)) return res.status(403).json({ error: "You are not enrolled in this course." });
-  const [bank] = await q("SELECT id, question, options, correct FROM exam_questions WHERE exam_id=?", [eid]);
+  const [bank] = await q("SELECT id, question, options, correct, qtype, corrects FROM exam_questions WHERE exam_id=?", [eid]);
   if (bank.length === 0) return res.status(400).json({ error: "This exam has no questions yet." });
 
   const limitMs = exam.time_limit > 0 ? exam.time_limit * 60000 : 0;
@@ -558,7 +590,12 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
     const qs = pool.slice(0, count).map((row) => {
       const opts = JSON.parse(row.options).map((text, i) => ({ text, i }));
       shuffle(opts);
-      return { qid: row.id, question: row.question, options: opts.map((o) => o.text), correct: opts.findIndex((o) => o.i === row.correct) };
+      const corrects = row.corrects ? JSON.parse(row.corrects) : [row.correct];
+      return {
+        qid: row.id, qtype: row.qtype || "single", question: row.question,
+        options: opts.map((o) => o.text),
+        corrects: opts.map((o, ni) => (corrects.includes(o.i) ? ni : -1)).filter((x) => x !== -1),
+      };
     });
     snap = { questions: qs };
     attempt = await dbmod.createAttempt(eid, req.user.id, Date.now(), JSON.stringify(snap));
@@ -567,7 +604,7 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
     ...meta,
     timeLimit: exam.time_limit, startedAt: attempt.started_at,
     endsAt: limitMs ? attempt.started_at + limitMs : null,
-    questions: snap.questions.map((qq) => ({ question: qq.question, options: qq.options })),
+    questions: snap.questions.map((qq) => ({ question: qq.question, options: qq.options, qtype: qq.qtype || "single" })),
   });
 }));
 
@@ -582,8 +619,7 @@ app.post("/api/exams/:id/submit", auth, wrap(async (req, res) => {
   const limitMs = exam.time_limit > 0 ? exam.time_limit * 60000 : 0;
   const expired = limitMs && Date.now() > attempt.started_at + limitMs + 30000;
   const answers = expired ? [] : (Array.isArray(req.body?.answers) ? req.body.answers : []);
-  let score = 0;
-  snap.questions.forEach((qq, i) => { if (Number(answers[i]) === qq.correct) score++; });
+  const score = gradeAttempt(snap.questions, answers);
   await dbmod.finishAttempt(attempt.id, score, snap.questions.length, answers);
   res.json({ finished: true, score, total: snap.questions.length });
 }));

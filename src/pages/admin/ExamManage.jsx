@@ -5,6 +5,7 @@ import {
   FileQuestion, FileUp, FileDown, Pencil, BarChart3, Download,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
@@ -12,8 +13,10 @@ const SAMPLE_CSV = [
   "question,option_a,option_b,option_c,option_d,correct",
   '"What does a stock exchange primarily facilitate?","Buying and selling of shares","Printing currency","Issuing bank loans","Collecting taxes",A',
   '"Which order type executes immediately at the best available price?","Limit order","Market order","Stop order","Day order",B',
-  '"True or false: diversification reduces unsystematic risk.","True","False",,,A',
+  '"Select every example of a derivative instrument.","Futures","Options","Treasury bill","Swaps","A;B;D"',
 ].join("\r\n") + "\r\n";
+
+const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
 
 export default function ExamManage() {
   const { id } = useParams();
@@ -120,7 +123,7 @@ function SettingsTab({ exam, setExam, store, navigate }) {
           <input className="form-control" type="number" min="0" value={timeLimit} onChange={(e) => setTimeLimit(e.target.value)} />
           <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>0 means no time limit.</div></div>
       </div>
-      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Answer order is always shuffled per attempt; each student can take the exam once.</div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Answer order is always shuffled per attempt; each student can take the exam once. Checkbox questions earn partial marks but never below zero.</div>
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn btn-primary" onClick={save}><Save /> Save settings</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Delete exam</button>
@@ -129,31 +132,37 @@ function SettingsTab({ exam, setExam, store, navigate }) {
   );
 }
 
-const EMPTY_FORM = { question: "", options: ["", "", "", ""], correct: 0 };
-
 function QuestionsTab({ exam, setExam, store }) {
-  const [form, setForm] = useState(null); // null = closed; { id?, question, options, correct }
+  const [form, setForm] = useState(null); // null = closed; { id?, question, options, qtype, corrects }
   const [msg, setMsg] = useState(null);
 
   const open = (qn) => {
     setMsg(null);
     setForm(qn
-      ? { id: qn.id, question: qn.question, options: qn.options.slice(), correct: qn.correct }
-      : { ...EMPTY_FORM, options: EMPTY_FORM.options.slice() });
+      ? { id: qn.id, question: qn.question, options: qn.options.slice(), qtype: qn.qtype || "single", corrects: qn.corrects.slice() }
+      : { question: "", options: ["", "", "", ""], qtype: "single", corrects: [0] });
   };
   const setOpt = (i, v) => setForm((f) => ({ ...f, options: f.options.map((o, j) => (j === i ? v : o)) }));
   const addOpt = () => setForm((f) => (f.options.length >= 6 ? f : { ...f, options: [...f.options, ""] }));
   const delOpt = (i) => setForm((f) => {
     if (f.options.length <= 2) return f;
     const options = f.options.filter((_, j) => j !== i);
-    let correct = f.correct;
-    if (correct === i) correct = 0;
-    else if (correct > i) correct -= 1;
-    return { ...f, options, correct };
+    let corrects = f.corrects.filter((c) => c !== i).map((c) => (c > i ? c - 1 : c));
+    if (corrects.length === 0) corrects = [0];
+    return { ...f, options, corrects };
+  });
+  const setType = (qtype) => setForm((f) => ({
+    ...f, qtype,
+    corrects: qtype === "single" ? [f.corrects[0] ?? 0] : f.corrects,
+  }));
+  const toggleCorrect = (i) => setForm((f) => {
+    if (f.qtype === "single") return { ...f, corrects: [i] };
+    const corrects = f.corrects.includes(i) ? f.corrects.filter((c) => c !== i) : [...f.corrects, i].sort((a, b) => a - b);
+    return { ...f, corrects };
   });
 
   const save = async () => {
-    const body = { question: form.question, options: form.options, correct: form.correct };
+    const body = { question: form.question, options: form.options, qtype: form.qtype, corrects: form.corrects };
     const r = form.id
       ? await store.updateExamQuestion(exam.id, form.id, body)
       : await store.addExamQuestion(exam.id, body);
@@ -168,17 +177,20 @@ function QuestionsTab({ exam, setExam, store }) {
 
   return (
     <div>
-      {exam.questions.length === 0 && !form && (
+      {exam.questions.length === 0 && (
         <div className="empty-state"><div className="empty-icon"><FileQuestion /></div>
           <p>No questions yet. Add them below or import a CSV paper from the Import / Export tab.</p></div>
       )}
 
       {exam.questions.map((qn, i) => (
         <div key={qn.id} className="quiz-q">
-          <div className="quiz-q-text">Q{i + 1}. {qn.question}</div>
+          <div className="quiz-q-text">
+            Q{i + 1}. {qn.question}
+            {qn.qtype === "multi" && <span className="q-type-tag">Checkboxes</span>}
+          </div>
           {qn.options.map((o, j) => (
-            <div key={j} style={{ fontSize: 13.5, color: j === qn.correct ? "#16A34A" : "#6B7280", padding: "3px 0 3px 14px" }}>
-              {String.fromCharCode(65 + j)}. {o}{j === qn.correct && <span className="q-correct">Correct</span>}
+            <div key={j} style={{ fontSize: 13.5, color: qn.corrects.includes(j) ? "#16A34A" : "#6B7280", padding: "3px 0 3px 14px" }}>
+              {String.fromCharCode(65 + j)}. {o}{qn.corrects.includes(j) && <span className="q-correct">Correct</span>}
             </div>
           ))}
           <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
@@ -188,31 +200,47 @@ function QuestionsTab({ exam, setExam, store }) {
         </div>
       ))}
 
-      {form ? (
-        <div className="content-section" style={{ marginTop: 18 }}>
-          <div className="content-section-head"><FileQuestion /> {form.id ? "Edit question" : "New question"}</div>
-          {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
-          <div className="form-group"><label className="form-label">Question</label>
-            <textarea className="form-control" rows="2" value={form.question} onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))} /></div>
-          <label className="form-label">Options (tick the correct one)</label>
-          {form.options.map((o, i) => (
-            <div key={i} className="toolbar" style={{ marginBottom: 8 }}>
-              <input type="radio" name="correct" checked={form.correct === i} onChange={() => setForm((f) => ({ ...f, correct: i }))}
-                style={{ accentColor: "var(--primary)", width: 16, height: 16, flex: "0 0 auto" }} />
-              <input className="form-control" placeholder={`Option ${String.fromCharCode(65 + i)}`} value={o} onChange={(e) => setOpt(i, e.target.value)} />
-              {form.options.length > 2 && (
-                <button className="icon-btn-plain" title="Remove option" onClick={() => delOpt(i)}><X style={{ width: 16, height: 16 }} /></button>
+      <button className="btn btn-primary" style={{ marginTop: exam.questions.length ? 16 : 0 }} onClick={() => open(null)}><Plus /> Add question</button>
+
+      {form && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setForm(null); }}>
+          <div className="modal">
+            <div className="modal-head">
+              <div className="modal-title">{form.id ? "Edit question" : "New question"}</div>
+              <button className="icon-btn-plain" onClick={() => setForm(null)}><X style={{ width: 18, height: 18 }} /></button>
+            </div>
+            {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
+            <div className="form-group"><label className="form-label">Question</label>
+              <textarea className="form-control" rows="2" value={form.question} onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))} /></div>
+            <div className="form-group"><label className="form-label">Answer type</label>
+              <select className="form-control" style={{ maxWidth: 320 }} value={form.qtype} onChange={(e) => setType(e.target.value)}>
+                <option value="single">Single answer (radio buttons)</option>
+                <option value="multi">Multiple answers (checkboxes)</option>
+              </select>
+              {form.qtype === "multi" && (
+                <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>
+                  Students earn partial marks: right picks minus wrong picks, never below zero for the question.
+                </div>
               )}
             </div>
-          ))}
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            {form.options.length < 6 && <button className="btn btn-ghost btn-sm" onClick={addOpt}><Plus /> Add option</button>}
-            <button className="btn btn-primary btn-sm" onClick={save}><Save /> {form.id ? "Save question" : "Add question"}</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setForm(null)}>Cancel</button>
+            <label className="form-label">Options ({form.qtype === "single" ? "tick the correct one" : "tick every correct one"})</label>
+            {form.options.map((o, i) => (
+              <div key={i} className="toolbar" style={{ marginBottom: 8 }}>
+                <input type={form.qtype === "single" ? "radio" : "checkbox"} name="correct" checked={form.corrects.includes(i)} onChange={() => toggleCorrect(i)}
+                  style={{ accentColor: "var(--primary)", width: 16, height: 16, flex: "0 0 auto" }} />
+                <input className="form-control" placeholder={`Option ${String.fromCharCode(65 + i)}`} value={o} onChange={(e) => setOpt(i, e.target.value)} />
+                {form.options.length > 2 && (
+                  <button className="icon-btn-plain" title="Remove option" onClick={() => delOpt(i)}><X style={{ width: 16, height: 16 }} /></button>
+                )}
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              {form.options.length < 6 && <button className="btn btn-ghost btn-sm" onClick={addOpt}><Plus /> Add option</button>}
+              <button className="btn btn-primary btn-sm" onClick={save}><Save /> {form.id ? "Save question" : "Add question"}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setForm(null)}>Cancel</button>
+            </div>
           </div>
         </div>
-      ) : (
-        <button className="btn btn-primary" style={{ marginTop: exam.questions.length ? 16 : 0 }} onClick={() => open(null)}><Plus /> Add question</button>
       )}
     </div>
   );
@@ -227,6 +255,7 @@ function CsvTab({ exam, setExam, store }) {
   const onFile = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    setResult(null);
     setFileName(f.name);
     const reader = new FileReader();
     reader.onload = () => setCsv(String(reader.result || ""));
@@ -242,7 +271,7 @@ function CsvTab({ exam, setExam, store }) {
   };
 
   const doImport = async () => {
-    if (!csv.trim()) { setResult({ ok: false, msg: "Choose a CSV file or paste CSV text first." }); return; }
+    if (!csv.trim()) { setResult({ ok: false, msg: "Choose a CSV file first." }); return; }
     if (mode === "replace" && exam.questions.length > 0 &&
       !window.confirm(`Replace all ${exam.questions.length} existing questions with the imported ones?`)) return;
     const r = await store.importExamCsv(exam.id, csv, mode);
@@ -263,10 +292,11 @@ function CsvTab({ exam, setExam, store }) {
       <div className="content-section">
         <div className="content-section-head"><FileUp /> Import a paper (CSV)</div>
         <p style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>
-          Columns: question, option_a to option_f (at least two options) and correct (the letter of the right answer).
+          Columns: question, option_a to option_f (at least two options) and correct.
+          Use one letter for a radio question, or several letters separated by semicolons (e.g. A;C) for a checkbox question.
           Leave unused option columns empty.
         </p>
-        <div className="toolbar" style={{ marginBottom: 12 }}>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
           <label className="btn btn-outline" style={{ cursor: "pointer" }}>
             <FileUp /> Choose CSV file
             <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onFile} />
@@ -275,16 +305,10 @@ function CsvTab({ exam, setExam, store }) {
             <option value="append">Add to existing questions</option>
             <option value="replace">Replace all questions</option>
           </select>
-          <button className="btn btn-primary" onClick={doImport}><FileUp /> Import</button>
+          <button className="btn btn-primary" onClick={doImport} disabled={!csv.trim()}><FileUp /> Import</button>
           <button className="btn btn-ghost" onClick={downloadSample}><Download /> Download sample CSV</button>
         </div>
-        {fileName && <div style={{ fontSize: 12.5, color: "#6B7280", marginBottom: 10 }}>Loaded: {fileName}</div>}
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">Or paste CSV text</label>
-          <textarea className="form-control" rows="5" style={{ fontFamily: "monospace", fontSize: 12.5 }}
-            placeholder={'question,option_a,option_b,option_c,option_d,correct\n"Your question here","First","Second","Third","Fourth",A'}
-            value={csv} onChange={(e) => { setCsv(e.target.value); setFileName(""); }} />
-        </div>
+        {fileName && <div style={{ fontSize: 12.5, color: "#6B7280", marginTop: 10 }}>Loaded: {fileName}</div>}
         {result && (
           <div className={"alert " + (result.ok ? "alert-success" : "alert-danger")} style={{ marginTop: 14, marginBottom: 0 }}>
             {result.ok ? <CheckCircle /> : <AlertTriangle />}
@@ -312,35 +336,46 @@ function CsvTab({ exam, setExam, store }) {
 }
 
 function ResultsTab({ exam }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   if (exam.attempts.length === 0) {
     return <div className="empty-state"><div className="empty-icon"><BarChart3 /></div><p>No submissions yet.</p></div>;
   }
+  const pageCount = Math.max(1, Math.ceil(exam.attempts.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = exam.attempts.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Student</th><th>Score</th><th>Submitted</th></tr>
-        </thead>
-        <tbody>
-          {exam.attempts.map((a) => {
-            const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-            return (
-              <tr key={a.id}>
-                <td>
-                  <div style={{ fontWeight: 700 }}>{a.studentName}</div>
-                  <div style={{ fontSize: 12, color: "#9CA3AF" }}>{a.studentEmail}</div>
-                </td>
-                <td>
-                  <span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{a.score}/{a.total} ({pct}%)</span>
-                </td>
-                <td style={{ color: "#6B7280" }}>
-                  {new Date(Number(a.finished_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Student</th><th>Score</th><th>Submitted</th></tr>
+          </thead>
+          <tbody>
+            {slice.map((a) => {
+              const pct = a.total > 0 ? Math.round((Number(a.score) / a.total) * 100) : 0;
+              return (
+                <tr key={a.id}>
+                  <td>
+                    <div style={{ fontWeight: 700 }}>{a.studentName}</div>
+                    <div style={{ fontSize: 12, color: "#9CA3AF" }}>{a.studentEmail}</div>
+                  </td>
+                  <td>
+                    <span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span>
+                  </td>
+                  <td style={{ color: "#6B7280" }}>
+                    {new Date(Number(a.finished_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+        pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={exam.attempts.length} />
+    </>
   );
 }

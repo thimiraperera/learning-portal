@@ -505,3 +505,22 @@ select.form-control { cursor: pointer; }
   font-size: 10.5px; font-weight: 800; color: #16A34A; background: #F0FDF4;
   border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 8px;
 }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 210;
+  background: rgba(10, 25, 50, 0.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; overflow-y: auto;
+}
+.modal {
+  background: white; border-radius: 16px; width: 100%; max-width: 640px;
+  padding: 22px 24px; margin: auto 0;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.modal-title { font-size: 15.5px; font-weight: 800; color: var(--title); }
+.q-type-tag {
+  font-size: 10.5px; font-weight: 800; color: var(--primary); background: var(--primary-light);
+  border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 8px;
+}

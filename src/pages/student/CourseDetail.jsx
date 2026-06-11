@@ -71,7 +71,7 @@ export default function CourseDetail() {
                 </div>
               </div>
               {done
-                ? <span className="badge badge-accepted">Score {x.attempt.score}/{x.attempt.total}</span>
+                ? <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
                 : (
                   <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
                     <Play /> {x.attempt ? "Resume" : "Start exam"}

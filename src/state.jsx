@@ -233,6 +233,7 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const exportExamCsv = useCallback((id) => fetchBlobDownload(`/admin/exams/${id}/export`, `exam-${id}.csv`), [token]);
+  const loadStudentExams = useCallback((id) => api(`/admin/students/${id}/exams`, { token }).then((d) => d.attempts || []), [token]);
 
   /* ---- exams (student) ---- */
   const startExam = useCallback((id) => api(`/exams/${id}/start`, { method: "POST", token }), [token]);
@@ -280,7 +281,7 @@ export function StoreProvider({ children }) {
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
-    importExamCsv, exportExamCsv, startExam, submitExam,
+    importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

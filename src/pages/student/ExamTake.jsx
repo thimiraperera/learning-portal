@@ -10,6 +10,8 @@ function fmt(ms) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
+const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
+
 export default function ExamTake() {
   const { id } = useParams();
   const eid = Number(id);
@@ -74,7 +76,7 @@ export default function ExamTake() {
   }
 
   if (state.finished) {
-    const pct = state.total > 0 ? Math.round((state.score / state.total) * 100) : 0;
+    const pct = state.total > 0 ? Math.round((Number(state.score) / state.total) * 100) : 0;
     return (
       <Layout title="Exam">
         <button className="back-link" onClick={() => navigate(`/courses/${state.courseId}`)}><ArrowLeft /> Back to course</button>
@@ -86,7 +88,7 @@ export default function ExamTake() {
           <div className="empty-icon" style={{ margin: "0 auto 14px" }}><Award /></div>
           <div className="card-title" style={{ fontSize: 16 }}>Exam submitted</div>
           <div style={{ fontSize: 44, fontWeight: 800, color: "var(--primary)", margin: "8px 0 2px" }}>
-            {state.score}/{state.total}
+            {fmtScore(state.score)}/{state.total}
           </div>
           <div style={{ color: "#6B7280", fontWeight: 600, marginBottom: 20 }}>{pct}% correct</div>
           <button className="btn btn-primary" onClick={() => navigate(`/courses/${state.courseId}`)}>Back to course</button>
@@ -114,18 +116,30 @@ export default function ExamTake() {
 
       <div className="card">
         {err && <div className="alert alert-danger"><AlertTriangle /> {err}</div>}
-        {state.questions.map((qn, i) => (
-          <div key={i} className="quiz-q">
-            <div className="quiz-q-text">Q{i + 1}. {qn.question}</div>
-            {qn.options.map((o, j) => (
-              <label key={j} className={"quiz-opt" + (answers[i] === j ? " on" : "")}>
-                <input type="radio" name={`q${i}`} checked={answers[i] === j}
-                  onChange={() => setAnswers((a) => a.map((v, k) => (k === i ? j : v)))} />
-                {o}
-              </label>
-            ))}
-          </div>
-        ))}
+        {state.questions.map((qn, i) => {
+          const multi = qn.qtype === "multi";
+          const isOn = (j) => (multi ? Array.isArray(answers[i]) && answers[i].includes(j) : answers[i] === j);
+          const pick = (j) => setAnswers((a) => a.map((v, k) => {
+            if (k !== i) return v;
+            if (!multi) return j;
+            const arr = Array.isArray(v) ? v.slice() : [];
+            const at = arr.indexOf(j);
+            if (at === -1) arr.push(j); else arr.splice(at, 1);
+            return arr.length ? arr.sort((x, y) => x - y) : null;
+          }));
+          return (
+            <div key={i} className="quiz-q">
+              <div className="quiz-q-text">Q{i + 1}. {qn.question}</div>
+              {multi && <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600, margin: "-6px 0 10px" }}>Select all that apply.</div>}
+              {qn.options.map((o, j) => (
+                <label key={j} className={"quiz-opt" + (isOn(j) ? " on" : "")}>
+                  <input type={multi ? "checkbox" : "radio"} name={`q${i}`} checked={isOn(j)} onChange={() => pick(j)} />
+                  {o}
+                </label>
+              ))}
+            </div>
+          );
+        })}
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 20 }}>
           <button className="btn btn-primary" onClick={() => doSubmit(false)}><Send /> Submit exam</button>
           <span style={{ fontSize: 13, color: answered === state.questions.length ? "#16A34A" : "#9CA3AF", fontWeight: 600 }}>

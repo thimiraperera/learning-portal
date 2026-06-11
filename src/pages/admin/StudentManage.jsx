@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
+  BarChart3, Award, FileQuestion,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
+
+const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
 
 export default function StudentManage() {
   const { id } = useParams();
@@ -20,6 +24,7 @@ export default function StudentManage() {
 
   const tabs = [
     { k: "courses", label: "Courses", icon: BookOpen, n: s.enrolled.length },
+    { k: "overview", label: "Overview", icon: BarChart3 },
     { k: "profile", label: "Profile", icon: SettingsIcon },
   ];
 
@@ -43,6 +48,7 @@ export default function StudentManage() {
         </div>
         {tab === "profile" && <ProfileTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
         {tab === "courses" && <CoursesTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
+        {tab === "overview" && <OverviewTab id={sid} s={s} store={store} navigate={navigate} />}
       </div>
     </Layout>
   );
@@ -100,6 +106,94 @@ function ProfileTab({ id, s, store, navigate }) {
         <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove student</button>
       </div>
+    </div>
+  );
+}
+
+function OverviewTab({ id, s, store, navigate }) {
+  const { certificates, loadStudentExams } = store;
+  const [attempts, setAttempts] = useState(null); // null = loading
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    let alive = true;
+    loadStudentExams(id)
+      .then((a) => { if (alive) setAttempts(a); })
+      .catch(() => { if (alive) setAttempts([]); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const certs = certificates.filter((c) => c.student_id === id).length;
+  const list = attempts || [];
+  const avg = list.length
+    ? Math.round((list.reduce((n, a) => n + (a.total > 0 ? Number(a.score) / a.total : 0), 0) / list.length) * 100)
+    : null;
+
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = list.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  return (
+    <div>
+      <div className="stats-grid">
+        <OvStat label="Enrolled courses" value={s.enrolled.length} icon={BookOpen} bg="#EBF2FF" color="#1E509B" />
+        <OvStat label="Certificates" value={certs} icon={Award} bg="#FFFBEB" color="#D97706" />
+        <OvStat label="Exams written" value={attempts === null ? "..." : list.length} icon={FileQuestion} bg="#EFF6FF" color="#2563EB" />
+        <OvStat label="Average score" value={attempts === null ? "..." : (avg === null ? "n/a" : `${avg}%`)} icon={BarChart3} bg="#F0FDF4" color="#16A34A" />
+      </div>
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>WRITTEN EXAMS ({list.length})</div>
+      {attempts === null ? (
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>
+      ) : list.length === 0 ? (
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>No exams written yet.</p>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Exam</th><th>Course</th><th>Score</th><th>Submitted</th></tr>
+              </thead>
+              <tbody>
+                {slice.map((a) => {
+                  const pct = a.total > 0 ? Math.round((Number(a.score) / a.total) * 100) : 0;
+                  return (
+                    <tr key={a.id}>
+                      <td>
+                        <button onClick={() => navigate(`/admin/exams/${a.exam_id}`)}
+                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: "var(--primary)", fontFamily: "inherit", fontSize: "inherit", textAlign: "left" }}>
+                          {a.examTitle}
+                        </button>
+                      </td>
+                      <td style={{ color: "#6B7280" }}>{a.course_id ? `${a.courseCode} - ${a.courseTitle}` : "-"}</td>
+                      <td><span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span></td>
+                      <td style={{ color: "#6B7280" }}>
+                        {new Date(Number(a.finished_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+            pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={list.length} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function OvStat({ label, value, icon: Icon, bg, color }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-header">
+        <div className="stat-label">{label}</div>
+        <div className="stat-icon" style={{ background: bg }}><Icon style={{ color }} /></div>
+      </div>
+      <div className="stat-value">{value}</div>
     </div>
   );
 }
