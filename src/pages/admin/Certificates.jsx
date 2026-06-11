@@ -9,22 +9,44 @@ function fmt(ts) { return new Date(Number(ts) || Date.now()).toLocaleDateString(
 
 export default function Certificates() {
   const store = useStore();
-  const { users, courses, certificates, issueCertificate, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
+  const { users, courses, certificates, issueCertificate, bulkIssueCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
 
   const [student, setStudent] = useState("all");
   const [course, setCourse] = useState("all");
+  const [bulkCourse, setBulkCourse] = useState("all");
   const [msg, setMsg] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const hasCert = (studentId, courseId) => certificates.some((c) => c.student_id === studentId && c.course_id === courseId);
+
   const studentOptions = Object.values(users).filter((u) => u.role === "student").map((u) => ({ value: String(u.id), label: `${u.name} · ${u.email}` }));
   const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
+
+  // Course options for the picked student: their enrolled courses without a certificate yet.
+  const selStudent = student !== "all" ? Object.values(users).find((u) => String(u.id) === student) : null;
+  const studentCourseOptions = selStudent
+    ? selStudent.enrolled.filter((cid) => courses[cid] && !hasCert(selStudent.id, cid)).map((cid) => ({ value: cid, label: `${courses[cid].code} - ${courses[cid].title}` }))
+    : [];
+
+  // Bulk: students enrolled in the picked course who don't have a certificate yet.
+  const bulkEligible = bulkCourse !== "all"
+    ? Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(bulkCourse) && !hasCert(u.id, bulkCourse))
+    : [];
+
+  const onStudent = (v) => { setStudent(v); setCourse("all"); };
 
   const issue = async () => {
     if (student === "all" || course === "all") { setMsg({ ok: false, msg: "Pick a student and a course." }); return; }
     const r = await issueCertificate(Number(student), course);
     setMsg(r);
     if (r.ok) { setStudent("all"); setCourse("all"); }
+  };
+
+  const bulkIssue = async () => {
+    if (bulkCourse === "all") { setMsg({ ok: false, msg: "Pick a course." }); return; }
+    const r = await bulkIssueCertificates(bulkCourse);
+    setMsg(r);
   };
 
   const act = async (fn) => { try { const r = await fn(); if (r) setMsg(r); } catch (e) { setMsg({ ok: false, msg: e.message }); } };
@@ -46,17 +68,36 @@ export default function Certificates() {
         <p>Issue course-completion certificates, email them, and manage student downloads.</p>
       </div>
 
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+
       <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-title">Issue a certificate</div>
-        <div className="card-subtitle">The student is emailed and can download it once from their dashboard.</div>
-        {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+        <div className="card-title">Issue to one student</div>
+        <div className="card-subtitle">Pick a student, then choose from the courses they're enrolled in. The student is emailed and can download it once.</div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <SearchSelect style={{ flex: "1 1 240px" }} value={student} placeholder="Select student" allLabel="Select student"
-            options={studentOptions} onChange={setStudent} />
-          <SearchSelect style={{ flex: "1 1 240px" }} value={course} placeholder="Select course" allLabel="Select course"
-            options={courseOptions} onChange={setCourse} />
-          <button className="btn btn-primary" onClick={issue}><Plus /> Issue certificate</button>
+            options={studentOptions} onChange={onStudent} />
+          <SearchSelect style={{ flex: "1 1 240px" }} value={course}
+            placeholder={selStudent ? (studentCourseOptions.length ? "Select course" : "No courses to certify") : "Select a student first"}
+            allLabel="Select course" options={studentCourseOptions} onChange={setCourse} />
+          <button className="btn btn-primary" onClick={issue} disabled={student === "all" || course === "all"}><Plus /> Issue certificate</button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card-title">Bulk issue by course</div>
+        <div className="card-subtitle">Pick a course to issue certificates to every enrolled student who doesn't have one yet.</div>
+        <div className="toolbar" style={{ marginBottom: bulkCourse !== "all" ? 12 : 0 }}>
+          <SearchSelect style={{ flex: "1 1 260px" }} value={bulkCourse} placeholder="Select course" allLabel="Select course"
+            options={courseOptions} onChange={setBulkCourse} />
+          <button className="btn btn-primary" onClick={bulkIssue} disabled={bulkCourse === "all" || bulkEligible.length === 0}>
+            <Plus /> Issue {bulkEligible.length} certificate{bulkEligible.length === 1 ? "" : "s"}
+          </button>
+        </div>
+        {bulkCourse !== "all" && (
+          bulkEligible.length === 0
+            ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Every enrolled student already has a certificate for this course.</p>
+            : <p style={{ color: "#6B7280", fontSize: 13 }}>Will issue to: {bulkEligible.map((u) => u.name).join(", ")}</p>
+        )}
       </div>
 
       <div className="card">

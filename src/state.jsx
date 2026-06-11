@@ -182,6 +182,10 @@ export function StoreProvider({ children }) {
     try { const d = await api("/admin/certificates", { method: "POST", token, body: { studentId, courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const bulkIssueCertificates = useCallback(async (courseId) => {
+    try { const d = await api("/admin/certificates/bulk", { method: "POST", token, body: { courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
   const unlockCertificate = useCallback(async (id) => {
     applyAdmin(await api(`/admin/certificates/${id}/unlock`, { method: "POST", token }));
   }, [token]);
@@ -231,7 +235,7 @@ export function StoreProvider({ children }) {
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
-    issueCertificate, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
+    issueCertificate, bulkIssueCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

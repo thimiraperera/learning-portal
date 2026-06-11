@@ -294,6 +294,23 @@ app.post("/api/admin/certificates", auth, adminOnly, wrap(async (req, res) => {
   res.json({ ok: true, sent: mail.sent, msg: mail.sent ? `Certificate issued and emailed to ${stu.email}.` : `Certificate issued (email not sent: ${mail.reason}).`, ...(await adminState()) });
 }));
 
+app.post("/api/admin/certificates/bulk", auth, adminOnly, wrap(async (req, res) => {
+  const courseId = String(req.body?.courseId || "");
+  const [[course]] = await q("SELECT * FROM courses WHERE id=?", [courseId]);
+  if (!course) return res.status(400).json({ error: "Pick a valid course." });
+  const [students] = await q("SELECT u.* FROM users u JOIN enrolments e ON e.user_id=u.id WHERE e.course_id=? AND u.role='student'", [courseId]);
+  let issued = 0;
+  for (const stu of students) {
+    if (await dbmod.certExists(stu.id, courseId)) continue;
+    const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+    await dbmod.issueCertificate(stu.id, courseId, certNo, Date.now());
+    await sendMail(stu.email, "Your certificate has been issued",
+      `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
+    issued++;
+  }
+  res.json({ ok: true, msg: `Issued ${issued} new certificate${issued === 1 ? "" : "s"} for ${course.title}.`, ...(await adminState()) });
+}));
+
 app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert) return res.status(404).json({ error: "Certificate not found." });
