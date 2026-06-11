@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, FlaskConical, UserCog, Plus } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, AlertOctagon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
@@ -8,7 +8,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup, seedTestData, logout,
+  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup, resetAll, logout,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const navigate = useNavigate();
   const [company, setCompany] = useState(brand.company);
@@ -117,33 +117,34 @@ export default function Settings() {
 
       <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
       <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
-      <TestDataCard seedTestData={seedTestData} logout={logout} navigate={navigate} />
+      <ResetCard resetAll={resetAll} logout={logout} navigate={navigate} />
     </Layout>
   );
 }
 
-/* TEMPORARY: load bulk sample data for testing. Remove this card (and the
-   /api/admin/dev/seed endpoint) before going to production. */
-function TestDataCard({ seedTestData, logout, navigate }) {
+/* Danger zone: wipe all data and start fresh. */
+function ResetCard({ resetAll, logout, navigate }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const run = async () => {
-    if (!window.confirm("Load sample test data? This DELETES all current users, courses, exams and uploaded files, then inserts demo data. You will be signed out.")) return;
+    if (!window.confirm("Reset ALL data? This permanently deletes every student, instructor, course, exam, certificate and uploaded file. Branding and SMTP settings are kept. This cannot be undone.")) return;
+    const typed = window.prompt('Type RESET to confirm you want to erase all data.');
+    if (typed !== "RESET") { setMsg({ ok: false, text: "Reset cancelled." }); return; }
     setBusy(true); setMsg(null);
-    const r = await seedTestData();
+    const r = await resetAll();
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
-    setMsg({ ok: true, text: `Loaded ${r.students} students, ${r.instructors} instructors, ${r.courses} courses, ${r.exams} exams (${r.questions} questions). Signing you out...` });
-    setTimeout(async () => { await logout(); navigate("/login"); }, 2200);
+    setMsg({ ok: true, text: "All data has been reset. Signing you out..." });
+    setTimeout(async () => { await logout(); navigate("/login"); }, 1800);
   };
 
   return (
-    <div className="card" style={{ marginTop: 24, border: "1.5px dashed #F59E0B" }}>
-      <div className="card-title"><FlaskConical style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "#D97706" }} />Test data <span style={{ fontSize: 11, fontWeight: 700, color: "#D97706", background: "#FFFBEB", borderRadius: 999, padding: "2px 10px", marginLeft: 6 }}>TEMPORARY</span></div>
-      <div className="card-subtitle">For testing only. Replaces everything with demo data and a fresh admin (<code>admin</code> / <code>admin123</code>). Remove this before production.</div>
+    <div className="card" style={{ marginTop: 24, border: "1.5px solid #FECACA" }}>
+      <div className="card-title"><AlertOctagon style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--danger)" }} />Reset all data</div>
+      <div className="card-subtitle">Permanently delete all students, instructors, courses, exams, certificates and uploaded files, and recreate the default admin. Branding and SMTP settings are kept. This cannot be undone.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
-      <button className="btn btn-danger" disabled={busy} onClick={run}><FlaskConical /> {busy ? "Loading sample data..." : "Load sample data"}</button>
+      <button className="btn btn-danger" disabled={busy} onClick={run}><Trash2 /> {busy ? "Resetting..." : "Reset all data"}</button>
     </div>
   );
 }

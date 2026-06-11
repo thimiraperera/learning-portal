@@ -121,66 +121,31 @@ function displayName(u) {
   return (u.nickname && u.nickname.trim()) || full || u.username;
 }
 
-async function seedIfEmpty() {
-  const [[{ n }]] = await q("SELECT COUNT(*) AS n FROM users");
-  if (n > 0) return;
+/* On a fresh database (no admin yet) create the first administrator from
+   environment variables, so a new install has a login without any demo data.
+   Defaults to admin / admin123 if the ADMIN_* vars are not set. */
+async function ensureAdmin() {
+  if (await hasAdmin()) return;
+  const username = String(process.env.ADMIN_USERNAME || "admin").trim().toLowerCase();
+  const email = String(process.env.ADMIN_EMAIL || "admin@example.com").trim().toLowerCase();
+  const password = String(process.env.ADMIN_PASSWORD || "admin123");
+  const name = String(process.env.ADMIN_NAME || "Administrator");
+  const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [username, email]);
+  if (clash) return; // a non-admin already uses these credentials; leave it alone
+  await createAdmin({ name, username, email, password });
+  const [[brand]] = await q("SELECT 1 AS x FROM settings WHERE k='brand'");
+  if (!brand) await q("INSERT INTO settings (k,v) VALUES ('brand',?)", [JSON.stringify({ company: "", name: "Learning Portal", logo: "" })]);
+  console.log(`Created initial admin '${username}' (set ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_EMAIL / ADMIN_NAME to customise).`);
+}
 
-  const mk = async (first, last, username, email, pw, role) => {
-    const [r] = await q(
-      "INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?,?,?,?,?,?, 'active')",
-      [`${first} ${last}`.trim(), first, last, "", username, email, bcrypt.hashSync(pw, 10), role]
-    );
-    return r.insertId;
-  };
-  await mk("Chamira", "H.", "admin", "chamira@demo.lk", "admin123", "admin");
-  const ravi  = await mk("Ravi", "Perera", "ravi", "ravi@demo.lk", "ravi123", "student");
-  const amara = await mk("Amara", "Silva", "amara", "amara@demo.lk", "amara123", "student");
-  await mk("Dilan", "Fernando", "dilan", "dilan@demo.lk", "dilan123", "student");
-
-  const [insRes] = await q("INSERT INTO instructors (name,email,phone,title,bio) VALUES (?,?,?,?,?)",
-    ["C. Hettiarachchi", "chamira@demo.lk", "", "Lead Mentor", "Founder and lead mentor of the programme."]);
-  const instrId = insRes.insertId;
-
-  const course = (id, code, title, blurb, sessions) =>
-    q("INSERT INTO courses (id,code,title,instructor,instructor_id,blurb,sessions) VALUES (?,?,?,?,?,?,?)", [id, code, title, "C. Hettiarachchi", instrId, blurb, sessions]);
-  const rec = (cid, t, d, len) => q("INSERT INTO recordings (course_id,title,date,length) VALUES (?,?,?,?)", [cid, t, d, len]);
-  const link = (cid, t, u) => q("INSERT INTO links (course_id,title,url) VALUES (?,?,?)", [cid, t, u]);
-  const mat = (cid, t, size, ext) => q("INSERT INTO materials (course_id,title,size,ext) VALUES (?,?,?,?)", [cid, t, size, ext]);
-
-  await course("c1", "EQ-101", "Foundations of Equity Markets", "How exchanges, orders and price discovery actually work.", 8);
-  await rec("c1", "Market structure & order types", "May 04, 2026", "1h 12m");
-  await rec("c1", "Reading a quote: bid, ask, spread", "May 11, 2026", "58m");
-  await rec("c1", "Primary vs secondary markets", "May 18, 2026", "1h 04m");
-  await rec("c1", "Settlement, custody & the CDS", "May 25, 2026", "47m");
-  await link("c1", "Colombo Stock Exchange (live board)", "https://www.cse.lk");
-  await link("c1", "Glossary: 40 terms every beginner needs", "#");
-  await mat("c1", "Session 1-2 slide deck", "4.2 MB", "PDF");
-  await mat("c1", "Order-types cheat sheet", "180 KB", "PDF");
-
-  await course("c2", "TA-220", "Technical Analysis Masterclass", "Price action, structure and the discipline behind the charts.", 10);
-  await rec("c2", "Support, resistance & market memory", "May 06, 2026", "1h 21m");
-  await rec("c2", "Trend, range and the in-between", "May 13, 2026", "1h 09m");
-  await rec("c2", "Volume as confirmation", "May 20, 2026", "55m");
-  await link("c2", "Charting workspace template", "#");
-  await link("c2", "Pattern reference library", "#");
-  await mat("c2", "TA pattern handbook", "9.8 MB", "PDF");
-  await mat("c2", "Trade journal template", "320 KB", "XLSX");
-
-  await course("c3", "DV-310", "Options & Derivatives", "Payoffs, greeks and structuring positions with intent.", 9);
-  await rec("c3", "Calls, puts & the payoff diagram", "May 09, 2026", "1h 30m");
-  await rec("c3", "The greeks, plainly", "May 16, 2026", "1h 18m");
-  await link("c3", "Options payoff simulator", "#");
-  await mat("c3", "Greeks quick-reference", "640 KB", "PDF");
-
-  await course("c4", "PF-330", "Portfolio Construction & Risk", "Sizing, diversification and surviving your worst week.", 7);
-  await rec("c4", "Position sizing & the 2% rule", "May 12, 2026", "1h 02m");
-  await link("c4", "Risk calculator spreadsheet", "#");
-  await mat("c4", "Allocation worksheet", "210 KB", "XLSX");
-
-  await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?),(?,?),(?,?),(?,?),(?,?)",
-    [ravi, "c1", ravi, "c2", amara, "c2", amara, "c3", amara, "c4"]);
-
-  await q("INSERT INTO settings (k,v) VALUES ('brand',?)", [JSON.stringify({ company: "", name: "Learning Portal", logo: "" })]);
+/* Wipe all content (keeps branding / SMTP / hCaptcha settings) and recreate
+   the env/default admin. Used by the admin "reset all data" button. */
+async function resetAllData() {
+  for (const t of ["exam_attempts", "exam_questions", "exams", "certificates", "enrolments", "course_instructors",
+    "recordings", "links", "materials", "content_groups", "courses", "instructors", "users", "sessions"]) {
+    await q(`DELETE FROM ${t}`);
+  }
+  await ensureAdmin();
 }
 
 async function init() {
@@ -217,7 +182,7 @@ async function init() {
     const parts = String(u.name || "").trim().split(/\s+/);
     await q("UPDATE users SET first_name=?, last_name=? WHERE id=?", [parts.shift() || "", parts.join(" "), u.id]);
   }
-  await seedIfEmpty();
+  await ensureAdmin();
   // Migrate any free-text course instructors into the instructors table.
   const [[{ ni }]] = await q("SELECT COUNT(*) AS ni FROM instructors");
   if (ni === 0) {
@@ -651,132 +616,6 @@ async function deleteAdminUser(id) {
   await q("DELETE FROM users WHERE id=? AND role='admin'", [id]);
 }
 
-/* ---- TEMPORARY: bulk sample data for testing (wipes existing data) ---- */
-async function seedBulk() {
-  const FIRST = ["Ravi", "Amara", "Dilan", "Nadeesha", "Kasun", "Sahan", "Tharindu", "Ishara", "Nuwan", "Chathura",
-    "Hiruni", "Sanduni", "Pasan", "Gayan", "Malsha", "Dinithi", "Lakmal", "Roshan", "Tania", "Kavindi",
-    "Janith", "Oshadi", "Buddhika", "Shenal", "Yasiru", "Maleesha", "Imasha", "Heshan", "Senura", "Nethmi"];
-  const LAST = ["Perera", "Silva", "Fernando", "Jayawardena", "Bandara", "Wickramasinghe", "Rajapaksa", "Gunawardena",
-    "Senanayake", "Dissanayake", "Herath", "Ratnayake", "Weerasinghe", "Karunaratne", "Ekanayake", "Mendis",
-    "Wijesinghe", "Abeysekera", "Samaraweera", "Kumara"];
-  const TITLES = ["Lead Mentor", "Senior Instructor", "Course Director", "Trading Coach", "Analyst", "Guest Lecturer"];
-  const COURSE_TITLES = [
-    "Foundations of Equity Markets", "Technical Analysis Masterclass", "Options & Derivatives", "Portfolio Construction & Risk",
-    "Fundamental Analysis", "Candlestick Patterns", "Risk Management Essentials", "Algorithmic Trading Basics",
-    "Forex Trading", "Commodities & Futures", "Behavioural Finance", "Macroeconomics for Traders",
-    "Day Trading Strategies", "Swing Trading", "Value Investing", "Dividend Investing", "Crypto Market Structure",
-    "Bond Markets", "Financial Statement Analysis", "Trading Psychology", "Market Microstructure", "Quantitative Methods",
-    "ETFs & Index Funds", "Hedging Strategies", "Position Sizing", "Chart Pattern Recognition", "Economic Indicators",
-    "Wealth Planning", "Capital Markets Law", "Intro to Investing"];
-  const pick = (arr, i) => arr[i % arr.length];
-  const pw = bcrypt.hashSync("test123", 10);
-  const adminHash = bcrypt.hashSync("admin123", 10);
-
-  for (const t of ["exam_attempts", "exam_questions", "exams", "certificates", "enrolments", "course_instructors",
-    "recordings", "links", "materials", "content_groups", "courses", "instructors", "users", "sessions"]) {
-    await q(`DELETE FROM ${t}`);
-  }
-
-  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', 'admin','admin@demo.lk', ?, 'admin','active')",
-    ["Admin User", "Admin", "User", adminHash]);
-
-  // 20 instructors (4 of them get logins: instr1..instr4 / test123)
-  const instructorIds = [];
-  for (let i = 0; i < 20; i++) {
-    const first = pick(FIRST, i * 2 + 1);
-    const last = pick(LAST, i);
-    const [r] = await q("INSERT INTO instructors (name,email,phone,title,bio,gender,notes) VALUES (?,?,?,?,?,?, '')",
-      [`${first} ${last}`, `instructor${i + 1}@demo.lk`, `+94 71${String(2000000 + i).slice(0, 7)}`, pick(TITLES, i), "Experienced markets mentor.", i % 3 === 0 ? "Female" : "Male"]);
-    instructorIds.push(r.insertId);
-  }
-  for (let i = 0; i < 4; i++) {
-    const [[ins]] = await q("SELECT name, email FROM instructors WHERE id=?", [instructorIds[i]]);
-    const parts = ins.name.split(" ");
-    const [u] = await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'instructor','active')",
-      [ins.name, parts[0], parts.slice(1).join(" "), "instr" + (i + 1), ins.email, pw]);
-    await q("UPDATE instructors SET user_id=? WHERE id=?", [u.insertId, instructorIds[i]]);
-  }
-
-  // 30 courses with instructors, groups and content
-  const courseIds = [];
-  for (let i = 0; i < 30; i++) {
-    const id = "c" + (i + 1);
-    const code = "C-" + (101 + i);
-    const title = COURSE_TITLES[i] || ("Course " + (i + 1));
-    await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, '')",
-      [id, code, title, "A comprehensive programme on " + title.toLowerCase() + ".", 4 + (i % 9)]);
-    for (let j = 0; j <= i % 3; j++) await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [id, instructorIds[(i + j) % 20]]);
-    for (let g = 0; g <= i % 3; g++) {
-      const [gr] = await q("INSERT INTO content_groups (course_id,title,position) VALUES (?,?,?)", [id, "Module " + (g + 1), g]);
-      const gid = gr.insertId;
-      for (let k = 0; k < 2; k++) await q("INSERT INTO recordings (course_id,group_id,title,date,length,position) VALUES (?,?,?, 'n/a','n/a', ?)", [id, gid, `Lecture ${g + 1}.${k + 1}`, k]);
-      await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?, '#', 0)", [id, gid, `Reference reading ${g + 1}`]);
-      await q("INSERT INTO materials (course_id,group_id,title,size,ext,position) VALUES (?,?,?, 'n/a','PDF', 0)", [id, gid, `Module ${g + 1} notes`]);
-    }
-    courseIds.push(id);
-  }
-
-  // 50 students (40 active, 6 inactive, 4 invited) + random enrolments
-  const studentIds = [];
-  for (let i = 0; i < 50; i++) {
-    const first = pick(FIRST, i);
-    const last = pick(LAST, i * 2 + 1);
-    const status = i < 40 ? "active" : i < 46 ? "inactive" : "invited";
-    const invited = status === "invited";
-    const [r] = await q("INSERT INTO users (name,first_name,last_name,nickname,phone,gender,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '', ?, ?, ?, ?, ?, 'student', ?, ?)",
-      [`${first} ${last}`, first, last, `+94 76${String(1000000 + i).slice(0, 7)}`, i % 2 === 0 ? "Male" : "Female",
-        "student" + (i + 1), `student${i + 1}@demo.lk`, invited ? "" : pw, status, invited ? "seedtok" + i : null]);
-    studentIds.push(r.insertId);
-    if (!invited) {
-      const seen = new Set();
-      for (let j = 0; j < i % 6; j++) {
-        const cid = courseIds[(i * 3 + j * 7) % 30];
-        if (seen.has(cid)) continue;
-        seen.add(cid);
-        await q("INSERT IGNORE INTO enrolments (user_id,course_id) VALUES (?,?)", [r.insertId, cid]);
-      }
-    }
-  }
-
-  // 10 exams (89 questions total), assigned to courses
-  let questions = 0;
-  for (let i = 0; i < 10; i++) {
-    const cid = courseIds[(i * 3) % 30];
-    const qCount = 8 + (i % 3);
-    const [ex] = await q("INSERT INTO exams (course_id,title,question_count,time_limit,created_at) VALUES (?,?,?,?,?)",
-      [cid, `Assessment ${i + 1}`, Math.min(6, qCount), [0, 15, 30, 60][i % 4], Date.now()]);
-    for (let k = 0; k < qCount; k++) {
-      const multi = k % 4 === 3;
-      const corrects = multi ? [0, 2] : [k % 4];
-      await q("INSERT INTO exam_questions (exam_id,question,options,correct,qtype,corrects,position) VALUES (?,?,?,?,?,?,?)",
-        [ex.insertId, `Sample question ${k + 1} for assessment ${i + 1}?`, JSON.stringify(["Option A", "Option B", "Option C", "Option D"]),
-          corrects[0], multi ? "multi" : "single", JSON.stringify(corrects), k]);
-      questions++;
-    }
-  }
-
-  // some certificates + finished exam attempts so lists/results have data
-  const [enrol] = await q("SELECT user_id, course_id FROM enrolments LIMIT 15");
-  for (const e of enrol) {
-    await q("INSERT INTO certificates (cert_no,student_id,course_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,0,0)",
-      ["CERT-SEED-" + e.user_id + "-" + e.course_id, e.user_id, e.course_id, Date.now()]);
-  }
-  const [examRows] = await q("SELECT id, course_id FROM exams");
-  for (const ex of examRows) {
-    const [studs] = await q("SELECT user_id FROM enrolments WHERE course_id=? LIMIT 3", [ex.course_id]);
-    const [qs] = await q("SELECT options, corrects FROM exam_questions WHERE exam_id=?", [ex.id]);
-    if (!qs.length) continue;
-    const snapQs = qs.map((r) => ({ qtype: "single", question: "", options: JSON.parse(r.options), corrects: JSON.parse(r.corrects || "[0]") }));
-    for (const s of studs) {
-      const now = Date.now();
-      await q("INSERT INTO exam_attempts (exam_id,user_id,started_at,finished_at,score,total,snapshot) VALUES (?,?,?,?,?,?,?)",
-        [ex.id, s.user_id, now - 600000, now, Math.round(snapQs.length * 0.7), snapQs.length, JSON.stringify({ questions: snapQs, answers: [] })]);
-    }
-  }
-
-  return { students: 50, instructors: 20, courses: 30, exams: 10, questions };
-}
-
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -835,6 +674,6 @@ module.exports = {
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
-  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser, seedBulk,
+  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser, resetAllData,
   findLoginUser, setResetToken, getResetUser, applyReset,
 };

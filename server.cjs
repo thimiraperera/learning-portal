@@ -1086,15 +1086,14 @@ app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"),
   res.json({ ok: true, msg: "Database and files restored." });
 }));
 
-/* ---- TEMPORARY: load bulk sample data for testing (admin). Remove for production.
-   Wipes all data and uploaded files, then inserts demo students/instructors/
-   courses/exams and a fresh admin (admin / admin123). You will be signed out. ---- */
-app.post("/api/admin/dev/seed", auth, adminOnly, wrap(async (_req, res) => {
+/* Full reset: wipe all content + uploaded files (branding/SMTP/hCaptcha settings
+   are kept) and recreate the env/default admin. You will be signed out. */
+app.post("/api/admin/reset", auth, adminOnly, wrap(async (_req, res) => {
   try {
     for (const entry of await fs.promises.readdir(STORAGE)) await fs.promises.rm(path.join(STORAGE, entry), { recursive: true, force: true });
   } catch { /* nothing to clear */ }
-  const counts = await dbmod.seedBulk();
-  res.json({ ok: true, ...counts });
+  await dbmod.resetAllData();
+  res.json({ ok: true });
 }));
 
 /* ---- hCaptcha settings (admins) ---- */

@@ -249,8 +249,8 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
-  const seedTestData = useCallback(async () => {
-    try { const d = await api("/admin/dev/seed", { method: "POST", token }); return { ok: true, ...d }; }
+  const resetAll = useCallback(async () => {
+    try { await api("/admin/reset", { method: "POST", token }); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
@@ -406,7 +406,7 @@ export function StoreProvider({ children }) {
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
-    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, seedTestData,
+    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, resetAll,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
