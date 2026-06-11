@@ -603,6 +603,145 @@ async function studentExams(userId) {
   return out;
 }
 
+/* ---- first-admin setup ---- */
+async function hasAdmin() {
+  const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin'");
+  return r.n > 0;
+}
+async function createAdmin({ name, username, email, password }) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts.shift() || "";
+  const last = parts.join(" ");
+  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'admin','active')",
+    [name.trim(), first, last, username, email, bcrypt.hashSync(password, 10)]);
+}
+
+/* ---- TEMPORARY: bulk sample data for testing (wipes existing data) ---- */
+async function seedBulk() {
+  const FIRST = ["Ravi", "Amara", "Dilan", "Nadeesha", "Kasun", "Sahan", "Tharindu", "Ishara", "Nuwan", "Chathura",
+    "Hiruni", "Sanduni", "Pasan", "Gayan", "Malsha", "Dinithi", "Lakmal", "Roshan", "Tania", "Kavindi",
+    "Janith", "Oshadi", "Buddhika", "Shenal", "Yasiru", "Maleesha", "Imasha", "Heshan", "Senura", "Nethmi"];
+  const LAST = ["Perera", "Silva", "Fernando", "Jayawardena", "Bandara", "Wickramasinghe", "Rajapaksa", "Gunawardena",
+    "Senanayake", "Dissanayake", "Herath", "Ratnayake", "Weerasinghe", "Karunaratne", "Ekanayake", "Mendis",
+    "Wijesinghe", "Abeysekera", "Samaraweera", "Kumara"];
+  const TITLES = ["Lead Mentor", "Senior Instructor", "Course Director", "Trading Coach", "Analyst", "Guest Lecturer"];
+  const COURSE_TITLES = [
+    "Foundations of Equity Markets", "Technical Analysis Masterclass", "Options & Derivatives", "Portfolio Construction & Risk",
+    "Fundamental Analysis", "Candlestick Patterns", "Risk Management Essentials", "Algorithmic Trading Basics",
+    "Forex Trading", "Commodities & Futures", "Behavioural Finance", "Macroeconomics for Traders",
+    "Day Trading Strategies", "Swing Trading", "Value Investing", "Dividend Investing", "Crypto Market Structure",
+    "Bond Markets", "Financial Statement Analysis", "Trading Psychology", "Market Microstructure", "Quantitative Methods",
+    "ETFs & Index Funds", "Hedging Strategies", "Position Sizing", "Chart Pattern Recognition", "Economic Indicators",
+    "Wealth Planning", "Capital Markets Law", "Intro to Investing"];
+  const pick = (arr, i) => arr[i % arr.length];
+  const pw = bcrypt.hashSync("test123", 10);
+  const adminHash = bcrypt.hashSync("admin123", 10);
+
+  for (const t of ["exam_attempts", "exam_questions", "exams", "certificates", "enrolments", "course_instructors",
+    "recordings", "links", "materials", "content_groups", "courses", "instructors", "users", "sessions"]) {
+    await q(`DELETE FROM ${t}`);
+  }
+
+  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', 'admin','admin@demo.lk', ?, 'admin','active')",
+    ["Admin User", "Admin", "User", adminHash]);
+
+  // 20 instructors (4 of them get logins: instr1..instr4 / test123)
+  const instructorIds = [];
+  for (let i = 0; i < 20; i++) {
+    const first = pick(FIRST, i * 2 + 1);
+    const last = pick(LAST, i);
+    const [r] = await q("INSERT INTO instructors (name,email,phone,title,bio,gender,notes) VALUES (?,?,?,?,?,?, '')",
+      [`${first} ${last}`, `instructor${i + 1}@demo.lk`, `+94 71${String(2000000 + i).slice(0, 7)}`, pick(TITLES, i), "Experienced markets mentor.", i % 3 === 0 ? "Female" : "Male"]);
+    instructorIds.push(r.insertId);
+  }
+  for (let i = 0; i < 4; i++) {
+    const [[ins]] = await q("SELECT name, email FROM instructors WHERE id=?", [instructorIds[i]]);
+    const parts = ins.name.split(" ");
+    const [u] = await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'instructor','active')",
+      [ins.name, parts[0], parts.slice(1).join(" "), "instr" + (i + 1), ins.email, pw]);
+    await q("UPDATE instructors SET user_id=? WHERE id=?", [u.insertId, instructorIds[i]]);
+  }
+
+  // 30 courses with instructors, groups and content
+  const courseIds = [];
+  for (let i = 0; i < 30; i++) {
+    const id = "c" + (i + 1);
+    const code = "C-" + (101 + i);
+    const title = COURSE_TITLES[i] || ("Course " + (i + 1));
+    await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, '')",
+      [id, code, title, "A comprehensive programme on " + title.toLowerCase() + ".", 4 + (i % 9)]);
+    for (let j = 0; j <= i % 3; j++) await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [id, instructorIds[(i + j) % 20]]);
+    for (let g = 0; g <= i % 3; g++) {
+      const [gr] = await q("INSERT INTO content_groups (course_id,title,position) VALUES (?,?,?)", [id, "Module " + (g + 1), g]);
+      const gid = gr.insertId;
+      for (let k = 0; k < 2; k++) await q("INSERT INTO recordings (course_id,group_id,title,date,length,position) VALUES (?,?,?, 'n/a','n/a', ?)", [id, gid, `Lecture ${g + 1}.${k + 1}`, k]);
+      await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?, '#', 0)", [id, gid, `Reference reading ${g + 1}`]);
+      await q("INSERT INTO materials (course_id,group_id,title,size,ext,position) VALUES (?,?,?, 'n/a','PDF', 0)", [id, gid, `Module ${g + 1} notes`]);
+    }
+    courseIds.push(id);
+  }
+
+  // 50 students (40 active, 6 inactive, 4 invited) + random enrolments
+  const studentIds = [];
+  for (let i = 0; i < 50; i++) {
+    const first = pick(FIRST, i);
+    const last = pick(LAST, i * 2 + 1);
+    const status = i < 40 ? "active" : i < 46 ? "inactive" : "invited";
+    const invited = status === "invited";
+    const [r] = await q("INSERT INTO users (name,first_name,last_name,nickname,phone,gender,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '', ?, ?, ?, ?, ?, 'student', ?, ?)",
+      [`${first} ${last}`, first, last, `+94 76${String(1000000 + i).slice(0, 7)}`, i % 2 === 0 ? "Male" : "Female",
+        "student" + (i + 1), `student${i + 1}@demo.lk`, invited ? "" : pw, status, invited ? "seedtok" + i : null]);
+    studentIds.push(r.insertId);
+    if (!invited) {
+      const seen = new Set();
+      for (let j = 0; j < i % 6; j++) {
+        const cid = courseIds[(i * 3 + j * 7) % 30];
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        await q("INSERT IGNORE INTO enrolments (user_id,course_id) VALUES (?,?)", [r.insertId, cid]);
+      }
+    }
+  }
+
+  // 10 exams (89 questions total), assigned to courses
+  let questions = 0;
+  for (let i = 0; i < 10; i++) {
+    const cid = courseIds[(i * 3) % 30];
+    const qCount = 8 + (i % 3);
+    const [ex] = await q("INSERT INTO exams (course_id,title,question_count,time_limit,created_at) VALUES (?,?,?,?,?)",
+      [cid, `Assessment ${i + 1}`, Math.min(6, qCount), [0, 15, 30, 60][i % 4], Date.now()]);
+    for (let k = 0; k < qCount; k++) {
+      const multi = k % 4 === 3;
+      const corrects = multi ? [0, 2] : [k % 4];
+      await q("INSERT INTO exam_questions (exam_id,question,options,correct,qtype,corrects,position) VALUES (?,?,?,?,?,?,?)",
+        [ex.insertId, `Sample question ${k + 1} for assessment ${i + 1}?`, JSON.stringify(["Option A", "Option B", "Option C", "Option D"]),
+          corrects[0], multi ? "multi" : "single", JSON.stringify(corrects), k]);
+      questions++;
+    }
+  }
+
+  // some certificates + finished exam attempts so lists/results have data
+  const [enrol] = await q("SELECT user_id, course_id FROM enrolments LIMIT 15");
+  for (const e of enrol) {
+    await q("INSERT INTO certificates (cert_no,student_id,course_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,0,0)",
+      ["CERT-SEED-" + e.user_id + "-" + e.course_id, e.user_id, e.course_id, Date.now()]);
+  }
+  const [examRows] = await q("SELECT id, course_id FROM exams");
+  for (const ex of examRows) {
+    const [studs] = await q("SELECT user_id FROM enrolments WHERE course_id=? LIMIT 3", [ex.course_id]);
+    const [qs] = await q("SELECT options, corrects FROM exam_questions WHERE exam_id=?", [ex.id]);
+    if (!qs.length) continue;
+    const snapQs = qs.map((r) => ({ qtype: "single", question: "", options: JSON.parse(r.options), corrects: JSON.parse(r.corrects || "[0]") }));
+    for (const s of studs) {
+      const now = Date.now();
+      await q("INSERT INTO exam_attempts (exam_id,user_id,started_at,finished_at,score,total,snapshot) VALUES (?,?,?,?,?,?,?)",
+        [ex.id, s.user_id, now - 600000, now, Math.round(snapQs.length * 0.7), snapQs.length, JSON.stringify({ questions: snapQs, answers: [] })]);
+    }
+  }
+
+  return { students: 50, instructors: 20, courses: 30, exams: 10, questions };
+}
+
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -661,4 +800,5 @@ module.exports = {
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
+  hasAdmin, createAdmin, seedBulk,
 };

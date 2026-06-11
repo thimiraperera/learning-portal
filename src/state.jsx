@@ -220,6 +220,11 @@ export function StoreProvider({ children }) {
   }, [token]);
   const downloadMaterial = useCallback((id, name) => fetchBlobDownload(`/materials/${id}/file`, name || "file"), [token]);
 
+  const seedTestData = useCallback(async () => {
+    try { const d = await api("/admin/dev/seed", { method: "POST", token }); return { ok: true, ...d }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   /* ---- backup & restore ---- */
   const downloadBackup = useCallback((scope) => {
     const ext = scope === "db" ? "sql" : "zip";
@@ -372,7 +377,7 @@ export function StoreProvider({ children }) {
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
-    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
+    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, seedTestData,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,

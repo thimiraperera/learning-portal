@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import HCaptcha from "../components/HCaptcha.jsx";
 
@@ -17,6 +17,11 @@ export default function Login() {
   const [twoFactor, setTwoFactor] = useState(false); // showing the code step
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [setupNeeded, setSetupNeeded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/setup/needed").then((r) => r.json()).then((d) => setSetupNeeded(!!d.needed)).catch(() => {});
+  }, []);
 
   const submit = async (e) => {
     e?.preventDefault?.();
@@ -106,6 +111,12 @@ export default function Login() {
             )}
             <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : (twoFactor ? "Verify & sign in" : "Sign In")}</button>
           </form>
+
+          {setupNeeded && (
+            <div style={{ marginTop: 18, textAlign: "center", fontSize: 13.5 }}>
+              No administrator yet? <Link to="/setup" style={{ color: "#1E509B", fontWeight: 700 }}>Create the first admin</Link>
+            </div>
+          )}
 
           <div className="login-footer">
             {[brand.company, brand.name || "Learning Portal"].filter(Boolean).join("  ·  ")}

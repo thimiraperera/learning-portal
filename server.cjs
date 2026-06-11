@@ -15,9 +15,16 @@ const AdmZip = require("adm-zip");
 const dbmod = require("./db.cjs");
 const { generateCertificate, templatesList, defaultTemplateId } = require("./cert.cjs");
 const totp = require("./totp.cjs");
+const mailer = require("./email.cjs");
 const { q } = dbmod;
 
 const BRAND_ISSUER = "Learning Portal";
+
+/* Build a branded HTML email (pulls the portal name from saved branding). */
+async function emailHtml(title, subtitle, body) {
+  const brand = await dbmod.getBrand();
+  return mailer.wrap({ brandName: brand.name, title, subtitle, body });
+}
 
 /* Verify an hCaptcha token against the configured secret. Returns true when
    hCaptcha is disabled (nothing to check). */
@@ -146,6 +153,25 @@ async function adminState() {
 app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrand())));
 app.get("/api/auth-config", wrap(async (_req, res) => res.json({ hcaptcha: await dbmod.getHcaptchaForClient() })));
 
+/* ---- first-admin setup (only works while no admin exists) ---- */
+app.get("/api/setup/needed", wrap(async (_req, res) => res.json({ needed: !(await dbmod.hasAdmin()) })));
+
+app.post("/api/setup/admin", wrap(async (req, res) => {
+  if (await dbmod.hasAdmin()) return res.status(403).json({ error: "An administrator already exists. Please sign in." });
+  const name = String(req.body?.name || "").trim();
+  const username = String(req.body?.username || "").trim().toLowerCase();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  if (!name) return res.status(400).json({ error: "Enter a full name." });
+  if (!username) return res.status(400).json({ error: "Enter a username." });
+  if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [username, email]);
+  if (clash) return res.status(409).json({ error: "That username or email is already in use." });
+  await dbmod.createAdmin({ name, username, email, password });
+  res.json({ ok: true });
+}));
+
 app.post("/api/login", wrap(async (req, res) => {
   const { username, password, code, captcha } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
@@ -227,10 +253,12 @@ app.post("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.inviteStudent({ name: nm, email: e, username: un, token });
 
   const link = `${req.protocol}://${req.get("host")}/register?token=${token}`;
-  const html = `<p>Hello ${nm},</p>
-    <p>You have been invited to the learning portal. Click the link below to confirm your details and set your password:</p>
-    <p><a href="${link}">${link}</a></p>
-    <p>If you did not expect this, you can ignore this email.</p>`;
+  const html = await emailHtml("Complete your registration", "You have been invited to the learning portal",
+    mailer.paragraph(`Hello <strong>${mailer.esc(nm)}</strong>,`) +
+    mailer.statusBox("You've been invited as a student. Confirm your details and set a password to activate your account.", "info") +
+    mailer.button("Complete registration", link) +
+    mailer.muted("If the button does not work, copy and paste this link:") + mailer.linkBox(link) +
+    mailer.muted("If you did not expect this email, you can safely ignore it."));
   const mail = await sendMail(e, "Complete your registration", html);
 
   res.json({
@@ -360,8 +388,11 @@ app.post("/api/admin/instructors", auth, adminOnly, wrap(async (req, res) => {
   });
   let mailNote = "";
   if (req.body?.notify && email.includes("@")) {
-    const m = await sendMail(email, "You have been added as an instructor",
-      `<p>Hello ${name},</p><p>You have been added as an instructor on the learning portal.</p>`);
+    const html = await emailHtml("You're now an instructor", "Welcome to the learning portal",
+      mailer.paragraph(`Hello <strong>${mailer.esc(name)}</strong>,`) +
+      mailer.statusBox("You have been added as an instructor on the learning portal.", "success") +
+      mailer.muted("Your administrator can give you a login if you need to sign in."));
+    const m = await sendMail(email, "You have been added as an instructor", html);
     mailNote = m.sent ? " Email sent." : ` (email not sent: ${m.reason})`;
   }
   res.json({ ok: true, msg: "Instructor added." + mailNote, ...(await adminState()) });
@@ -410,8 +441,12 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
   await dbmod.linkInstructorUser(id, r.insertId);
 
   const link = `${req.protocol}://${req.get("host")}/register?token=${token}`;
-  const mail = await sendMail(email, "Set up your instructor login",
-    `<p>Hello ${ins.name || ""},</p><p>You can now access the learning portal as an instructor. Click the link below to set your password:</p><p><a href="${link}">${link}</a></p>`);
+  const html = await emailHtml("Set up your instructor login", "Access the learning portal as an instructor",
+    mailer.paragraph(`Hello <strong>${mailer.esc(ins.name || "")}</strong>,`) +
+    mailer.statusBox("You can now sign in to the learning portal as an instructor. Set your password to get started.", "info") +
+    mailer.button("Set your password", link) +
+    mailer.muted("If the button does not work, copy and paste this link:") + mailer.linkBox(link));
+  const mail = await sendMail(email, "Set up your instructor login", html);
   res.json({
     ok: true, sent: mail.sent, link,
     msg: mail.sent ? `Login invitation sent to ${email}.` : `Login created, but email was not sent (${mail.reason}). Share this link:`,
@@ -437,8 +472,12 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     }
     const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
     await dbmod.issueCertificate(sid, cid, certNo, Date.now());
-    await sendMail(stu.email, "Your certificate has been issued",
-      `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
+    const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
+      mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
+      mailer.statusBox(`Your certificate for ${mailer.esc(course.title)} has been issued.`, "success") +
+      mailer.infoTable([["Course", mailer.esc(course.title)], ["Code", mailer.esc(course.code)], ["Certificate No", mailer.esc(certNo)]]) +
+      mailer.muted("Sign in to your dashboard to download your certificate."));
+    await sendMail(stu.email, "Your certificate has been issued", html);
     issued++;
   }
   res.json({ ok: true, msg: `Issued ${issued} certificate${issued === 1 ? "" : "s"}.`, ...(await adminState()) });
@@ -457,8 +496,11 @@ app.post("/api/admin/certificates/:id/send", auth, adminOnly, wrap(async (req, r
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert) return res.status(404).json({ error: "Certificate not found." });
   const pdf = await certPdf(cert);
-  const mail = await sendMail(cert.studentEmail, `Your certificate: ${cert.courseTitle}`,
-    `<p>Hello ${cert.studentName},</p><p>Attached is your certificate for <strong>${cert.courseTitle}</strong>.</p>`,
+  const html = await emailHtml("Your certificate", `Certificate for ${cert.courseTitle}`,
+    mailer.paragraph(`Hello <strong>${mailer.esc(cert.studentName)}</strong>,`) +
+    mailer.statusBox(`Your certificate for ${mailer.esc(cert.courseTitle)} is attached to this email.`, "success") +
+    mailer.infoTable([["Course", mailer.esc(cert.courseTitle)], ["Code", mailer.esc(cert.courseCode)], ["Certificate No", mailer.esc(cert.cert_no)]]));
+  const mail = await sendMail(cert.studentEmail, `Your certificate: ${cert.courseTitle}`, html,
     [{ filename: `${cert.cert_no}.pdf`, content: pdf }]);
   res.json({ ok: mail.sent, msg: mail.sent ? `Certificate emailed to ${cert.studentEmail}.` : `Not sent: ${mail.reason}` });
 }));
@@ -972,6 +1014,17 @@ app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"),
   await dbmod.runScript(dbEntry.getData().toString("utf8"));
   extractStorage(zip, "storage/");
   res.json({ ok: true, msg: "Database and files restored." });
+}));
+
+/* ---- TEMPORARY: load bulk sample data for testing (admin). Remove for production.
+   Wipes all data and uploaded files, then inserts demo students/instructors/
+   courses/exams and a fresh admin (admin / admin123). You will be signed out. ---- */
+app.post("/api/admin/dev/seed", auth, adminOnly, wrap(async (_req, res) => {
+  try {
+    for (const entry of await fs.promises.readdir(STORAGE)) await fs.promises.rm(path.join(STORAGE, entry), { recursive: true, force: true });
+  } catch { /* nothing to clear */ }
+  const counts = await dbmod.seedBulk();
+  res.json({ ok: true, ...counts });
 }));
 
 /* ---- hCaptcha settings (admins) ---- */
