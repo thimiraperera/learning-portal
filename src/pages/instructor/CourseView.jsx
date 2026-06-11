@@ -8,7 +8,7 @@ import { useStore } from "../../state.jsx";
 export default function InstructorCourseView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { courses } = useStore();
+  const { courses, downloadMaterial } = useStore();
   const c = courses[id];
   if (!c) return <Navigate to="/instructor" replace />;
   const groups = c.groups || [];
@@ -41,7 +41,8 @@ export default function InstructorCourseView() {
                     <Row key={`l${r.id}`} icon={Link2} title={r.t} meta={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.u}</span>} />
                   ))}
                   {g.materials.map((r) => (
-                    <Row key={`m${r.id}`} icon={FileDown} title={r.t} meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>} />
+                    <Row key={`m${r.id}`} icon={FileDown} title={r.t} meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>}
+                      action={r.filename ? "Download" : null} onAction={r.filename ? () => downloadMaterial(r.id, r.t) : null} />
                   ))}
                 </div>
               );
@@ -51,7 +52,7 @@ export default function InstructorCourseView() {
   );
 }
 
-function Row({ icon: Icon, title, meta }) {
+function Row({ icon: Icon, title, meta, action, onAction }) {
   return (
     <div className="media-row">
       <div className="mr-icon"><Icon /></div>
@@ -59,6 +60,7 @@ function Row({ icon: Icon, title, meta }) {
         <div className="mr-title">{title}</div>
         <div className="mr-meta">{meta}</div>
       </div>
+      {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
     </div>
   );
 }

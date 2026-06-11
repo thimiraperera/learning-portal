@@ -23,6 +23,9 @@ node_modules
 *.sqlite-shm
 *.sqlite-wal
 
+# Uploaded course files (runtime data, lives on the server, backed up via FTP)
+storage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

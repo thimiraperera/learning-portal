@@ -4,11 +4,14 @@
    Data lives in MySQL (see db.cjs); credentials come from env vars. */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
+const fs = require("fs");
 const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const QRCode = require("qrcode");
+const multer = require("multer");
+const AdmZip = require("adm-zip");
 const dbmod = require("./db.cjs");
 const { generateCertificate, templatesList, defaultTemplateId } = require("./cert.cjs");
 const totp = require("./totp.cjs");
@@ -41,6 +44,40 @@ app.set("trust proxy", true); // so req.protocol reflects the proxy (https)
 app.use(express.json({ limit: "6mb" })); // logo data URLs can be large
 
 const dist = path.join(__dirname, "dist");
+const STORAGE = path.join(__dirname, "storage");
+fs.mkdirSync(STORAGE, { recursive: true });
+
+/* Course files are stored under storage/<course-code>/ so they are easy to
+   browse and back up over FTP. */
+const safeName = (s) => String(s || "").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_") || "file";
+function humanSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return b + " B";
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + " KB";
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + " MB";
+  return (b / 1024 / 1024 / 1024).toFixed(1) + " GB";
+}
+
+const materialStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    (async () => {
+      const [[c]] = await q("SELECT code FROM courses WHERE id=?", [String(req.query.courseId || "")]);
+      if (!c) return cb(new Error("Course not found"));
+      const dir = path.join(STORAGE, safeName(c.code));
+      await fs.promises.mkdir(dir, { recursive: true });
+      cb(null, dir);
+    })().catch(cb);
+  },
+  filename: (_req, file, cb) => cb(null, Date.now() + "-" + crypto.randomBytes(3).toString("hex") + "-" + safeName(file.originalname)),
+});
+const uploadMaterial = multer({ storage: materialStorage, limits: { fileSize: 500 * 1024 * 1024 } });
+const uploadBackup = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
+
+async function userCanAccessCourse(user, courseId) {
+  if (user.role === "admin") return true;
+  if (user.role === "instructor") return dbmod.instructorTeaches(user.id, courseId);
+  return (await dbmod.enrolledIds(user.id)).includes(courseId);
+}
 
 /* Send mail via the stored SMTP settings. Returns {sent, reason}. */
 async function sendMail(to, subject, html, attachments) {
@@ -222,6 +259,8 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
   if (!u) return res.status(404).json({ error: "Student not found." });
   const email = String(req.body?.email || "").trim().toLowerCase();
   if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  const gender = String(req.body?.gender || "");
+  if (!gender) return res.status(400).json({ error: "Select a gender." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? AND id<>?", [email, id]);
   if (clash) return res.status(409).json({ error: "That email is already in use." });
   await dbmod.updateStudentProfile(id, {
@@ -229,7 +268,7 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
     lastName: String(req.body?.lastName || "").trim(),
     nickname: String(req.body?.nickname || "").trim(),
     phone: String(req.body?.phone || "").trim(),
-    gender: String(req.body?.gender || ""),
+    gender,
     notes: String(req.body?.notes || ""),
     status: String(req.body?.status || ""),
     email,
@@ -291,6 +330,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
 }));
 
 app.delete("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
+  await removeFiles(await dbmod.courseMaterialFiles(req.params.id, null));
   await dbmod.deleteCourse(req.params.id);
   res.json(await adminState());
 }));
@@ -738,6 +778,7 @@ app.put("/api/admin/courses/:id/groups/:gid", auth, adminOnly, wrap(async (req, 
 }));
 
 app.delete("/api/admin/courses/:id/groups/:gid", auth, adminOnly, wrap(async (req, res) => {
+  await removeFiles(await dbmod.courseMaterialFiles(req.params.id, Number(req.params.gid)));
   await dbmod.deleteGroup(req.params.id, Number(req.params.gid));
   res.json(await adminState());
 }));
@@ -747,6 +788,14 @@ app.post("/api/admin/courses/:id/groups/reorder", auth, adminOnly, wrap(async (r
   await dbmod.reorderGroups(req.params.id, req.body.orderedIds.map(Number));
   res.json(await adminState());
 }));
+
+/* Delete the given stored files (relative to STORAGE), ignoring missing ones. */
+async function removeFiles(relPaths) {
+  for (const rel of relPaths || []) {
+    if (!rel) continue;
+    try { await fs.promises.unlink(path.join(STORAGE, rel)); } catch { /* already gone */ }
+  }
+}
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
@@ -758,11 +807,42 @@ app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   res.json(await adminState());
 }));
 
+/* Upload a real file as a material (stored under storage/<course-code>/). */
+app.post("/api/admin/items/upload", auth, adminOnly, uploadMaterial.single("file"), wrap(async (req, res) => {
+  const courseId = String(req.query.courseId || "");
+  const groupId = Number(req.query.groupId || 0);
+  if (!req.file) return res.status(400).json({ error: "No file was uploaded." });
+  if (!(await dbmod.groupExists(courseId, groupId))) {
+    await removeFiles([path.relative(STORAGE, req.file.path)]);
+    return res.status(400).json({ error: "Pick a group first." });
+  }
+  const rel = path.relative(STORAGE, req.file.path).split(path.sep).join("/");
+  const ext = (path.extname(req.file.originalname).slice(1) || "FILE").toUpperCase().slice(0, 8);
+  await dbmod.addMaterialFile(courseId, groupId, {
+    title: req.file.originalname, size: humanSize(req.file.size), ext, filename: rel,
+  });
+  res.json(await adminState());
+}));
+
 app.delete("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   const { courseId, bucket, itemId } = req.body || {};
   if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
+  if (bucket === "materials") {
+    const m = await dbmod.getMaterial(Number(itemId));
+    if (m && m.filename) await removeFiles([m.filename]);
+  }
   await dbmod.removeCourseItem(courseId, bucket, itemId);
   res.json(await adminState());
+}));
+
+/* Download a material file (admins, the assigned instructor, enrolled students). */
+app.get("/api/materials/:id/file", auth, wrap(async (req, res) => {
+  const m = await dbmod.getMaterial(Number(req.params.id));
+  if (!m || !m.filename) return res.status(404).json({ error: "File not found." });
+  if (!(await userCanAccessCourse(req.user, m.course_id))) return res.status(403).json({ error: "Not allowed." });
+  const abs = path.join(STORAGE, m.filename);
+  if (!abs.startsWith(STORAGE) || !fs.existsSync(abs)) return res.status(404).json({ error: "File not found." });
+  res.download(abs, m.title || path.basename(abs));
 }));
 
 app.post("/api/admin/items/reorder", auth, adminOnly, wrap(async (req, res) => {
@@ -829,6 +909,71 @@ app.post("/api/account/2fa/disable", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* ---- backup & restore (admins) ----
+   The database is small, so it backs up/restores reliably through the app.
+   Course files can be huge: the file backup/restore here works for modest
+   libraries, but for large storage use FTP directly against the storage/ folder. */
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+
+app.get("/api/admin/backup/db", auth, adminOnly, wrap(async (_req, res) => {
+  const sql = await dbmod.dumpDatabase();
+  res.setHeader("Content-Type", "application/sql");
+  res.setHeader("Content-Disposition", `attachment; filename="lms-database-${stamp()}.sql"`);
+  res.send(sql);
+}));
+
+app.get("/api/admin/backup/files", auth, adminOnly, wrap(async (_req, res) => {
+  const zip = new AdmZip();
+  zip.addLocalFolder(STORAGE);
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="lms-files-${stamp()}.zip"`);
+  res.send(zip.toBuffer());
+}));
+
+app.get("/api/admin/backup/all", auth, adminOnly, wrap(async (_req, res) => {
+  const zip = new AdmZip();
+  zip.addFile("database.sql", Buffer.from(await dbmod.dumpDatabase(), "utf8"));
+  zip.addLocalFolder(STORAGE, "storage");
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="lms-backup-${stamp()}.zip"`);
+  res.send(zip.toBuffer());
+}));
+
+function extractStorage(zip, prefix) {
+  for (const e of zip.getEntries()) {
+    if (e.isDirectory) continue;
+    if (prefix && !e.entryName.startsWith(prefix)) continue;
+    const rel = prefix ? e.entryName.slice(prefix.length) : e.entryName;
+    if (!rel || rel.includes("..")) continue;
+    const abs = path.join(STORAGE, rel);
+    if (!abs.startsWith(STORAGE)) continue;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, e.getData());
+  }
+}
+
+app.post("/api/admin/restore/db", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Choose a .sql backup file." });
+  await dbmod.runScript(req.file.buffer.toString("utf8"));
+  res.json({ ok: true, msg: "Database restored." });
+}));
+
+app.post("/api/admin/restore/files", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Choose a .zip file backup." });
+  extractStorage(new AdmZip(req.file.buffer), "");
+  res.json({ ok: true, msg: "Files restored." });
+}));
+
+app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Choose a full backup .zip file." });
+  const zip = new AdmZip(req.file.buffer);
+  const dbEntry = zip.getEntry("database.sql");
+  if (!dbEntry) return res.status(400).json({ error: "This zip has no database.sql (is it a full backup?)." });
+  await dbmod.runScript(dbEntry.getData().toString("utf8"));
+  extractStorage(zip, "storage/");
+  res.json({ ok: true, msg: "Database and files restored." });
+}));
+
 /* ---- hCaptcha settings (admins) ---- */
 app.put("/api/admin/hcaptcha", auth, adminOnly, wrap(async (req, res) => {
   const b = req.body || {};
@@ -859,6 +1004,14 @@ app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
   };
   res.json(await dbmod.setBrandValue(brand));
 }));
+
+/* JSON error handler (catches multer / middleware errors before the SPA fallback). */
+app.use((err, _req, res, next) => {
+  if (res.headersSent) return next(err);
+  console.error(err);
+  const tooBig = err && err.code === "LIMIT_FILE_SIZE";
+  res.status(tooBig ? 413 : 400).json({ error: tooBig ? "That file is too large." : (err.message || "Request failed") });
+});
 
 /* ---- static build + SPA fallback ---- */
 app.use(express.static(dist));

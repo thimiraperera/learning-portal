@@ -9,7 +9,7 @@ import { useStore } from "../../state.jsx";
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses, exams } = useStore();
+  const { currentUser, courses, exams, downloadMaterial } = useStore();
   const [tab, setTab] = useState("content");
 
   // Guard: never render a course the student isn't enrolled in.
@@ -63,7 +63,8 @@ export default function CourseDetail() {
                         meta={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.u}</span>} />
                     ))}
                     {g.materials.map((r) => (
-                      <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t} action="Download"
+                      <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t} action={r.filename ? "Download" : null}
+                        onAction={r.filename ? () => downloadMaterial(r.id, r.t) : null}
                         meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>} />
                     ))}
                   </div>
@@ -99,7 +100,7 @@ export default function CourseDetail() {
   );
 }
 
-function MediaRow({ icon: Icon, title, meta, action }) {
+function MediaRow({ icon: Icon, title, meta, action, onAction }) {
   return (
     <div className="media-row">
       <div className="mr-icon"><Icon /></div>
@@ -107,7 +108,7 @@ function MediaRow({ icon: Icon, title, meta, action }) {
         <div className="mr-title">{title}</div>
         <div className="mr-meta">{meta}</div>
       </div>
-      <button className="btn btn-outline btn-sm">{action}</button>
+      {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
     </div>
   );
 }

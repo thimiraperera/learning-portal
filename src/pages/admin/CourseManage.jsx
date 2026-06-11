@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Pencil,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Pencil, Upload,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -321,12 +321,25 @@ function GroupCard({ id, group, store, dragGid, setDragGid, overGid, setOverGid,
 }
 
 function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder }) {
-  const { addItem, removeItem, reorderItems } = store;
+  const { addItem, removeItem, reorderItems, uploadMaterial } = store;
   const [value, setValue] = useState("");
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const isMaterials = bucket === "materials";
 
   const add = async () => { if (value.trim()) { await addItem(id, groupId, bucket, value); setValue(""); } };
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true); setErr(null);
+    const r = await uploadMaterial(id, groupId, file);
+    setBusy(false);
+    if (!r.ok) setErr(r.msg);
+  };
 
   const onDrop = async (e, targetId) => {
     e.stopPropagation();
@@ -355,16 +368,26 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
               onDrop={(e) => onDrop(e, it.id)}
               onDragEnd={() => { setDragId(null); setOverId(null); }}>
               <span className="drag-handle"><GripVertical /></span>
-              <div className="mr-body"><div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div></div>
+              <div className="mr-body">
+                <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
+                {it.filename && <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>}
+              </div>
               <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
             </div>
           ))}
         </div>
       )}
+      {err && <div className="field-error" style={{ marginTop: 8 }}>{err}</div>}
       <div className="toolbar" style={{ marginTop: 10, marginBottom: 0 }}>
         <input className="form-control" placeholder={placeholder} value={value}
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
         <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
+        {isMaterials && (
+          <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>
+            <Upload /> {busy ? "Uploading..." : "Upload file"}
+            <input type="file" style={{ display: "none" }} onChange={onFile} disabled={busy} />
+          </label>
+        )}
       </div>
     </div>
   );

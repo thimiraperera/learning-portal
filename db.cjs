@@ -62,7 +62,7 @@ const TABLES = [
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS materials (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), position INT DEFAULT 0
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), filename VARCHAR(512), position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS enrolments (
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, PRIMARY KEY (user_id, course_id)
@@ -199,6 +199,7 @@ async function init() {
   await ensureColumn("recordings", "group_id", "INT DEFAULT 0");
   await ensureColumn("links", "group_id", "INT DEFAULT 0");
   await ensureColumn("materials", "group_id", "INT DEFAULT 0");
+  await ensureColumn("materials", "filename", "VARCHAR(512)");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
@@ -258,7 +259,7 @@ async function courseFull(id) {
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
   const [recordings] = await q("SELECT id, group_id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
   const [links] = await q("SELECT id, group_id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
-  const [materials] = await q("SELECT id, group_id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename FROM materials WHERE course_id=? ORDER BY position, id", [id]);
   const [groupRows] = await q("SELECT id, title FROM content_groups WHERE course_id=? ORDER BY position, id", [id]);
   const groups = groupRows.map((g) => ({
     id: g.id, title: g.title,
@@ -406,6 +407,29 @@ async function reorderItems(courseId, bucket, orderedIds) {
   if (!t || !Array.isArray(orderedIds)) return;
   for (let i = 0; i < orderedIds.length; i++) await q(`UPDATE ${t} SET position=? WHERE id=? AND course_id=?`, [i, orderedIds[i], courseId]);
 }
+async function addMaterialFile(courseId, groupId, f) {
+  const gid = Number(groupId) || 0;
+  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=? AND group_id=?", [courseId, gid]);
+  await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position) VALUES (?,?,?,?,?,?,?)",
+    [courseId, gid, f.title, f.size, f.ext, f.filename, p]);
+}
+async function getMaterial(id) {
+  const [[r]] = await q("SELECT id, course_id, group_id, title, size, ext, filename FROM materials WHERE id=?", [id]);
+  return r || null;
+}
+async function courseMaterialFiles(courseId, groupId) {
+  const params = groupId == null ? [courseId] : [courseId, Number(groupId)];
+  const where = groupId == null ? "course_id=?" : "course_id=? AND group_id=?";
+  const [rows] = await q(`SELECT filename FROM materials WHERE ${where} AND filename IS NOT NULL AND filename<>''`, params);
+  return rows.map((r) => r.filename);
+}
+async function instructorTeaches(userId, courseId) {
+  const [[r]] = await q(
+    `SELECT 1 AS x FROM instructors i JOIN course_instructors ci ON ci.instructor_id=i.id
+     WHERE i.user_id=? AND ci.course_id=? LIMIT 1`, [userId, courseId]);
+  return !!r;
+}
+
 /* ---- content groups ---- */
 async function addGroup(courseId, title) {
   const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM content_groups WHERE course_id=?", [courseId]);
@@ -456,6 +480,37 @@ async function studentCertificates(studentId) {
 }
 async function markCertDownloaded(id) { await q("UPDATE certificates SET downloaded=1, unlocked=0 WHERE id=?", [id]); }
 async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1 WHERE id=?", [id]); }
+
+/* ---- backup / restore (data only; schema is recreated by init()) ---- */
+async function dumpDatabase() {
+  const [tables] = await q("SHOW TABLES");
+  const key = tables.length ? Object.keys(tables[0])[0] : null;
+  const names = tables.map((row) => row[key]).filter((t) => t !== "sessions"); // skip live login sessions
+  let out = "-- Learning Portal data backup\nSET FOREIGN_KEY_CHECKS=0;\n";
+  for (const t of names) {
+    out += `DELETE FROM \`${t}\`;\n`;
+    const [rows] = await q(`SELECT * FROM \`${t}\``);
+    for (const r of rows) {
+      const cols = Object.keys(r);
+      const vals = cols.map((c) => pool.escape(r[c]));
+      out += `INSERT INTO \`${t}\` (${cols.map((c) => "`" + c + "`").join(",")}) VALUES (${vals.join(",")});\n`;
+    }
+  }
+  out += "SET FOREIGN_KEY_CHECKS=1;\n";
+  return out;
+}
+async function runScript(sql) {
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || "localhost",
+    port: Number(process.env.DB_PORT || 3306),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    multipleStatements: true,
+    charset: "utf8mb4",
+  });
+  try { await conn.query(sql); } finally { await conn.end(); }
+}
 
 /* ---- exams ---- */
 async function examsList() {
@@ -598,7 +653,9 @@ module.exports = {
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
+  addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
+  dumpDatabase, runScript,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,

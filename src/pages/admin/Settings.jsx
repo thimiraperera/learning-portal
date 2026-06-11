@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import { useStore } from "../../state.jsx";
@@ -7,7 +7,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha } = useStore();
+  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
@@ -111,7 +111,73 @@ export default function Settings() {
         <TwoFactor />
         </div>
       </div>
+
+      <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
     </Layout>
+  );
+}
+
+function BackupCard({ downloadBackup, restoreBackup }) {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+
+  const SCOPES = [
+    { key: "all", label: "Database + files", icon: Download },
+    { key: "db", label: "Database only", icon: Database },
+    { key: "files", label: "Files only", icon: Download },
+  ];
+  const LABELS = { all: "database and files", db: "the database", files: "the course files" };
+
+  const backup = async (scope) => {
+    setBusy("backup-" + scope); setMsg(null);
+    try { await downloadBackup(scope); }
+    catch (e) { setMsg({ ok: false, text: e.message }); }
+    setBusy("");
+  };
+
+  const restore = async (scope, file) => {
+    if (!file) return;
+    if (!window.confirm(`Restore ${LABELS[scope]} from this backup? This OVERWRITES current ${LABELS[scope]} and cannot be undone.`)) return;
+    setBusy("restore-" + scope); setMsg(null);
+    const r = await restoreBackup(scope, file);
+    setBusy("");
+    setMsg({ ok: r.ok, text: r.ok ? r.msg : r.msg });
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><Database style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Backup &amp; restore</div>
+      <div className="card-subtitle">Download a backup or restore from one. The database is small and reliable through the app; for very large course files, back up the <code>storage/</code> folder over FTP instead.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>BACKUP</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
+        {SCOPES.map((s) => (
+          <button key={s.key} className="btn btn-outline" disabled={!!busy} onClick={() => backup(s.key)}>
+            <s.icon /> {busy === "backup-" + s.key ? "Preparing..." : s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>RESTORE</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <RestoreButton label="Database + files (.zip)" scope="all" accept=".zip" busy={busy} onPick={restore} />
+        <RestoreButton label="Database (.sql)" scope="db" accept=".sql" busy={busy} onPick={restore} />
+        <RestoreButton label="Files (.zip)" scope="files" accept=".zip" busy={busy} onPick={restore} />
+      </div>
+      <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 12 }}>Restoring replaces existing data. You may need to sign in again after a database restore.</div>
+    </div>
+  );
+}
+
+function RestoreButton({ label, scope, accept, busy, onPick }) {
+  return (
+    <label className="btn btn-ghost" style={{ cursor: busy ? "default" : "pointer" }}>
+      <Upload /> {busy === "restore-" + scope ? "Restoring..." : label}
+      <input type="file" accept={accept} style={{ display: "none" }} disabled={!!busy}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; onPick(scope, f); }} />
+    </label>
   );
 }
 

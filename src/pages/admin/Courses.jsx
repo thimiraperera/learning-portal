@@ -6,7 +6,7 @@ import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
-const EMPTY = { title: "", code: "", sessions: 0, blurb: "", certTemplate: "", instructorIds: [] };
+const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [] };
 
 export default function Courses() {
   const { courses, users, instructors, addCourse, fetchCertTemplates } = useStore();
@@ -94,13 +94,9 @@ export default function Courses() {
           <div className="form-group"><label className="form-label">Title <span className="req">*</span></label>
             <input className={"form-control" + (errors.title ? " is-invalid" : "")} placeholder="Course title" value={form.title} onChange={set("title")} />
             {errors.title && <div className="field-error">{errors.title}</div>}</div>
-          <div className="field-row">
-            <div className="form-group"><label className="form-label">Code <span className="req">*</span></label>
-              <input className={"form-control" + (errors.code ? " is-invalid" : "")} placeholder="EQ-101" value={form.code} onChange={set("code")} />
-              {errors.code && <div className="field-error">{errors.code}</div>}</div>
-            <div className="form-group"><label className="form-label">Sessions</label>
-              <input className="form-control" type="number" min="0" value={form.sessions} onChange={set("sessions")} /></div>
-          </div>
+          <div className="form-group"><label className="form-label">Code <span className="req">*</span></label>
+            <input className={"form-control" + (errors.code ? " is-invalid" : "")} placeholder="EQ-101" value={form.code} onChange={set("code")} />
+            {errors.code && <div className="field-error">{errors.code}</div>}</div>
         </div>
 
         <div className="form-group"><label className="form-label">Description</label>

@@ -73,9 +73,18 @@ function ProfileTab({ id, s, store, navigate }) {
   const [notes, setNotes] = useState(s.notes || "");
   const [status, setStatus] = useState(s.status || "active");
   const [msg, setMsg] = useState(null);
+  const [fieldErr, setFieldErr] = useState({});
   const invited = s.status === "invited";
 
-  const save = async () => setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, status }));
+  const save = async () => {
+    const er = {};
+    if (!email.trim()) er.email = "Email is required.";
+    else if (!email.includes("@")) er.email = "Enter a valid email address.";
+    if (!gender) er.gender = "Select a gender.";
+    setFieldErr(er);
+    if (Object.keys(er).length > 0) { setMsg(null); return; }
+    setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, status }));
+  };
   const remove = async () => {
     if (!window.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`)) return;
     await store.removeStudent(s.email);
@@ -108,17 +117,19 @@ function ProfileTab({ id, s, store, navigate }) {
       <div className="form-group"><label className="form-label">Nickname</label>
         <input className="form-control" value={nickname} onChange={(e) => setNickname(e.target.value)} /></div>
       <div className="field-row">
-        <div className="form-group"><label className="form-label">Email</label>
-          <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Email <span className="req">*</span></label>
+          <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} type="email" value={email} onChange={(e) => { setEmail(e.target.value); setFieldErr((x) => ({ ...x, email: undefined })); }} />
+          {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}</div>
         <div className="form-group"><label className="form-label">Phone</label>
           <PhoneInput value={phone} onChange={setPhone} /></div>
       </div>
-      <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
-        <select className="form-control" value={gender} onChange={(e) => setGender(e.target.value)}>
+      <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender <span className="req">*</span></label>
+        <select className={"form-control" + (fieldErr.gender ? " is-invalid" : "")} value={gender} onChange={(e) => { setGender(e.target.value); setFieldErr((x) => ({ ...x, gender: undefined })); }}>
           <option value="">Not specified</option>
           <option value="Male">Male</option>
           <option value="Female">Female</option>
-        </select></div>
+        </select>
+        {fieldErr.gender && <div className="field-error">{fieldErr.gender}</div>}</div>
       <div className="form-group"><label className="form-label">Notes <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(admin only)</span></label>
         <textarea className="form-control" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this student." /></div>
       <div style={{ display: "flex", gap: 10 }}>

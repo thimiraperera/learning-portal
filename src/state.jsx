@@ -205,6 +205,38 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
   }, [token]);
 
+  const uploadMaterial = useCallback(async (cid, groupId, file) => {
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/admin/items/upload?courseId=${encodeURIComponent(cid)}&groupId=${groupId}`, {
+        method: "POST", headers: { Authorization: "Bearer " + token }, body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      applyAdmin(data);
+      return { ok: true };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const downloadMaterial = useCallback((id, name) => fetchBlobDownload(`/materials/${id}/file`, name || "file"), [token]);
+
+  /* ---- backup & restore ---- */
+  const downloadBackup = useCallback((scope) => {
+    const ext = scope === "db" ? "sql" : "zip";
+    return fetchBlobDownload(`/admin/backup/${scope}`, `lms-${scope}.${ext}`);
+  }, [token]);
+  const restoreBackup = useCallback(async (scope, file) => {
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/admin/restore/${scope}`, { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Restore failed");
+      if (scope !== "files") applyBootstrap(await api("/bootstrap", { token }));
+      return { ok: true, msg: data.msg };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   /* ---- content groups ---- */
   const addGroup = useCallback(async (cid, title) => {
     try { applyAdmin(await api(`/admin/courses/${cid}/groups`, { method: "POST", token, body: { title } })); return { ok: true }; }
@@ -340,6 +372,7 @@ export function StoreProvider({ children }) {
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
+    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
