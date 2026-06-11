@@ -17,7 +17,7 @@ async function api(path, { method = "GET", body, token } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status}). If this persists, restart the server so new changes load.`);
   return data;
 }
 
@@ -220,6 +220,17 @@ export function StoreProvider({ children }) {
   }, [token]);
   const downloadMaterial = useCallback((id, name) => fetchBlobDownload(`/materials/${id}/file`, name || "file"), [token]);
 
+  /* ---- administrator users ---- */
+  const fetchAdmins = useCallback(() => api("/admin/admins", { token }).then((d) => d.admins || []), [token]);
+  const addAdmin = useCallback(async (fields) => {
+    try { const d = await api("/admin/admins", { method: "POST", token, body: fields }); return { ok: true, admins: d.admins }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const deleteAdmin = useCallback(async (id) => {
+    try { const d = await api(`/admin/admins/${id}`, { method: "DELETE", token }); return { ok: true, admins: d.admins }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const seedTestData = useCallback(async () => {
     try { const d = await api("/admin/dev/seed", { method: "POST", token }); return { ok: true, ...d }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -378,6 +389,7 @@ export function StoreProvider({ children }) {
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, seedTestData,
+    fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,

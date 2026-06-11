@@ -615,6 +615,18 @@ async function createAdmin({ name, username, email, password }) {
   await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'admin','active')",
     [name.trim(), first, last, username, email, bcrypt.hashSync(password, 10)]);
 }
+async function adminsList() {
+  const [rows] = await q("SELECT id, name, username, email, status FROM users WHERE role='admin' ORDER BY id");
+  return rows;
+}
+async function countAdmins() {
+  const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin'");
+  return r.n;
+}
+async function deleteAdminUser(id) {
+  await q("DELETE FROM sessions WHERE user_id=?", [id]);
+  await q("DELETE FROM users WHERE id=? AND role='admin'", [id]);
+}
 
 /* ---- TEMPORARY: bulk sample data for testing (wipes existing data) ---- */
 async function seedBulk() {
@@ -800,5 +812,5 @@ module.exports = {
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
-  hasAdmin, createAdmin, seedBulk,
+  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser, seedBulk,
 };

@@ -951,6 +951,34 @@ app.post("/api/account/2fa/disable", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* ---- administrator users (admins manage each other) ---- */
+app.get("/api/admin/admins", auth, adminOnly, wrap(async (_req, res) => res.json({ admins: await dbmod.adminsList() })));
+
+app.post("/api/admin/admins", auth, adminOnly, wrap(async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const username = String(req.body?.username || "").trim().toLowerCase();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  if (!name) return res.status(400).json({ error: "Enter a full name." });
+  if (!username) return res.status(400).json({ error: "Enter a username." });
+  if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [username, email]);
+  if (clash) return res.status(409).json({ error: "That username or email is already in use." });
+  await dbmod.createAdmin({ name, username, email, password });
+  res.json({ ok: true, admins: await dbmod.adminsList() });
+}));
+
+app.delete("/api/admin/admins/:id", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account." });
+  if ((await dbmod.countAdmins()) <= 1) return res.status(400).json({ error: "At least one administrator must remain." });
+  const [[u]] = await q("SELECT id FROM users WHERE id=? AND role='admin'", [id]);
+  if (!u) return res.status(404).json({ error: "Administrator not found." });
+  await dbmod.deleteAdminUser(id);
+  res.json({ ok: true, admins: await dbmod.adminsList() });
+}));
+
 /* ---- backup & restore (admins) ----
    The database is small, so it backs up/restores reliably through the app.
    Course files can be huge: the file backup/restore here works for modest

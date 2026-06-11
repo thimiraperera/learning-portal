@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, FlaskConical } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, FlaskConical, UserCog, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
@@ -8,7 +8,8 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup, seedTestData, logout } = useStore();
+  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup, seedTestData, logout,
+    currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const navigate = useNavigate();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -114,6 +115,7 @@ export default function Settings() {
         </div>
       </div>
 
+      <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
       <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
       <TestDataCard seedTestData={seedTestData} logout={logout} navigate={navigate} />
     </Layout>
@@ -142,6 +144,97 @@ function TestDataCard({ seedTestData, logout, navigate }) {
       <div className="card-subtitle">For testing only. Replaces everything with demo data and a fresh admin (<code>admin</code> / <code>admin123</code>). Remove this before production.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
       <button className="btn btn-danger" disabled={busy} onClick={run}><FlaskConical /> {busy ? "Loading sample data..." : "Load sample data"}</button>
+    </div>
+  );
+}
+
+function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
+  const [admins, setAdmins] = useState(null);
+  const [form, setForm] = useState({ name: "", username: "", email: "", password: "" });
+  const [fieldErr, setFieldErr] = useState({});
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchAdmins().then((a) => { if (alive) setAdmins(a); }).catch(() => { if (alive) setAdmins([]); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setFieldErr((x) => ({ ...x, [k]: undefined })); };
+
+  const add = async () => {
+    const er = {};
+    if (!form.name.trim()) er.name = "Enter a full name.";
+    if (!form.username.trim()) er.username = "Enter a username.";
+    if (!form.email.includes("@")) er.email = "Enter a valid email.";
+    if (form.password.length < 6) er.password = "At least 6 characters.";
+    setFieldErr(er); setMsg(null);
+    if (Object.keys(er).length) return;
+    setBusy(true);
+    const r = await addAdmin(form);
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
+    setAdmins(r.admins); setForm({ name: "", username: "", email: "", password: "" });
+    setMsg({ ok: true, text: "Administrator added." });
+  };
+
+  const remove = async (a) => {
+    if (!window.confirm(`Remove administrator "${a.name}" (@${a.username})? They will no longer be able to sign in.`)) return;
+    setMsg(null);
+    const r = await deleteAdmin(a.id);
+    if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
+    setAdmins(r.admins);
+    setMsg({ ok: true, text: "Administrator removed." });
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><UserCog style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Administrators</div>
+      <div className="card-subtitle">Add or remove portal administrators. You cannot delete your own account, and at least one admin must remain.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      {admins === null ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p> : (
+        <div className="table-wrap" style={{ marginBottom: 18 }}>
+          <table>
+            <thead><tr><th>Administrator</th><th>Username</th><th></th></tr></thead>
+            <tbody>
+              {admins.map((a) => (
+                <tr key={a.id}>
+                  <td><div style={{ fontWeight: 700 }}>{a.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{a.email}</div></td>
+                  <td style={{ color: "#6B7280" }}>{a.username}{a.username === currentUser?.username && <span style={{ color: "#9CA3AF" }}> (you)</span>}</td>
+                  <td style={{ textAlign: "right" }}>
+                    {a.username !== currentUser?.username && (
+                      <button className="icon-btn-plain" title="Remove" onClick={() => remove(a)}><Trash2 style={{ width: 16, height: 16 }} /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 10px" }}>ADD ADMINISTRATOR</div>
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Full name <span className="req">*</span></label>
+          <input className={"form-control" + (fieldErr.name ? " is-invalid" : "")} value={form.name} onChange={set("name")} />
+          {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}</div>
+        <div className="form-group"><label className="form-label">Username <span className="req">*</span></label>
+          <input className={"form-control" + (fieldErr.username ? " is-invalid" : "")} value={form.username} onChange={set("username")} />
+          {fieldErr.username && <div className="field-error">{fieldErr.username}</div>}</div>
+      </div>
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Email <span className="req">*</span></label>
+          <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} type="email" value={form.email} onChange={set("email")} />
+          {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}</div>
+        <div className="form-group"><label className="form-label">Password <span className="req">*</span></label>
+          <input className={"form-control" + (fieldErr.password ? " is-invalid" : "")} type="password" value={form.password} onChange={set("password")} />
+          {fieldErr.password && <div className="field-error">{fieldErr.password}</div>}</div>
+      </div>
+      <button className="btn btn-primary" disabled={busy} onClick={add}><Plus /> {busy ? "Adding..." : "Add administrator"}</button>
     </div>
   );
 }
