@@ -136,7 +136,11 @@ const auth = wrap(async (req, res, next) => {
   const h = req.headers.authorization || "";
   const t = h.startsWith("Bearer ") ? h.slice(7) : null;
   if (!t) return res.status(401).json({ error: "Not authenticated" });
-  const [[sess]] = await q("SELECT user_id FROM sessions WHERE token=?", [t]);
+  const [[sess]] = await q("SELECT user_id, expires_at FROM sessions WHERE token=?", [t]);
+  if (sess && sess.expires_at && Date.now() > Number(sess.expires_at)) {
+    await q("DELETE FROM sessions WHERE token=?", [t]);
+    return res.status(401).json({ error: "Your session has expired. Please sign in again." });
+  }
   const [[u]] = sess ? await q("SELECT * FROM users WHERE id=?", [sess.user_id]) : [[]];
   if (!u) return res.status(401).json({ error: "Not authenticated" });
   req.user = u; req.token = t; next();
@@ -173,7 +177,7 @@ app.post("/api/setup/admin", wrap(async (req, res) => {
 }));
 
 app.post("/api/login", wrap(async (req, res) => {
-  const { username, password, code, captcha } = req.body || {};
+  const { username, password, code, captcha, remember } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
   if (!(await checkCaptcha(captcha))) return res.status(400).json({ error: "Captcha verification failed. Please try again." });
   const [[u]] = await q("SELECT * FROM users WHERE lower(username)=lower(?)", [String(username).trim()]);
@@ -188,7 +192,10 @@ app.post("/api/login", wrap(async (req, res) => {
     if (!totp.verify(u.totp_secret, code)) return res.status(401).json({ twoFactor: true, error: "That code is not valid. Try again." });
   }
   const token = crypto.randomBytes(24).toString("hex");
-  await q("INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)", [token, u.id, Date.now()]);
+  const now = Date.now();
+  // "Remember me" keeps the session for 30 days; otherwise it lapses in a day.
+  const expires = now + (remember ? 30 : 1) * 24 * 60 * 60 * 1000;
+  await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, u.id, now, expires]);
   res.json({ token, user: await publicUser(u) });
 }));
 
@@ -221,6 +228,41 @@ app.post("/api/register/:token", wrap(async (req, res) => {
   if (!gender) return res.status(400).json({ error: "Select your gender." });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
   await dbmod.completeRegistration(req.params.token, { name, firstName, lastName, phone, gender }, bcrypt.hashSync(password, 10));
+  res.json({ ok: true });
+}));
+
+/* ---- forgot / reset password (public) ---- */
+app.post("/api/forgot", wrap(async (req, res) => {
+  const id = String(req.body?.username || "").trim();
+  if (!id) return res.status(400).json({ error: "Enter your username or email." });
+  const u = await dbmod.findLoginUser(id);
+  // Unknown account: respond generically so we don't reveal who exists.
+  if (!u) return res.json({ state: "sent" });
+  if (!u.email || !u.email.includes("@")) return res.json({ state: "noemail" });
+  const token = crypto.randomBytes(24).toString("hex");
+  await dbmod.setResetToken(u.id, token, Date.now() + 60 * 60 * 1000); // 1 hour
+  const link = `${req.protocol}://${req.get("host")}/reset?token=${token}`;
+  const html = await emailHtml("Reset your password", "Password reset request",
+    mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(u))}</strong>,`) +
+    mailer.statusBox("We received a request to reset your password. This link expires in 1 hour.", "info") +
+    mailer.button("Reset password", link) +
+    mailer.muted("If the button does not work, copy and paste this link:") + mailer.linkBox(link) +
+    mailer.muted("If you did not request this, you can safely ignore this email."));
+  const mail = await sendMail(u.email, "Reset your password", html);
+  res.json({ state: mail.sent ? "sent" : "nomail_config" });
+}));
+
+app.get("/api/reset/:token", wrap(async (req, res) => {
+  const u = await dbmod.getResetUser(req.params.token);
+  if (!u) return res.status(404).json({ error: "This reset link is invalid or has expired." });
+  res.json({ ok: true, name: u.name });
+}));
+
+app.post("/api/reset/:token", wrap(async (req, res) => {
+  const password = String(req.body?.password || "");
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  const ok = await dbmod.applyReset(req.params.token, bcrypt.hashSync(password, 10));
+  if (!ok) return res.status(404).json({ error: "This reset link is invalid or has expired." });
   res.json({ ok: true });
 }));
 

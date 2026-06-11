@@ -71,7 +71,7 @@ const TABLES = [
      k VARCHAR(64) PRIMARY KEY, v LONGTEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS sessions (
-     token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT
+     token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT, expires_at BIGINT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS certificates (
      id INT AUTO_INCREMENT PRIMARY KEY, cert_no VARCHAR(40) NOT NULL UNIQUE,
@@ -200,6 +200,9 @@ async function init() {
   await ensureColumn("links", "group_id", "INT DEFAULT 0");
   await ensureColumn("materials", "group_id", "INT DEFAULT 0");
   await ensureColumn("materials", "filename", "VARCHAR(512)");
+  await ensureColumn("sessions", "expires_at", "BIGINT");
+  await ensureColumn("users", "reset_token", "VARCHAR(64)");
+  await ensureColumn("users", "reset_expires", "BIGINT");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
@@ -603,6 +606,26 @@ async function studentExams(userId) {
   return out;
 }
 
+/* ---- password reset ---- */
+async function findLoginUser(idOrEmail) {
+  const v = String(idOrEmail || "").trim().toLowerCase();
+  if (!v) return null;
+  const [[u]] = await q("SELECT * FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [v, v]);
+  return u || null;
+}
+async function setResetToken(userId, token, expires) {
+  await q("UPDATE users SET reset_token=?, reset_expires=? WHERE id=?", [token, expires, userId]);
+}
+async function getResetUser(token) {
+  const [[u]] = await q("SELECT id, name FROM users WHERE reset_token=? AND reset_expires > ?", [token, Date.now()]);
+  return u || null;
+}
+async function applyReset(token, passwordHash) {
+  const [r] = await q("UPDATE users SET password_hash=?, reset_token=NULL, reset_expires=NULL WHERE reset_token=? AND reset_expires > ?",
+    [passwordHash, token, Date.now()]);
+  return r.affectedRows > 0;
+}
+
 /* ---- first-admin setup ---- */
 async function hasAdmin() {
   const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin'");
@@ -813,4 +836,5 @@ module.exports = {
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
   hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser, seedBulk,
+  findLoginUser, setResetToken, getResetUser, applyReset,
 };

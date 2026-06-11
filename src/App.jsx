@@ -3,6 +3,8 @@ import { StoreProvider, useStore } from "./state.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import Setup from "./pages/Setup.jsx";
+import Forgot from "./pages/Forgot.jsx";
+import Reset from "./pages/Reset.jsx";
 import Account from "./pages/Account.jsx";
 import Dashboard from "./pages/student/Dashboard.jsx";
 import MyCourses from "./pages/student/MyCourses.jsx";
@@ -55,6 +57,8 @@ function Routed() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/setup" element={<Setup />} />
+      <Route path="/forgot" element={<Forgot />} />
+      <Route path="/reset" element={<Reset />} />
 
       {/* student */}
       <Route path="/" element={<RequireRole role="student"><Dashboard /></RequireRole>} />

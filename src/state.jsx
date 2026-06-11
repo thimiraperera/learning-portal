@@ -10,6 +10,15 @@ export const useStore = () => useContext(Ctx);
 const TOKEN_KEY = "lms_token";
 const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "" };
 
+/* "Remember me" stores the token in localStorage (survives browser restarts);
+   otherwise sessionStorage (cleared when the browser/tab closes). */
+const readToken = () => localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || null;
+const storeToken = (t, remember) => {
+  localStorage.removeItem(TOKEN_KEY); sessionStorage.removeItem(TOKEN_KEY);
+  (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, t);
+};
+const clearToken = () => { localStorage.removeItem(TOKEN_KEY); sessionStorage.removeItem(TOKEN_KEY); };
+
 async function api(path, { method = "GET", body, token } = {}) {
   const res = await fetch("/api" + path, {
     method,
@@ -22,7 +31,7 @@ async function api(path, { method = "GET", body, token } = {}) {
 }
 
 export function StoreProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || null);
+  const [token, setToken] = useState(() => readToken());
   const [currentUser, setCurrentUser] = useState(null);
   const [courses, setCourses] = useState({});
   const [users, setUsers] = useState({});
@@ -89,7 +98,7 @@ export function StoreProvider({ children }) {
           const data = await api("/bootstrap", { token });
           if (alive) applyBootstrap(data);
         } catch {
-          localStorage.removeItem(TOKEN_KEY);
+          clearToken();
           if (alive) setToken(null);
         }
       }
@@ -99,17 +108,17 @@ export function StoreProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = useCallback(async (username, password, { code, captcha } = {}) => {
+  const login = useCallback(async (username, password, { code, captcha, remember } = {}) => {
     try {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, code, captcha }),
+        body: JSON.stringify({ username, password, code, captcha, remember }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: data.error || "Sign in failed", twoFactor: !!data.twoFactor };
       const { token: t, user } = data;
-      localStorage.setItem(TOKEN_KEY, t);
+      storeToken(t, remember);
       setToken(t);
       setCurrentUser(user);
       applyBootstrap(await api("/bootstrap", { token: t }));
@@ -126,9 +135,18 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, error: e.message }; }
   }, []);
 
+  const requestPasswordReset = useCallback(async (username) => {
+    try { const d = await api("/forgot", { method: "POST", body: { username } }); return { ok: true, state: d.state }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  }, []);
+  const resetPassword = useCallback(async (token, password) => {
+    try { await api(`/reset/${token}`, { method: "POST", body: { password } }); return { ok: true }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  }, []);
+
   const logout = useCallback(async () => {
     try { if (token) await api("/logout", { method: "POST", token }); } catch { /* ignore */ }
-    localStorage.removeItem(TOKEN_KEY);
+    clearToken();
     setToken(null);
     setCurrentUser(null);
     setCourses({});
@@ -384,7 +402,7 @@ export function StoreProvider({ children }) {
 
   const value = {
     ready, currentUser, courses, users, locked, instructors, certificates, exams, brand, smtp, hcaptcha,
-    login, register, logout, setBrand,
+    login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,

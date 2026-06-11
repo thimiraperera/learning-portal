@@ -17,6 +17,7 @@ export default function Login() {
   const [twoFactor, setTwoFactor] = useState(false); // showing the code step
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [setupNeeded, setSetupNeeded] = useState(false);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function Login() {
     if (busy) return;
     if (hcaptcha.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
-    const r = await login(username, password, { code: twoFactor ? code : undefined, captcha });
+    const r = await login(username, password, { code: twoFactor ? code : undefined, captcha, remember });
     setBusy(false);
     if (!r.ok) {
       setError(r.error || "Incorrect username or password.");
@@ -106,6 +107,13 @@ export default function Login() {
                   value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
               </div>
             )}
+            <div className="login-row">
+              <label className="login-remember">
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                Remember me for 30 days
+              </label>
+              <Link to="/forgot" className="login-forgot">Forgot password?</Link>
+            </div>
             {hcaptcha.enabled && hcaptcha.siteKey && (
               <div className="form-group"><HCaptcha siteKey={hcaptcha.siteKey} onChange={setCaptcha} /></div>
             )}
@@ -187,6 +195,11 @@ const LOGIN_CSS = `
 }
 .btn-login:hover { opacity:0.92; transform:translateY(-1px); }
 .error-box { background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:14px; color:#991B1B; font-weight:500; }
+.login-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 18px; flex-wrap:wrap; }
+.login-remember { display:flex; align-items:center; gap:8px; font-size:13px; color:#3D3D3D; font-weight:500; cursor:pointer; margin:0; }
+.login-remember input { width:15px; height:15px; accent-color:#1E509B; cursor:pointer; }
+.login-forgot { font-size:13px; color:#1E509B; font-weight:700; text-decoration:none; }
+.login-forgot:hover { text-decoration:underline; }
 .login-footer { margin-top:28px; text-align:center; font-size:12px; color:#aaa; }
 @media (max-width:768px) { .login-left { display:none; } .login-right { width:100%; padding:32px 24px; } }
 `;
