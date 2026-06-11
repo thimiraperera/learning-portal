@@ -127,18 +127,34 @@ function DetailsTab({ id, c, store, navigate }) {
 
 function StudentsTab({ id, store, navigate }) {
   const { users, toggleEnrol } = store;
+  // enrolled list
   const [qy, setQy] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  // add-students search/filter
+  const [aQy, setAQy] = useState("");
+  const [aStatus, setAStatus] = useState("all");
+  const [aPage, setAPage] = useState(1);
+  const [aPageSize, setAPageSize] = useState(5);
 
   const ql = qy.trim().toLowerCase();
   const enrolled = Object.entries(users)
     .filter(([, u]) => u.role === "student" && u.enrolled.includes(id))
     .filter(([email, s]) => !ql || s.name.toLowerCase().includes(ql) || email.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
-
   const pageCount = Math.max(1, Math.ceil(enrolled.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const slice = enrolled.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // candidates = students not already enrolled in this course
+  const aql = aQy.trim().toLowerCase();
+  const candidates = Object.entries(users)
+    .filter(([, u]) => u.role === "student" && !u.enrolled.includes(id))
+    .filter(([, s]) => aStatus === "all" || s.status === aStatus)
+    .filter(([email, s]) => !aql || s.name.toLowerCase().includes(aql) || email.toLowerCase().includes(aql) || (s.username || "").toLowerCase().includes(aql));
+  const aPageCount = Math.max(1, Math.ceil(candidates.length / aPageSize));
+  const aSafe = Math.min(aPage, aPageCount);
+  const aSlice = candidates.slice((aSafe - 1) * aPageSize, aSafe * aPageSize);
+  const aFilters = (aStatus !== "all") + (aql ? 1 : 0);
 
   return (
     <>
@@ -163,6 +179,44 @@ function StudentsTab({ id, store, navigate }) {
           ))}
           <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
             pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={enrolled.length} />
+        </>
+      )}
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "26px 0 8px", borderTop: "1px solid var(--border)", marginTop: 22 }}>ADD STUDENTS</div>
+      <div className="toolbar" style={{ marginBottom: 14 }}>
+        <div style={{ position: "relative", flex: "1 1 220px" }}>
+          <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+          <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search by full name or email"
+            value={aQy} onChange={(e) => { setAQy(e.target.value); setAPage(1); }} />
+        </div>
+        <select className="form-control" style={{ flex: "0 0 160px" }} value={aStatus} onChange={(e) => { setAStatus(e.target.value); setAPage(1); }}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="invited">Invited</option>
+        </select>
+        {aFilters > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setAQy(""); setAStatus("all"); setAPage(1); }}><X /> Clear</button>
+        )}
+      </div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{candidates.length} student{candidates.length === 1 ? "" : "s"} not enrolled</div>
+
+      {candidates.length === 0 ? (
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>No matching students to add.</p>
+      ) : (
+        <>
+          {aSlice.map(([email, s]) => (
+            <div key={email} className="assigned-row">
+              <div className="ar-body">
+                <div className="ar-title">{s.name} <span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")} style={{ marginLeft: 6 }}>{s.status}</span></div>
+                <div className="ar-sub">{s.email}</div>
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
+              <button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id)}><UserPlus /> Add</button>
+            </div>
+          ))}
+          <Pagination page={aSafe} pageCount={aPageCount} onChange={setAPage}
+            pageSize={aPageSize} onPageSize={(n) => { setAPageSize(n); setAPage(1); }} total={candidates.length} />
         </>
       )}
     </>
