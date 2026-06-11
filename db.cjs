@@ -70,6 +70,11 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS sessions (
      token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS certificates (
+     id INT AUTO_INCREMENT PRIMARY KEY, cert_no VARCHAR(40) NOT NULL UNIQUE,
+     student_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, issued_at BIGINT,
+     downloaded TINYINT DEFAULT 0, unlocked TINYINT DEFAULT 0
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -304,6 +309,36 @@ async function reorderItems(courseId, bucket, orderedIds) {
   if (!t || !Array.isArray(orderedIds)) return;
   for (let i = 0; i < orderedIds.length; i++) await q(`UPDATE ${t} SET position=? WHERE id=? AND course_id=?`, [i, orderedIds[i], courseId]);
 }
+/* ---- certificates ---- */
+async function certExists(studentId, courseId) {
+  const [[r]] = await q("SELECT id FROM certificates WHERE student_id=? AND course_id=?", [studentId, courseId]);
+  return !!r;
+}
+async function issueCertificate(studentId, courseId, certNo, when) {
+  await q("INSERT INTO certificates (cert_no,student_id,course_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,0,0)", [certNo, studentId, courseId, when]);
+}
+async function listCertificates() {
+  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.student_id, c.course_id,
+      u.name AS studentName, u.email AS studentEmail, co.title AS courseTitle, co.code AS courseCode
+    FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
+    ORDER BY c.issued_at DESC`);
+  return rows;
+}
+async function getCertificate(id) {
+  const [[r]] = await q(`SELECT c.*, u.name AS studentName, u.email AS studentEmail,
+      co.title AS courseTitle, co.code AS courseCode
+    FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id WHERE c.id=?`, [id]);
+  return r || null;
+}
+async function studentCertificates(studentId) {
+  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked,
+      co.title AS courseTitle, co.code AS courseCode
+    FROM certificates c JOIN courses co ON co.id=c.course_id WHERE c.student_id=? ORDER BY c.issued_at DESC`, [studentId]);
+  return rows;
+}
+async function markCertDownloaded(id) { await q("UPDATE certificates SET downloaded=1, unlocked=0 WHERE id=?", [id]); }
+async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1 WHERE id=?", [id]); }
+
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -336,5 +371,6 @@ module.exports = {
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
+  certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
 };

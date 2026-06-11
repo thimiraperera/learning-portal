@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock, ArrowRight,
+  BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock, ArrowRight, Award, Download, AlertTriangle,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
@@ -8,7 +9,7 @@ import { useStore } from "../../state.jsx";
 const RECENT_COUNT = 6;
 
 export default function Dashboard() {
-  const { currentUser, courses, locked } = useStore();
+  const { currentUser, courses, locked, certificates, downloadCertificate } = useStore();
   const navigate = useNavigate();
   const my = currentUser.enrolled;
 
@@ -56,6 +57,8 @@ export default function Dashboard() {
         </>
       )}
 
+      {certificates.length > 0 && <CertificatesSection certificates={certificates} download={downloadCertificate} />}
+
       {locked.length > 0 && (
         <div style={{ marginTop: 30 }}>
           <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 4px" }}>
@@ -69,6 +72,37 @@ export default function Dashboard() {
         </div>
       )}
     </Layout>
+  );
+}
+
+function CertificatesSection({ certificates, download }) {
+  const [msg, setMsg] = useState(null);
+  const get = async (c) => {
+    setMsg(null);
+    try { await download(c.id, c.cert_no); }
+    catch (e) { setMsg({ id: c.id, text: e.message }); }
+  };
+  return (
+    <div className="card" style={{ marginTop: 28 }}>
+      <div className="card-title"><Award style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />My certificates</div>
+      <div className="card-subtitle">You can download each certificate once. If you need it again, ask your administrator to unlock it.</div>
+      {certificates.map((c) => {
+        const canDownload = !c.downloaded || c.unlocked;
+        return (
+          <div key={c.id} className="media-row" style={{ marginBottom: 8 }}>
+            <div className="mr-icon"><Award /></div>
+            <div className="mr-body">
+              <div className="mr-title">{c.courseTitle} <span className="cc-code" style={{ marginLeft: 6 }}>{c.courseCode}</span></div>
+              <div className="mr-meta">Certificate {c.cert_no}{c.downloaded && !c.unlocked ? " · already downloaded" : ""}</div>
+              {msg && msg.id === c.id && <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 4 }}><AlertTriangle style={{ width: 12, height: 12, verticalAlign: "-2px" }} /> {msg.text}</div>}
+            </div>
+            {canDownload
+              ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
+              : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

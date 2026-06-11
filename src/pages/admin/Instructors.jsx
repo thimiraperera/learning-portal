@@ -6,7 +6,7 @@ import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
-const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "" };
+const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "", notify: false };
 
 export default function Instructors() {
   const { instructors, courses, addInstructor, deleteInstructor } = useStore();
@@ -69,6 +69,10 @@ export default function Instructors() {
           </select>
           <button className="btn btn-primary" onClick={submit}><Plus /> Add instructor</button>
         </div>
+        <label className="check-row" style={{ marginTop: 12 }}>
+          <input type="checkbox" checked={form.notify} onChange={(e) => setForm((f) => ({ ...f, notify: e.target.checked }))} />
+          Email the instructor to let them know they've been added
+        </label>
       </div>
 
       <div className="card">

@@ -28,6 +28,7 @@ export function StoreProvider({ children }) {
   const [users, setUsers] = useState({});
   const [locked, setLocked] = useState([]);
   const [instructors, setInstructors] = useState([]);
+  const [certificates, setCertificates] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [ready, setReady] = useState(false);
@@ -37,6 +38,7 @@ export function StoreProvider({ children }) {
     setCourses(data.courses || {});
     setUsers(data.users || {});
     setInstructors(data.instructors || []);
+    setCertificates(data.certificates || []);
     setLocked(data.locked || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
@@ -45,7 +47,22 @@ export function StoreProvider({ children }) {
     if (data.courses) setCourses(data.courses);
     if (data.users) setUsers(data.users);
     if (data.instructors) setInstructors(data.instructors);
+    if (data.certificates) setCertificates(data.certificates);
   };
+
+  async function fetchBlobDownload(path, filename) {
+    const res = await fetch("/api" + path, { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Download failed"); }
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  async function fetchBlobOpen(path) {
+    const res = await fetch("/api" + path, { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Could not open"); }
+    window.open(URL.createObjectURL(await res.blob()), "_blank");
+  }
 
   // On first load: fetch public brand, and restore the session if a token exists.
   useEffect(() => {
@@ -137,7 +154,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const addInstructor = useCallback(async (fields) => {
-    try { applyAdmin(await api("/admin/instructors", { method: "POST", token, body: fields })); return { ok: true, msg: "Instructor added." }; }
+    try { const d = await api("/admin/instructors", { method: "POST", token, body: fields }); applyAdmin(d); return { ok: true, msg: d.msg || "Instructor added." }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const updateInstructor = useCallback(async (id, fields) => {
@@ -158,6 +175,25 @@ export function StoreProvider({ children }) {
 
   const reorderItems = useCallback(async (cid, bucket, orderedIds) => {
     applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
+  }, [token]);
+
+  /* ---- certificates ---- */
+  const issueCertificate = useCallback(async (studentId, courseId) => {
+    try { const d = await api("/admin/certificates", { method: "POST", token, body: { studentId, courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const unlockCertificate = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/certificates/${id}/unlock`, { method: "POST", token }));
+  }, [token]);
+  const sendCertificate = useCallback(async (id) => {
+    try { const d = await api(`/admin/certificates/${id}/send`, { method: "POST", token }); return { ok: d.ok, msg: d.msg }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const adminViewCertificate = useCallback((id) => fetchBlobOpen(`/admin/certificates/${id}/pdf`), [token]);
+  const adminDownloadCertificate = useCallback((id, certNo) => fetchBlobDownload(`/admin/certificates/${id}/pdf`, `${certNo || "certificate"}.pdf`), [token]);
+  const downloadCertificate = useCallback(async (id, certNo) => {
+    await fetchBlobDownload(`/certificates/${id}/download`, `${certNo || "certificate"}.pdf`);
+    setCertificates((cs) => cs.map((c) => (c.id === id ? { ...c, downloaded: 1, unlocked: 0 } : c)));
   }, [token]);
 
   const setBrand = useCallback(async (next) => {
@@ -190,11 +226,12 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, brand, smtp,
+    ready, currentUser, courses, users, locked, instructors, certificates, brand, smtp,
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
+    issueCertificate, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     updateAccount, changePassword, saveSmtp,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

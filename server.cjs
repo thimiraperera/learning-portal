@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const dbmod = require("./db.cjs");
+const { generateCertificate } = require("./cert.cjs");
 const { q } = dbmod;
 
 const app = express();
@@ -18,7 +19,7 @@ app.use(express.json({ limit: "6mb" })); // logo data URLs can be large
 const dist = path.join(__dirname, "dist");
 
 /* Send mail via the stored SMTP settings. Returns {sent, reason}. */
-async function sendMail(to, subject, html) {
+async function sendMail(to, subject, html, attachments) {
   const s = await dbmod.getSmtp();
   if (!s.host) return { sent: false, reason: "SMTP is not configured" };
   try {
@@ -29,11 +30,20 @@ async function sendMail(to, subject, html) {
       auth: s.username ? { user: s.username, pass: s.password } : undefined,
     });
     const from = s.fromName ? `"${s.fromName}" <${s.fromEmail || s.username}>` : (s.fromEmail || s.username);
-    await transporter.sendMail({ from, to, subject, html });
+    await transporter.sendMail({ from, to, subject, html, attachments });
     return { sent: true };
   } catch (e) {
     return { sent: false, reason: e.message };
   }
+}
+
+async function certPdf(cert) {
+  const brand = await dbmod.getBrand();
+  return generateCertificate({
+    brandName: brand.name, studentName: cert.studentName,
+    courseTitle: cert.courseTitle, courseCode: cert.courseCode,
+    certNo: cert.cert_no, issuedAt: cert.issued_at,
+  });
 }
 
 /* small async wrapper so thrown errors become 500s instead of hanging.
@@ -67,7 +77,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates() };
 }
 
 /* ---- public ---- */
@@ -112,10 +122,10 @@ app.post("/api/register/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), brand: await dbmod.getBrand() });
   }
 }));
 
@@ -238,12 +248,19 @@ app.delete("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (re
 app.post("/api/admin/instructors", auth, adminOnly, wrap(async (req, res) => {
   const name = String(req.body?.name || "").trim();
   if (!name) return res.status(400).json({ error: "Instructor name is required." });
+  const email = String(req.body?.email || "");
   await dbmod.addInstructor({
-    name, email: String(req.body?.email || ""), phone: String(req.body?.phone || ""),
+    name, email, phone: String(req.body?.phone || ""),
     title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
     gender: String(req.body?.gender || ""), notes: String(req.body?.notes || ""),
   });
-  res.json(await adminState());
+  let mailNote = "";
+  if (req.body?.notify && email.includes("@")) {
+    const m = await sendMail(email, "You have been added as an instructor",
+      `<p>Hello ${name},</p><p>You have been added as an instructor on the learning portal.</p>`);
+    mailNote = m.sent ? " Email sent." : ` (email not sent: ${m.reason})`;
+  }
+  res.json({ ok: true, msg: "Instructor added." + mailNote, ...(await adminState()) });
 }));
 
 app.put("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => {
@@ -260,6 +277,57 @@ app.put("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => 
 app.delete("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.deleteInstructor(req.params.id);
   res.json(await adminState());
+}));
+
+/* ---- certificates (admin) ---- */
+app.post("/api/admin/certificates", auth, adminOnly, wrap(async (req, res) => {
+  const studentId = Number(req.body?.studentId);
+  const courseId = String(req.body?.courseId || "");
+  const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [studentId]);
+  const [[course]] = await q("SELECT * FROM courses WHERE id=?", [courseId]);
+  if (!stu || !course) return res.status(400).json({ error: "Pick a valid student and course." });
+  if (await dbmod.certExists(studentId, courseId)) return res.status(409).json({ error: "A certificate already exists for this student and course." });
+  const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
+  await dbmod.issueCertificate(studentId, courseId, certNo, Date.now());
+  const mail = await sendMail(stu.email, "Your certificate has been issued",
+    `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
+  res.json({ ok: true, sent: mail.sent, msg: mail.sent ? `Certificate issued and emailed to ${stu.email}.` : `Certificate issued (email not sent: ${mail.reason}).`, ...(await adminState()) });
+}));
+
+app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res) => {
+  const cert = await dbmod.getCertificate(Number(req.params.id));
+  if (!cert) return res.status(404).json({ error: "Certificate not found." });
+  const pdf = await certPdf(cert);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${cert.cert_no}.pdf"`);
+  res.send(pdf);
+}));
+
+app.post("/api/admin/certificates/:id/send", auth, adminOnly, wrap(async (req, res) => {
+  const cert = await dbmod.getCertificate(Number(req.params.id));
+  if (!cert) return res.status(404).json({ error: "Certificate not found." });
+  const pdf = await certPdf(cert);
+  const mail = await sendMail(cert.studentEmail, `Your certificate: ${cert.courseTitle}`,
+    `<p>Hello ${cert.studentName},</p><p>Attached is your certificate for <strong>${cert.courseTitle}</strong>.</p>`,
+    [{ filename: `${cert.cert_no}.pdf`, content: pdf }]);
+  res.json({ ok: mail.sent, msg: mail.sent ? `Certificate emailed to ${cert.studentEmail}.` : `Not sent: ${mail.reason}` });
+}));
+
+app.post("/api/admin/certificates/:id/unlock", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.unlockCertificate(Number(req.params.id));
+  res.json({ ok: true, ...(await adminState()) });
+}));
+
+/* ---- certificates (student, one-time download) ---- */
+app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
+  const cert = await dbmod.getCertificate(Number(req.params.id));
+  if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  if (cert.downloaded && !cert.unlocked) return res.status(403).json({ error: "You have already downloaded this certificate. Ask your administrator to unlock it if you need it again." });
+  const pdf = await certPdf(cert);
+  await dbmod.markCertDownloaded(cert.id);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${cert.cert_no}.pdf"`);
+  res.send(pdf);
 }));
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };

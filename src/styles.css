@@ -346,9 +346,16 @@ select.form-control { cursor: pointer; }
 .cell-btn svg { width: 15px; height: 15px; }
 
 /* inline toolbar (forms in a row) */
-.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
 .toolbar .form-control { flex: 1 1 180px; width: auto; margin: 0; }
 .toolbar select.form-control { flex: 0 0 150px; }
+/* keep all controls in a toolbar the same height */
+.toolbar .form-control,
+.toolbar .btn,
+.toolbar .search-select,
+.toolbar .ss-trigger { height: 42px; }
+.toolbar .btn { padding-top: 0; padding-bottom: 0; }
+.toolbar > div { display: flex; align-items: center; }
 .icon-btn-plain { background: none; border: none; cursor: pointer; color: #9CA3AF; display: inline-flex; padding: 4px; border-radius: 6px; }
 .icon-btn-plain:hover { color: var(--danger); background: #FEF2F2; }
 
