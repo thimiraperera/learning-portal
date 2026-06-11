@@ -574,3 +574,17 @@ select.form-control { cursor: pointer; }
 .group-head .drag-handle svg { width: 18px; height: 18px; }
 .group-title { flex: 1; font-size: 15px; font-weight: 800; color: var(--title); display: flex; align-items: center; gap: 8px; }
 .group-body { padding: 14px 16px 4px; }
+
+/* hCaptcha + 2FA */
+.h-captcha-box { min-height: 78px; }
+.twofa-status { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text); padding: 12px 14px; border-radius: 10px; }
+.twofa-status svg { width: 18px; height: 18px; }
+.twofa-status.on { background: #F0FDF4; color: #166534; }
+.twofa-status.on svg { color: #16A34A; }
+.twofa-status.off { background: var(--surface); color: #6B7280; }
+.twofa-status.off svg { color: #9CA3AF; }
+
+/* inline field validation */
+.field-error { color: var(--danger); font-size: 12px; margin-top: 5px; }
+.form-control.is-invalid { border-color: var(--danger); }
+.form-control.is-invalid:focus { box-shadow: 0 0 0 3px rgba(220,38,38,0.10); }

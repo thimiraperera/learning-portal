@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus,
+  ShieldCheck, KeyRound, Copy,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
@@ -94,6 +95,51 @@ function ProfileTab({ instr, store, navigate }) {
         <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
         <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove instructor</button>
       </div>
+
+      <LoginAccess instr={instr} store={store} />
+    </div>
+  );
+}
+
+function LoginAccess({ instr, store }) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+
+  const invite = async () => {
+    setBusy(true);
+    setRes(await store.inviteInstructorLogin(instr.id));
+    setBusy(false);
+  };
+
+  const hasLogin = !!instr.user_id;
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", marginTop: 24, paddingTop: 20 }}>
+      <div className="card-title"><KeyRound style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Login access</div>
+      <div className="card-subtitle">Give this instructor a portal login. They set their own password from an emailed link and can enable two-factor authentication.</div>
+
+      {res && (
+        <>
+          <div className={"alert " + (res.ok ? "alert-success" : "alert-danger")}>{res.ok ? <CheckCircle /> : <AlertTriangle />} {res.msg}</div>
+          {res.ok && res.link && !res.sent && (
+            <div className="invite-link" style={{ marginBottom: 14 }}>
+              <code>{res.link}</code>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(res.link)}><Copy /> Copy</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {hasLogin ? (
+        <div className="twofa-status on" style={{ maxWidth: 480 }}>
+          <ShieldCheck />
+          <span>
+            Login enabled (username <strong>{instr.loginUsername}</strong>, {instr.loginStatus === "invited" ? "awaiting registration" : instr.loginStatus})
+            {instr.twoFactor ? " · 2FA on" : " · 2FA off"}
+          </span>
+        </div>
+      ) : (
+        <button className="btn btn-outline" disabled={busy} onClick={invite}><KeyRound /> {busy ? "Sending..." : "Invite to log in"}</button>
+      )}
     </div>
   );
 }

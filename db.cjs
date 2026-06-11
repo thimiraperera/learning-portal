@@ -203,6 +203,9 @@ async function init() {
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
   await ensureColumn("exam_questions", "corrects", "TEXT");
+  await ensureColumn("users", "totp_secret", "VARCHAR(64)");
+  await ensureColumn("users", "totp_enabled", "TINYINT DEFAULT 0");
+  await ensureColumn("instructors", "user_id", "INT");
   // Checkbox questions earn partial marks, so attempt scores can be fractional.
   await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
@@ -308,12 +311,10 @@ async function getInvite(token) {
   const [[u]] = await q("SELECT id, name, email, username FROM users WHERE reg_token=? AND status='invited'", [token]);
   return u || null;
 }
-async function completeRegistration(token, name, passwordHash) {
-  const parts = name.trim().split(/\s+/);
-  const first = parts.shift() || "";
-  const last = parts.join(" ");
-  const [r] = await q("UPDATE users SET name=?, first_name=?, last_name=?, password_hash=?, status='active', reg_token=NULL WHERE reg_token=? AND status='invited'",
-    [name.trim(), first, last, passwordHash, token]);
+async function completeRegistration(token, f, passwordHash) {
+  const [r] = await q(
+    "UPDATE users SET name=?, first_name=?, last_name=?, phone=?, gender=?, password_hash=?, status='active', reg_token=NULL WHERE reg_token=? AND status='invited'",
+    [f.name.trim(), f.firstName.trim(), f.lastName.trim(), f.phone || "", f.gender || "", passwordHash, token]);
   return r.affectedRows > 0;
 }
 async function updateStudentProfile(id, f) {
@@ -331,8 +332,25 @@ async function updateCourse(id, f) {
 }
 
 async function instructorsList() {
-  const [rows] = await q("SELECT id, name, email, phone, title, bio, gender, notes FROM instructors ORDER BY name");
-  return rows;
+  const [rows] = await q(`SELECT i.id, i.name, i.email, i.phone, i.title, i.bio, i.gender, i.notes, i.user_id,
+      u.username AS loginUsername, u.status AS loginStatus, u.totp_enabled AS twoFactor
+    FROM instructors i LEFT JOIN users u ON u.id=i.user_id ORDER BY i.name`);
+  return rows.map((r) => ({ ...r, twoFactor: !!r.twoFactor }));
+}
+async function instructorByUserId(userId) {
+  const [[r]] = await q("SELECT * FROM instructors WHERE user_id=?", [userId]);
+  return r || null;
+}
+/* Read-only course list for an instructor's portal. */
+async function coursesForInstructor(instructorId) {
+  const [rows] = await q(
+    "SELECT ci.course_id FROM course_instructors ci WHERE ci.instructor_id=? ORDER BY ci.course_id", [instructorId]);
+  const map = {};
+  for (const { course_id } of rows) map[course_id] = await courseFull(course_id);
+  return map;
+}
+async function linkInstructorUser(instructorId, userId) {
+  await q("UPDATE instructors SET user_id=? WHERE id=?", [userId, instructorId]);
 }
 async function addInstructor(f) {
   await q("INSERT INTO instructors (name,email,phone,title,bio,gender,notes) VALUES (?,?,?,?,?,?,?)",
@@ -343,9 +361,15 @@ async function updateInstructor(id, f) {
     [f.name, f.email, f.phone, f.title, f.bio, f.gender || "", f.notes || "", id]);
 }
 async function deleteInstructor(id) {
+  const [[ins]] = await q("SELECT user_id FROM instructors WHERE id=?", [id]);
   await q("DELETE FROM course_instructors WHERE instructor_id=?", [id]);
   await q("UPDATE courses SET instructor_id=NULL WHERE instructor_id=?", [id]);
   await q("DELETE FROM instructors WHERE id=?", [id]);
+  // Remove the linked login account, if any.
+  if (ins && ins.user_id) {
+    await q("DELETE FROM sessions WHERE user_id=?", [ins.user_id]);
+    await q("DELETE FROM users WHERE id=? AND role='instructor'", [ins.user_id]);
+  }
 }
 async function addCourseInstructor(courseId, instructorId) {
   await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [courseId, Number(instructorId)]);
@@ -533,6 +557,23 @@ async function setBrandValue(brand) {
   return brand;
 }
 
+const HCAPTCHA_DEFAULT = { enabled: false, siteKey: "", secretKey: "" };
+async function getHcaptcha() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='hcaptcha'");
+  return row ? { ...HCAPTCHA_DEFAULT, ...JSON.parse(row.v) } : { ...HCAPTCHA_DEFAULT };
+}
+async function getHcaptchaForClient() {
+  const { enabled, siteKey, secretKey } = await getHcaptcha();
+  return { enabled: !!enabled && !!siteKey, siteKey, hasSecretKey: !!secretKey };
+}
+async function setHcaptcha(next) {
+  const cur = await getHcaptcha();
+  const merged = { ...cur, ...next };
+  if (next.secretKey === undefined || next.secretKey === "") merged.secretKey = cur.secretKey;
+  await q("INSERT INTO settings (k,v) VALUES ('hcaptcha',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
+  return getHcaptchaForClient();
+}
+
 const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", useTls: true, useSsl: false };
 async function getSmtp() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='smtp'");
@@ -554,6 +595,7 @@ module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
+  instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
@@ -561,4 +603,5 @@ module.exports = {
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
+  getHcaptcha, getHcaptchaForClient, setHcaptcha,
 };

@@ -8,9 +8,33 @@ const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
+const QRCode = require("qrcode");
 const dbmod = require("./db.cjs");
 const { generateCertificate, templatesList, defaultTemplateId } = require("./cert.cjs");
+const totp = require("./totp.cjs");
 const { q } = dbmod;
+
+const BRAND_ISSUER = "Learning Portal";
+
+/* Verify an hCaptcha token against the configured secret. Returns true when
+   hCaptcha is disabled (nothing to check). */
+async function checkCaptcha(token) {
+  const cfg = await dbmod.getHcaptcha();
+  if (!cfg.enabled || !cfg.siteKey || !cfg.secretKey) return true;
+  if (!token) return false;
+  try {
+    const body = new URLSearchParams({ secret: cfg.secretKey, response: String(token) });
+    const r = await fetch("https://hcaptcha.com/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    const d = await r.json();
+    return !!d.success;
+  } catch {
+    return false;
+  }
+}
 
 const app = express();
 app.set("trust proxy", true); // so req.protocol reflects the proxy (https)
@@ -59,6 +83,7 @@ async function publicUser(u) {
     firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "", gender: u.gender || "",
     avatar: u.avatar || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
+    twoFactor: !!u.totp_enabled,
     enrolled: await dbmod.enrolledIds(u.id),
   };
 }
@@ -82,16 +107,22 @@ async function adminState() {
 
 /* ---- public ---- */
 app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrand())));
+app.get("/api/auth-config", wrap(async (_req, res) => res.json({ hcaptcha: await dbmod.getHcaptchaForClient() })));
 
 app.post("/api/login", wrap(async (req, res) => {
-  const { username, password } = req.body || {};
+  const { username, password, code, captcha } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+  if (!(await checkCaptcha(captcha))) return res.status(400).json({ error: "Captcha verification failed. Please try again." });
   const [[u]] = await q("SELECT * FROM users WHERE lower(username)=lower(?)", [String(username).trim()]);
   if (!u || !bcrypt.compareSync(String(password), u.password_hash)) {
     return res.status(401).json({ error: "Incorrect username or password." });
   }
   if (u.status === "inactive") {
     return res.status(403).json({ error: "This account is inactive. Please contact your administrator." });
+  }
+  if (u.totp_enabled) {
+    if (!code) return res.status(401).json({ twoFactor: true, error: "Enter the 6-digit code from your authenticator app." });
+    if (!totp.verify(u.totp_secret, code)) return res.status(401).json({ twoFactor: true, error: "That code is not valid. Try again." });
   }
   const token = crypto.randomBytes(24).toString("hex");
   await q("INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)", [token, u.id, Date.now()]);
@@ -113,11 +144,20 @@ app.get("/api/register/:token", wrap(async (req, res) => {
 app.post("/api/register/:token", wrap(async (req, res) => {
   const invite = await dbmod.getInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: "This registration link is invalid or has already been used." });
+  if (!(await checkCaptcha(req.body?.captcha))) return res.status(400).json({ error: "Captcha verification failed. Please try again." });
+  const firstName = String(req.body?.firstName || "").trim();
+  const lastName = String(req.body?.lastName || "").trim();
   const name = String(req.body?.name || "").trim();
+  const phone = String(req.body?.phone || "").trim();
+  const gender = String(req.body?.gender || "").trim();
   const password = String(req.body?.password || "");
-  if (!name) return res.status(400).json({ error: "Please confirm your full name." });
+  if (!firstName) return res.status(400).json({ error: "Enter your first name." });
+  if (!lastName) return res.status(400).json({ error: "Enter your last name." });
+  if (!name) return res.status(400).json({ error: "Confirm your full name (used on certificates)." });
+  if (!phone) return res.status(400).json({ error: "Enter your phone number." });
+  if (!gender) return res.status(400).json({ error: "Select your gender." });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
-  await dbmod.completeRegistration(req.params.token, name, bcrypt.hashSync(password, 10));
+  await dbmod.completeRegistration(req.params.token, { name, firstName, lastName, phone, gender }, bcrypt.hashSync(password, 10));
   res.json({ ok: true });
 }));
 
@@ -125,7 +165,10 @@ app.post("/api/register/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), ...(await adminState()) });
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), ...(await adminState()) });
+  } else if (u.role === "instructor") {
+    const ins = await dbmod.instructorByUserId(u.id);
+    res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
     res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), brand: await dbmod.getBrand() });
@@ -219,12 +262,11 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
     return res.status(400).json({ error: "Unknown certificate template." });
   }
-  const instructorIds = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : [];
+  const instructorIds = (Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter(Boolean);
+  if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
   await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, ?)", [id, code, title, blurb, sessions, certTemplate]);
-  for (const iid of instructorIds) {
-    if (Number(iid)) await dbmod.addCourseInstructor(id, iid);
-  }
+  for (const iid of instructorIds) await dbmod.addCourseInstructor(id, iid);
   res.json({ ok: true, courseId: id, ...(await adminState()) });
 }));
 
@@ -266,8 +308,11 @@ app.delete("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (re
 /* ---- instructors ---- */
 app.post("/api/admin/instructors", auth, adminOnly, wrap(async (req, res) => {
   const name = String(req.body?.name || "").trim();
-  if (!name) return res.status(400).json({ error: "Instructor name is required." });
-  const email = String(req.body?.email || "");
+  if (!name) return res.status(400).json({ error: "Enter the instructor's full name." });
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Enter a title or role for the instructor." });
+  const email = String(req.body?.email || "").trim();
+  if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email address." });
   await dbmod.addInstructor({
     name, email, phone: String(req.body?.phone || ""),
     title: String(req.body?.title || ""), bio: String(req.body?.bio || ""),
@@ -296,6 +341,42 @@ app.put("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => 
 app.delete("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.deleteInstructor(req.params.id);
   res.json(await adminState());
+}));
+
+/* Give an instructor a login account: creates an invited user (role
+   'instructor') linked to the instructor profile and emails a set-password link. */
+app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const [[ins]] = await q("SELECT * FROM instructors WHERE id=?", [id]);
+  if (!ins) return res.status(404).json({ error: "Instructor not found." });
+  if (ins.user_id) {
+    const [[existing]] = await q("SELECT id FROM users WHERE id=?", [ins.user_id]);
+    if (existing) return res.status(409).json({ error: "This instructor already has a login account." });
+  }
+  const email = String(ins.email || "").trim().toLowerCase();
+  if (!email.includes("@")) return res.status(400).json({ error: "Add a valid email to the instructor before inviting them to log in." });
+  let username = String(req.body?.username || "").trim().toLowerCase();
+  if (!username) username = String(ins.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || ("instr" + id);
+  const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? OR lower(username)=? LIMIT 1", [email, username]);
+  if (clash) return res.status(409).json({ error: "That email or username is already in use by another account." });
+
+  const token = crypto.randomBytes(24).toString("hex");
+  const parts = String(ins.name || "").trim().split(/\s+/);
+  const first = parts.shift() || "";
+  const last = parts.join(" ");
+  const [r] = await q(
+    "INSERT INTO users (name,first_name,last_name,phone,username,email,password_hash,role,status,reg_token) VALUES (?,?,?,?,?,?, '', 'instructor','invited', ?)",
+    [ins.name || username, first, last, ins.phone || "", username, email, token]);
+  await dbmod.linkInstructorUser(id, r.insertId);
+
+  const link = `${req.protocol}://${req.get("host")}/register?token=${token}`;
+  const mail = await sendMail(email, "Set up your instructor login",
+    `<p>Hello ${ins.name || ""},</p><p>You can now access the learning portal as an instructor. Click the link below to set your password:</p><p><a href="${link}">${link}</a></p>`);
+  res.json({
+    ok: true, sent: mail.sent, link,
+    msg: mail.sent ? `Login invitation sent to ${email}.` : `Login created, but email was not sent (${mail.reason}). Share this link:`,
+    ...(await adminState()),
+  });
 }));
 
 /* ---- certificates (admin) ---- */
@@ -718,6 +799,44 @@ app.post("/api/account/password", auth, wrap(async (req, res) => {
   if (String(newPassword || "").length < 6) return res.status(400).json({ error: "New password must be at least 6 characters." });
   await q("UPDATE users SET password_hash=? WHERE id=?", [bcrypt.hashSync(String(newPassword), 10), req.user.id]);
   res.json({ ok: true });
+}));
+
+/* ---- two-factor authentication (any signed-in user) ---- */
+app.post("/api/account/2fa/setup", auth, wrap(async (req, res) => {
+  const secret = totp.generateSecret();
+  await q("UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?", [secret, req.user.id]);
+  const uri = totp.keyUri(secret, req.user.email || req.user.username, BRAND_ISSUER);
+  const qrDataUrl = await QRCode.toDataURL(uri, { margin: 1, width: 220 });
+  res.json({ secret, otpauthUrl: uri, qrDataUrl });
+}));
+
+app.post("/api/account/2fa/enable", auth, wrap(async (req, res) => {
+  const [[u]] = await q("SELECT totp_secret FROM users WHERE id=?", [req.user.id]);
+  if (!u.totp_secret) return res.status(400).json({ error: "Start the setup first." });
+  if (!totp.verify(u.totp_secret, req.body?.code)) {
+    return res.status(400).json({ error: "That code is not valid. Check your device clock and try again." });
+  }
+  await q("UPDATE users SET totp_enabled=1 WHERE id=?", [req.user.id]);
+  res.json({ ok: true });
+}));
+
+app.post("/api/account/2fa/disable", auth, wrap(async (req, res) => {
+  const [[u]] = await q("SELECT totp_secret, totp_enabled FROM users WHERE id=?", [req.user.id]);
+  if (u.totp_enabled && !totp.verify(u.totp_secret, req.body?.code)) {
+    return res.status(400).json({ error: "Enter a valid code to turn off two-factor authentication." });
+  }
+  await q("UPDATE users SET totp_secret=NULL, totp_enabled=0 WHERE id=?", [req.user.id]);
+  res.json({ ok: true });
+}));
+
+/* ---- hCaptcha settings (admins) ---- */
+app.put("/api/admin/hcaptcha", auth, adminOnly, wrap(async (req, res) => {
+  const b = req.body || {};
+  res.json(await dbmod.setHcaptcha({
+    enabled: !!b.enabled,
+    siteKey: String(b.siteKey || ""),
+    secretKey: b.secretKey === undefined ? "" : String(b.secretKey),
+  }));
 }));
 
 /* ---- SMTP settings (admins) ---- */

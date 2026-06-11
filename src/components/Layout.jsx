@@ -17,7 +17,10 @@ function initials(name) {
 export default function Layout({ title, children }) {
   const { currentUser, courses, brand, logout } = useStore();
   const navigate = useNavigate();
-  const isAdmin = currentUser?.role === "admin";
+  const role = currentUser?.role;
+  const isAdmin = role === "admin";
+  const isInstructor = role === "instructor";
+  const roleLabel = isAdmin ? "Administrator" : isInstructor ? "Instructor" : "Student";
 
   const onLogout = () => { logout(); navigate("/login"); };
 
@@ -51,30 +54,40 @@ export default function Layout({ title, children }) {
             : <div className="avatar">{initials(currentUser.name)}</div>}
           <div className="info">
             <div className="name">{currentUser.name}</div>
-            <span className="role-badge">{isAdmin ? "Administrator" : "Student"}</span>
+            <span className="role-badge">{roleLabel}</span>
           </div>
         </div>
 
         <nav className="sidebar-nav">
           <div className="nav-label">Menu</div>
-          {isAdmin
-            ? adminNav.map((it) => (
-                <NavLink key={it.to} to={it.to} end={it.end}
-                  className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-                  <it.icon className="nav-icon" /> {it.label}
-                </NavLink>
-              ))
-            : (
-              <>
-                <NavLink to="/" end className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-                  <LayoutDashboard className="nav-icon" /> Dashboard
-                </NavLink>
-                <CoursesAccordion courses={courses} enrolled={currentUser.enrolled} />
-                <NavLink to="/account" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-                  <UserCog className="nav-icon" /> My Account
-                </NavLink>
-              </>
-            )}
+          {isAdmin && adminNav.map((it) => (
+            <NavLink key={it.to} to={it.to} end={it.end}
+              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+              <it.icon className="nav-icon" /> {it.label}
+            </NavLink>
+          ))}
+          {isInstructor && (
+            <>
+              <NavLink to="/instructor" end className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                <LayoutDashboard className="nav-icon" /> Dashboard
+              </NavLink>
+              <CoursesAccordion courses={courses} enrolled={Object.keys(courses)} base="/instructor/courses" label="My Courses" />
+              <NavLink to="/account" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                <UserCog className="nav-icon" /> My Account
+              </NavLink>
+            </>
+          )}
+          {!isAdmin && !isInstructor && (
+            <>
+              <NavLink to="/" end className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                <LayoutDashboard className="nav-icon" /> Dashboard
+              </NavLink>
+              <CoursesAccordion courses={courses} enrolled={currentUser.enrolled} />
+              <NavLink to="/account" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                <UserCog className="nav-icon" /> My Account
+              </NavLink>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -97,28 +110,23 @@ export default function Layout({ title, children }) {
 
 /* Expandable "My Courses" in the sidebar: click to expand/collapse the
    student's enrolled courses; each sub-item opens that course. */
-function CoursesAccordion({ courses, enrolled }) {
+function CoursesAccordion({ courses, enrolled, base = "/courses", label = "My Courses" }) {
   const [open, setOpen] = useState(true);
   return (
     <div>
       <button type="button" className="nav-item" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <GraduationCap className="nav-icon" /> My Courses
+        <GraduationCap className="nav-icon" /> {label}
         <ChevronDown className={"nav-chevron" + (open ? " open" : "")} />
       </button>
       {open && (
         <div className="nav-sub">
           {enrolled.length === 0 && <div className="nav-sub-empty">No courses yet</div>}
           {enrolled.map((id) => courses[id] && (
-            <NavLink key={id} to={`/courses/${id}`}
+            <NavLink key={id} to={`${base}/${id}`}
               className={({ isActive }) => "nav-subitem" + (isActive ? " active" : "")}>
               {courses[id].title}
             </NavLink>
           ))}
-          {enrolled.length > 0 && (
-            <NavLink to="/courses" end className={({ isActive }) => "nav-subitem nav-sub-all" + (isActive ? " active" : "")}>
-              View all courses
-            </NavLink>
-          )}
         </div>
       )}
     </div>

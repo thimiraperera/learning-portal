@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Save, CheckCircle, AlertTriangle, KeyRound, User, Upload, Trash2 } from "lucide-react";
 import Layout from "../components/Layout.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
+import TwoFactor from "../components/TwoFactor.jsx";
 import { resizeToWebp } from "../lib/image.js";
 import { useStore } from "../state.jsx";
 
@@ -145,6 +146,8 @@ export default function Account() {
 
           <button className="btn btn-primary" onClick={savePassword}><KeyRound /> Change password</button>
         </div>
+
+        <TwoFactor />
       </div>
     </Layout>
   );

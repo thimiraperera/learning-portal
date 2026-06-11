@@ -1,26 +1,36 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../state.jsx";
+import HCaptcha from "../components/HCaptcha.jsx";
+
+const HOME = { admin: "/admin", instructor: "/instructor", student: "/" };
 
 /* Split-screen login. Username + password for both students and admins.
    Styles are scoped here via a <style> tag so they don't leak into the app. */
 export default function Login() {
-  const { login, brand } = useStore();
+  const { login, brand, hcaptcha } = useStore();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
+  const [captcha, setCaptcha] = useState("");
+  const [twoFactor, setTwoFactor] = useState(false); // showing the code step
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e?.preventDefault?.();
     if (busy) return;
+    if (hcaptcha.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
-    const r = await login(username, password);
+    const r = await login(username, password, { code: twoFactor ? code : undefined, captcha });
     setBusy(false);
-    if (!r.ok) { setError(r.error || "Incorrect username or password."); return; }
-    navigate(r.role === "admin" ? "/admin" : "/");
+    if (!r.ok) {
+      setError(r.error || "Incorrect username or password.");
+      if (r.twoFactor) setTwoFactor(true);
+      return;
+    }
+    navigate(HOME[r.role] || "/");
   };
 
   return (
@@ -84,7 +94,17 @@ export default function Login() {
               <input id="password" type="password" placeholder="Enter your password" autoComplete="current-password"
                 value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
-            <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
+            {twoFactor && (
+              <div className="form-group">
+                <label htmlFor="code">Authentication code</label>
+                <input id="code" type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code"
+                  value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
+              </div>
+            )}
+            {hcaptcha.enabled && hcaptcha.siteKey && (
+              <div className="form-group"><HCaptcha siteKey={hcaptcha.siteKey} onChange={setCaptcha} /></div>
+            )}
+            <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : (twoFactor ? "Verify & sign in" : "Sign In")}</button>
           </form>
 
           <div className="login-footer">

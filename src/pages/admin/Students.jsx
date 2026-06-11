@@ -33,15 +33,26 @@ export default function Students() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const [fieldErr, setFieldErr] = useState({});
+
   const onName = (v) => {
     setName(v);
+    setFieldErr((e) => ({ ...e, name: undefined }));
     if (!usernameEdited) setUsername(suggestUsername(v));
   };
 
   const invite = async () => {
+    const er = {};
+    if (!name.trim()) er.name = "Enter the student's full name.";
+    if (!email.trim()) er.email = "Email is required to send the invite.";
+    else if (!email.includes("@")) er.email = "Enter a valid email address.";
+    if (!username.trim()) er.username = "Username is required.";
+    setFieldErr(er);
+    setMsg(null);
+    if (Object.keys(er).length > 0) return;
     const r = await addStudent(name, email, username);
     setMsg(r);
-    if (r.ok) { setName(""); setEmail(""); setUsername(""); setUsernameEdited(false); }
+    if (r.ok) { setName(""); setEmail(""); setUsername(""); setUsernameEdited(false); setFieldErr({}); }
   };
 
   const ql = qy.trim().toLowerCase();
@@ -69,11 +80,18 @@ export default function Students() {
         <div className="card-title">Invite a student</div>
         <div className="card-subtitle">No password is set here. The student creates it from the registration link.</div>
         <div className="form-group" style={{ marginBottom: 10 }}>
-          <input className="form-control" style={{ width: "100%" }} placeholder="Full name" value={name} onChange={(e) => onName(e.target.value)} />
+          <input className={"form-control" + (fieldErr.name ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Full name" value={name} onChange={(e) => onName(e.target.value)} />
+          {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}
         </div>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <input className="form-control" placeholder="email@address.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="form-control" placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setUsernameEdited(true); }} />
+        <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 180px" }}>
+            <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="email@address.com" value={email} onChange={(e) => { setEmail(e.target.value); setFieldErr((er) => ({ ...er, email: undefined })); }} />
+            {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}
+          </div>
+          <div style={{ flex: "1 1 180px" }}>
+            <input className={"form-control" + (fieldErr.username ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setUsernameEdited(true); setFieldErr((er) => ({ ...er, username: undefined })); }} />
+            {fieldErr.username && <div className="field-error">{fieldErr.username}</div>}
+          </div>
           <button className="btn btn-primary" onClick={invite}><Mail /> Send invite</button>
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>A username is suggested from the full name. You can change it before sending.</div>

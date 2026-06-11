@@ -17,13 +17,17 @@ import Settings from "./pages/admin/Settings.jsx";
 import Exams from "./pages/admin/Exams.jsx";
 import ExamManage from "./pages/admin/ExamManage.jsx";
 import ExamTake from "./pages/student/ExamTake.jsx";
+import InstructorDashboard from "./pages/instructor/Dashboard.jsx";
+import InstructorCourseView from "./pages/instructor/CourseView.jsx";
+
+const HOME_FOR = { admin: "/admin", instructor: "/instructor", student: "/" };
 
 /* Route guards keyed off the logged-in user's role. */
 function RequireRole({ role, children }) {
   const { currentUser } = useStore();
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.role !== role) {
-    return <Navigate to={currentUser.role === "admin" ? "/admin" : "/"} replace />;
+    return <Navigate to={HOME_FOR[currentUser.role] || "/"} replace />;
   }
   return children;
 }
@@ -55,6 +59,10 @@ function Routed() {
       <Route path="/courses" element={<RequireRole role="student"><MyCourses /></RequireRole>} />
       <Route path="/courses/:id" element={<RequireRole role="student"><CourseDetail /></RequireRole>} />
       <Route path="/exams/:id" element={<RequireRole role="student"><ExamTake /></RequireRole>} />
+
+      {/* instructor */}
+      <Route path="/instructor" element={<RequireRole role="instructor"><InstructorDashboard /></RequireRole>} />
+      <Route path="/instructor/courses/:id" element={<RequireRole role="instructor"><InstructorCourseView /></RequireRole>} />
 
       {/* shared */}
       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />

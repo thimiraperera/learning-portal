@@ -32,6 +32,7 @@ export function StoreProvider({ children }) {
   const [exams, setExams] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
+  const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
   const [ready, setReady] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -44,6 +45,7 @@ export function StoreProvider({ children }) {
     setLocked(data.locked || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
+    if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
   };
   const applyAdmin = (data) => {
     if (data.courses) setCourses(data.courses);
@@ -81,6 +83,7 @@ export function StoreProvider({ children }) {
     let alive = true;
     (async () => {
       try { const b = await api("/brand"); if (alive) setBrandLocal({ ...DEFAULT_BRAND, ...b }); } catch { /* ignore */ }
+      try { const cfg = await api("/auth-config"); if (alive && cfg.hcaptcha) setHcaptchaLocal(cfg.hcaptcha); } catch { /* ignore */ }
       if (token) {
         try {
           const data = await api("/bootstrap", { token });
@@ -96,18 +99,31 @@ export function StoreProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = useCallback(async (username, password) => {
+  const login = useCallback(async (username, password, { code, captcha } = {}) => {
     try {
-      const { token: t, user } = await api("/login", { method: "POST", body: { username, password } });
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, code, captcha }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.error || "Sign in failed", twoFactor: !!data.twoFactor };
+      const { token: t, user } = data;
       localStorage.setItem(TOKEN_KEY, t);
       setToken(t);
       setCurrentUser(user);
-      const data = await api("/bootstrap", { token: t });
-      applyBootstrap(data);
+      applyBootstrap(await api("/bootstrap", { token: t }));
       return { ok: true, role: user.role };
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  }, []);
+
+  const register = useCallback(async (token, fields) => {
+    try {
+      await api(`/register/${token}`, { method: "POST", body: fields });
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
   }, []);
 
   const logout = useCallback(async () => {
@@ -289,6 +305,27 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
+  /* ---- two-factor authentication (any role) ---- */
+  const setup2fa = useCallback(() => api("/account/2fa/setup", { method: "POST", token }), [token]);
+  const enable2fa = useCallback(async (code) => {
+    try { await api("/account/2fa/enable", { method: "POST", token, body: { code } }); setCurrentUser((u) => (u ? { ...u, twoFactor: true } : u)); return { ok: true, msg: "Two-factor authentication is on." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const disable2fa = useCallback(async (code) => {
+    try { await api("/account/2fa/disable", { method: "POST", token, body: { code } }); setCurrentUser((u) => (u ? { ...u, twoFactor: false } : u)); return { ok: true, msg: "Two-factor authentication is off." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  const saveHcaptcha = useCallback(async (fields) => {
+    try { const saved = await api("/admin/hcaptcha", { method: "PUT", token, body: fields }); setHcaptchaLocal(saved); return { ok: true, msg: "hCaptcha settings saved." }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  const inviteInstructorLogin = useCallback(async (id, username) => {
+    try { const d = await api(`/admin/instructors/${id}/invite-login`, { method: "POST", token, body: { username } }); applyAdmin(d); return { ok: true, msg: d.msg, link: d.link, sent: d.sent }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const saveSmtp = useCallback(async (fields) => {
     try {
       const saved = await api("/admin/smtp", { method: "PUT", token, body: fields });
@@ -298,8 +335,9 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, brand, smtp,
-    login, logout, setBrand,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, brand, smtp, hcaptcha,
+    login, register, logout, setBrand,
+    setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     addGroup, renameGroup, deleteGroup, reorderGroups,

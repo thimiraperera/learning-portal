@@ -13,6 +13,7 @@ export default function Instructors() {
   const { instructors, courses, addInstructor, deleteInstructor } = useStore();
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
+  const [fieldErr, setFieldErr] = useState({});
   const [msg, setMsg] = useState(null);
 
   const [qy, setQy] = useState("");
@@ -21,14 +22,22 @@ export default function Instructors() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setFieldErr((er) => ({ ...er, [k]: undefined })); };
   const courseCount = (instrId) => Object.values(courses).filter((c) => c.instructors.some((i) => i.id === instrId)).length;
   const teaches = (instrId, cid) => (courses[cid]?.instructors || []).some((i) => i.id === instrId);
 
   const submit = async () => {
+    const er = {};
+    if (!form.name.trim()) er.name = "Enter the instructor's full name.";
+    if (!form.title.trim()) er.title = "A title or role is required.";
+    if (!form.email.trim()) er.email = "Email is required.";
+    else if (!form.email.includes("@")) er.email = "Enter a valid email address.";
+    setFieldErr(er);
+    setMsg(null);
+    if (Object.keys(er).length > 0) return;
     const r = await addInstructor(form);
     setMsg(r);
-    if (r.ok) setForm(EMPTY);
+    if (r.ok) { setForm(EMPTY); setFieldErr({}); }
   };
 
   const ql = qy.trim().toLowerCase();
@@ -57,11 +66,18 @@ export default function Instructors() {
         <div className="card-subtitle">Name is required; the rest is profile information shown across the portal.</div>
         {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
         <div className="form-group" style={{ marginBottom: 10 }}>
-          <input className="form-control" style={{ width: "100%" }} placeholder="Full name" value={form.name} onChange={set("name")} />
+          <input className={"form-control" + (fieldErr.name ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Full name" value={form.name} onChange={set("name")} />
+          {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}
         </div>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <input className="form-control" placeholder="Title / role" value={form.title} onChange={set("title")} />
-          <input className="form-control" placeholder="email@address.com" value={form.email} onChange={set("email")} />
+        <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 180px" }}>
+            <input className={"form-control" + (fieldErr.title ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Title / role" value={form.title} onChange={set("title")} />
+            {fieldErr.title && <div className="field-error">{fieldErr.title}</div>}
+          </div>
+          <div style={{ flex: "1 1 180px" }}>
+            <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="email@address.com" value={form.email} onChange={set("email")} />
+            {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}
+          </div>
           <PhoneInput style={{ flex: "1 1 200px" }} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
           <select className="form-control" style={{ flex: "0 0 140px" }} value={form.gender} onChange={set("gender")}>
             <option value="">Gender</option>

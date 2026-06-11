@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import TwoFactor from "../../components/TwoFactor.jsx";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp } = useStore();
+  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
@@ -103,7 +104,52 @@ export default function Settings() {
       </div>
 
       <SmtpCard smtp={smtp} saveSmtp={saveSmtp} />
+      <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
+      <div style={{ marginTop: 24 }}><TwoFactor /></div>
     </Layout>
+  );
+}
+
+function HcaptchaCard({ hcaptcha, saveHcaptcha }) {
+  const h = hcaptcha || {};
+  const [enabled, setEnabled] = useState(!!h.enabled);
+  const [siteKey, setSiteKey] = useState(h.siteKey || "");
+  const [secretKey, setSecretKey] = useState("");
+  const [msg, setMsg] = useState(null);
+
+  const save = async () => {
+    setMsg(await saveHcaptcha({ enabled, siteKey: siteKey.trim(), secretKey }));
+    setSecretKey("");
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><ShieldCheck style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />hCaptcha</div>
+      <div className="card-subtitle">Protect the sign-in and registration pages from bots. Get keys from your hCaptcha dashboard.</div>
+
+      {msg && (
+        <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>
+          {msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}
+        </div>
+      )}
+
+      <label className="check-row" style={{ marginBottom: 16 }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable hCaptcha on login and registration
+      </label>
+
+      <div className="field-row">
+        <div className="form-group">
+          <label className="form-label">Site key</label>
+          <input className="form-control" value={siteKey} placeholder="10000000-ffff-ffff-ffff-000000000001" onChange={(e) => setSiteKey(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Secret key {h.hasSecretKey && <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(leave blank to keep current)</span>}</label>
+          <input className="form-control" type="password" value={secretKey} placeholder={h.hasSecretKey ? "********" : ""} onChange={(e) => setSecretKey(e.target.value)} />
+        </div>
+      </div>
+
+      <button className="btn btn-primary" onClick={save}><Save /> Save hCaptcha settings</button>
+    </div>
   );
 }
 
