@@ -250,7 +250,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const resetAll = useCallback(async () => {
-    try { await api("/admin/reset", { method: "POST", token }); return { ok: true }; }
+    try { await api("/admin/clear-all", { method: "POST", token }); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
