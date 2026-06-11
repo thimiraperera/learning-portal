@@ -71,21 +71,21 @@ export default function Instructors() {
           {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}
         </div>
         <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 180px" }}>
+          <div className="tb-field" style={{ flex: "1 1 180px" }}>
             <label className="form-label">Title / role <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.title ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Title / role" value={form.title} onChange={set("title")} />
             {fieldErr.title && <div className="field-error">{fieldErr.title}</div>}
           </div>
-          <div style={{ flex: "1 1 180px" }}>
+          <div className="tb-field" style={{ flex: "1 1 180px" }}>
             <label className="form-label">Email <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="email@address.com" value={form.email} onChange={set("email")} />
             {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}
           </div>
-          <div style={{ flex: "1 1 200px" }}>
+          <div className="tb-field" style={{ flex: "1 1 200px" }}>
             <label className="form-label">Phone</label>
             <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
           </div>
-          <div style={{ flex: "0 0 140px" }}>
+          <div className="tb-field" style={{ flex: "0 0 140px" }}>
             <label className="form-label">Gender</label>
             <select className="form-control" value={form.gender} onChange={set("gender")}>
               <option value="">Not set</option>

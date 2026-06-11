@@ -85,12 +85,12 @@ export default function Students() {
           {fieldErr.name && <div className="field-error">{fieldErr.name}</div>}
         </div>
         <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 180px" }}>
+          <div className="tb-field" style={{ flex: "1 1 180px" }}>
             <label className="form-label">Email <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="email@address.com" value={email} onChange={(e) => { setEmail(e.target.value); setFieldErr((er) => ({ ...er, email: undefined })); }} />
             {fieldErr.email && <div className="field-error">{fieldErr.email}</div>}
           </div>
-          <div style={{ flex: "1 1 180px" }}>
+          <div className="tb-field" style={{ flex: "1 1 180px" }}>
             <label className="form-label">Username <span className="req">*</span></label>
             <input className={"form-control" + (fieldErr.username ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setUsernameEdited(true); setFieldErr((er) => ({ ...er, username: undefined })); }} />
             {fieldErr.username && <div className="field-error">{fieldErr.username}</div>}

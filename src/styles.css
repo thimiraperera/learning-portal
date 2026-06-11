@@ -356,6 +356,12 @@ select.form-control { cursor: pointer; }
 .toolbar .ss-trigger { height: 42px; }
 .toolbar .btn { padding-top: 0; padding-bottom: 0; }
 .toolbar > div { display: flex; align-items: center; }
+/* a labelled field inside a toolbar: stack the label above the control */
+.toolbar > .tb-field { flex-direction: column; align-items: stretch; }
+.tb-field .form-label { margin-bottom: 6px; }
+/* the toolbar's flex sizing would grow controls vertically in a column, so reset it */
+.tb-field .form-control,
+.tb-field select.form-control { flex: 0 0 auto; }
 .icon-btn-plain { background: none; border: none; cursor: pointer; color: #9CA3AF; display: inline-flex; padding: 4px; border-radius: 6px; }
 .icon-btn-plain:hover { color: var(--danger); background: #FEF2F2; }
 
