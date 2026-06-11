@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Award, Plus, Eye, Download, Send, LockOpen, CheckCircle, AlertTriangle } from "lucide-react";
+import { Award, Plus, Eye, Download, Send, LockOpen, CheckCircle, AlertTriangle, Search } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -14,6 +14,8 @@ export default function Certificates() {
   const [student, setStudent] = useState("all");
   const [course, setCourse] = useState("all");
   const [bulkCourse, setBulkCourse] = useState("all");
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+  const [bulkSearch, setBulkSearch] = useState("");
   const [msg, setMsg] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -29,12 +31,31 @@ export default function Certificates() {
     ? selStudent.enrolled.filter((cid) => courses[cid] && !hasCert(selStudent.id, cid)).map((cid) => ({ value: cid, label: `${courses[cid].code} - ${courses[cid].title}` }))
     : [];
 
-  // Bulk: students enrolled in the picked course who don't have a certificate yet.
-  const bulkEligible = bulkCourse !== "all"
-    ? Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(bulkCourse) && !hasCert(u.id, bulkCourse))
+  // All students enrolled in the picked course (certified ones are shown but not selectable).
+  const bulkStudents = bulkCourse !== "all"
+    ? Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(bulkCourse))
     : [];
+  const eligibleIds = (cid) => Object.values(users).filter((u) => u.role === "student" && u.enrolled.includes(cid) && !hasCert(u.id, cid)).map((u) => u.id);
+  const bq = bulkSearch.trim().toLowerCase();
+  const bulkVisible = bulkStudents.filter((u) => !bq || u.name.toLowerCase().includes(bq) || u.email.toLowerCase().includes(bq));
+  const eligibleVisible = bulkVisible.filter((u) => !hasCert(u.id, bulkCourse));
+  const allEligibleChecked = eligibleVisible.length > 0 && eligibleVisible.every((u) => bulkSelected.has(u.id));
 
   const onStudent = (v) => { setStudent(v); setCourse("all"); };
+
+  // Selecting a course pre-checks every eligible student.
+  const onBulkCourse = (v) => {
+    setBulkCourse(v);
+    setBulkSearch("");
+    setBulkSelected(v === "all" ? new Set() : new Set(eligibleIds(v)));
+  };
+  const toggleStudent = (id) => setBulkSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setBulkSelected((s) => {
+    const n = new Set(s);
+    if (allEligibleChecked) eligibleVisible.forEach((u) => n.delete(u.id));
+    else eligibleVisible.forEach((u) => n.add(u.id));
+    return n;
+  });
 
   const issue = async () => {
     if (student === "all" || course === "all") { setMsg({ ok: false, msg: "Pick a student and a course." }); return; }
@@ -44,9 +65,10 @@ export default function Certificates() {
   };
 
   const bulkIssue = async () => {
-    if (bulkCourse === "all") { setMsg({ ok: false, msg: "Pick a course." }); return; }
-    const r = await bulkIssueCertificates(bulkCourse);
+    if (bulkCourse === "all" || bulkSelected.size === 0) { setMsg({ ok: false, msg: "Pick a course and at least one student." }); return; }
+    const r = await bulkIssueCertificates(bulkCourse, [...bulkSelected]);
     setMsg(r);
+    if (r.ok) setBulkSelected(new Set());
   };
 
   const act = async (fn) => { try { const r = await fn(); if (r) setMsg(r); } catch (e) { setMsg({ ok: false, msg: e.message }); } };
@@ -84,19 +106,46 @@ export default function Certificates() {
       </div>
 
       <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-title">Bulk issue by course</div>
-        <div className="card-subtitle">Pick a course to issue certificates to every enrolled student who doesn't have one yet.</div>
-        <div className="toolbar" style={{ marginBottom: bulkCourse !== "all" ? 12 : 0 }}>
+        <div className="card-title">Issue by course</div>
+        <div className="card-subtitle">Pick a course to list its students. All eligible students are pre-selected; uncheck anyone you want to skip.</div>
+        <div className="toolbar" style={{ marginBottom: bulkCourse !== "all" ? 14 : 0 }}>
           <SearchSelect style={{ flex: "1 1 260px" }} value={bulkCourse} placeholder="Select course" allLabel="Select course"
-            options={courseOptions} onChange={setBulkCourse} />
-          <button className="btn btn-primary" onClick={bulkIssue} disabled={bulkCourse === "all" || bulkEligible.length === 0}>
-            <Plus /> Issue {bulkEligible.length} certificate{bulkEligible.length === 1 ? "" : "s"}
+            options={courseOptions} onChange={onBulkCourse} />
+          <button className="btn btn-primary" onClick={bulkIssue} disabled={bulkSelected.size === 0}>
+            <Plus /> Issue {bulkSelected.size} certificate{bulkSelected.size === 1 ? "" : "s"}
           </button>
         </div>
+
         {bulkCourse !== "all" && (
-          bulkEligible.length === 0
-            ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Every enrolled student already has a certificate for this course.</p>
-            : <p style={{ color: "#6B7280", fontSize: 13 }}>Will issue to: {bulkEligible.map((u) => u.name).join(", ")}</p>
+          bulkStudents.length === 0 ? (
+            <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students are enrolled in this course.</p>
+          ) : (
+            <>
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+                <input className="form-control" style={{ paddingLeft: 36, width: "100%", height: 40 }} placeholder="Search students" value={bulkSearch} onChange={(e) => setBulkSearch(e.target.value)} />
+              </div>
+              {eligibleVisible.length > 0 && (
+                <label className="check-row" style={{ padding: "6px 2px", borderBottom: "1px solid var(--border)" }}>
+                  <input type="checkbox" checked={allEligibleChecked} onChange={toggleAll} /> Select all ({eligibleVisible.length})
+                </label>
+              )}
+              <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 4 }}>
+                {bulkVisible.map((u) => {
+                  const certified = hasCert(u.id, bulkCourse);
+                  return (
+                    <label key={u.id} className="check-row" style={{ padding: "9px 2px", opacity: certified ? 0.6 : 1 }}>
+                      <input type="checkbox" disabled={certified} checked={certified ? false : bulkSelected.has(u.id)} onChange={() => toggleStudent(u.id)} />
+                      <span style={{ fontWeight: 600, color: "var(--title)" }}>{u.name}</span>
+                      <span style={{ color: "#9CA3AF", fontSize: 12.5 }}>{u.email}</span>
+                      {certified && <span className="badge badge-muted" style={{ marginLeft: "auto" }}>Already issued</span>}
+                    </label>
+                  );
+                })}
+                {bulkVisible.length === 0 && <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students match.</p>}
+              </div>
+            </>
+          )
         )}
       </div>
 

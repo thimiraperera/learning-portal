@@ -182,8 +182,8 @@ export function StoreProvider({ children }) {
     try { const d = await api("/admin/certificates", { method: "POST", token, body: { studentId, courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const bulkIssueCertificates = useCallback(async (courseId) => {
-    try { const d = await api("/admin/certificates/bulk", { method: "POST", token, body: { courseId } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
+  const bulkIssueCertificates = useCallback(async (courseId, studentIds) => {
+    try { const d = await api("/admin/certificates/bulk", { method: "POST", token, body: { courseId, studentIds } }); applyAdmin(d); return { ok: true, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const unlockCertificate = useCallback(async (id) => {
