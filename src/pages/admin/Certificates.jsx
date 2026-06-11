@@ -93,24 +93,17 @@ export default function Certificates() {
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
       <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-title">Issue to one student</div>
-        <div className="card-subtitle">Pick a student, then choose from the courses they're enrolled in. The student is emailed and can download it once.</div>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <SearchSelect style={{ flex: "1 1 240px" }} value={student} placeholder="Select student" allLabel="Select student"
-            options={studentOptions} onChange={onStudent} />
-          <SearchSelect style={{ flex: "1 1 240px" }} value={course}
-            placeholder={selStudent ? (studentCourseOptions.length ? "Select course" : "No courses to certify") : "Select a student first"}
-            allLabel="Select course" options={studentCourseOptions} onChange={setCourse} />
-          <button className="btn btn-primary" onClick={issue} disabled={student === "all" || course === "all"}><Plus /> Issue certificate</button>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-title">Issue by course</div>
-        <div className="card-subtitle">Pick a course to list its students. All eligible students are pre-selected; uncheck anyone you want to skip.</div>
+        <div className="card-title">Issue certificates</div>
+        <div className="card-subtitle">Pick a course, then tick the students to certify. Eligible students are pre-ticked.</div>
         <div className="toolbar" style={{ marginBottom: bulkCourse !== "all" ? 14 : 0 }}>
           <SearchSelect style={{ flex: "1 1 260px" }} value={bulkCourse} placeholder="Select course" allLabel="Select course"
             options={courseOptions} onChange={onBulkCourse} />
+          {bulkCourse !== "all" && bulkStudents.length > 0 && (
+            <div style={{ position: "relative", flex: "1 1 200px" }}>
+              <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+              <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search students" value={bulkSearch} onChange={(e) => setBulkSearch(e.target.value)} />
+            </div>
+          )}
           <button className="btn btn-primary" onClick={bulkIssue} disabled={bulkSelected.size === 0}>
             <Plus /> Issue {bulkSelected.size} certificate{bulkSelected.size === 1 ? "" : "s"}
           </button>
@@ -120,31 +113,36 @@ export default function Certificates() {
           bulkStudents.length === 0 ? (
             <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students are enrolled in this course.</p>
           ) : (
-            <>
-              <div style={{ position: "relative", marginBottom: 10 }}>
-                <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
-                <input className="form-control" style={{ paddingLeft: 36, width: "100%", height: 40 }} placeholder="Search students" value={bulkSearch} onChange={(e) => setBulkSearch(e.target.value)} />
-              </div>
-              {eligibleVisible.length > 0 && (
-                <label className="check-row" style={{ padding: "6px 2px", borderBottom: "1px solid var(--border)" }}>
-                  <input type="checkbox" checked={allEligibleChecked} onChange={toggleAll} /> Select all ({eligibleVisible.length})
-                </label>
-              )}
-              <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 4 }}>
-                {bulkVisible.map((u) => {
-                  const certified = hasCert(u.id, bulkCourse);
-                  return (
-                    <label key={u.id} className="check-row" style={{ padding: "9px 2px", opacity: certified ? 0.6 : 1 }}>
-                      <input type="checkbox" disabled={certified} checked={certified ? false : bulkSelected.has(u.id)} onChange={() => toggleStudent(u.id)} />
-                      <span style={{ fontWeight: 600, color: "var(--title)" }}>{u.name}</span>
-                      <span style={{ color: "#9CA3AF", fontSize: 12.5 }}>{u.email}</span>
-                      {certified && <span className="badge badge-muted" style={{ marginLeft: "auto" }}>Already issued</span>}
-                    </label>
-                  );
-                })}
-                {bulkVisible.length === 0 && <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students match.</p>}
-              </div>
-            </>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 44, textAlign: "center" }}>
+                      <input type="checkbox" checked={allEligibleChecked} disabled={eligibleVisible.length === 0} onChange={toggleAll}
+                        style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: eligibleVisible.length ? "pointer" : "default" }} />
+                    </th>
+                    <th>Student</th><th>Email</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkVisible.map((u) => {
+                    const certified = hasCert(u.id, bulkCourse);
+                    return (
+                      <tr key={u.id} style={{ opacity: certified ? 0.6 : 1 }}>
+                        <td style={{ textAlign: "center" }}>
+                          <input type="checkbox" disabled={certified} checked={certified ? false : bulkSelected.has(u.id)} onChange={() => toggleStudent(u.id)}
+                            style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: certified ? "default" : "pointer" }} />
+                        </td>
+                        <td style={{ fontWeight: 700, color: "var(--title)" }}>{u.name}</td>
+                        <td style={{ color: "#6B7280" }}>{u.email}</td>
+                        <td>{certified ? <span className="badge badge-muted">Already issued</span> : <span className="badge badge-accepted">Eligible</span>}</td>
+                      </tr>
+                    );
+                  })}
+                  {bulkVisible.length === 0 && <tr><td colSpan="4" style={{ color: "#9CA3AF" }}>No students match.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           )
         )}
       </div>
