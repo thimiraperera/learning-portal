@@ -280,39 +280,6 @@ app.delete("/api/admin/instructors/:id", auth, adminOnly, wrap(async (req, res) 
 }));
 
 /* ---- certificates (admin) ---- */
-app.post("/api/admin/certificates", auth, adminOnly, wrap(async (req, res) => {
-  const studentId = Number(req.body?.studentId);
-  const courseId = String(req.body?.courseId || "");
-  const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [studentId]);
-  const [[course]] = await q("SELECT * FROM courses WHERE id=?", [courseId]);
-  if (!stu || !course) return res.status(400).json({ error: "Pick a valid student and course." });
-  if (await dbmod.certExists(studentId, courseId)) return res.status(409).json({ error: "A certificate already exists for this student and course." });
-  const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
-  await dbmod.issueCertificate(studentId, courseId, certNo, Date.now());
-  const mail = await sendMail(stu.email, "Your certificate has been issued",
-    `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
-  res.json({ ok: true, sent: mail.sent, msg: mail.sent ? `Certificate issued and emailed to ${stu.email}.` : `Certificate issued (email not sent: ${mail.reason}).`, ...(await adminState()) });
-}));
-
-app.post("/api/admin/certificates/bulk", auth, adminOnly, wrap(async (req, res) => {
-  const courseId = String(req.body?.courseId || "");
-  const onlyIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds.map(Number) : null;
-  const [[course]] = await q("SELECT * FROM courses WHERE id=?", [courseId]);
-  if (!course) return res.status(400).json({ error: "Pick a valid course." });
-  const [students] = await q("SELECT u.* FROM users u JOIN enrolments e ON e.user_id=u.id WHERE e.course_id=? AND u.role='student'", [courseId]);
-  let issued = 0;
-  for (const stu of students) {
-    if (onlyIds && !onlyIds.includes(stu.id)) continue;
-    if (await dbmod.certExists(stu.id, courseId)) continue;
-    const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-    await dbmod.issueCertificate(stu.id, courseId, certNo, Date.now());
-    await sendMail(stu.email, "Your certificate has been issued",
-      `<p>Hello ${dbmod.displayName(stu)},</p><p>Your certificate for <strong>${course.title}</strong> has been issued. You can download it from your dashboard.</p>`);
-    issued++;
-  }
-  res.json({ ok: true, msg: `Issued ${issued} new certificate${issued === 1 ? "" : "s"} for ${course.title}.`, ...(await adminState()) });
-}));
-
 app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req, res) => {
   const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
   let issued = 0;
