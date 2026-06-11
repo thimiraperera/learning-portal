@@ -62,9 +62,18 @@ export function StoreProvider({ children }) {
     URL.revokeObjectURL(url);
   }
   async function fetchBlobOpen(path) {
-    const res = await fetch("/api" + path, { headers: { Authorization: "Bearer " + token } });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Could not open"); }
-    window.open(URL.createObjectURL(await res.blob()), "_blank");
+    // Open the tab synchronously (inside the click) so the browser does not
+    // treat it as a blocked popup, then point it at the blob once it loads.
+    const win = window.open("", "_blank");
+    try {
+      const res = await fetch("/api" + path, { headers: { Authorization: "Bearer " + token } });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Could not open"); }
+      const url = URL.createObjectURL(await res.blob());
+      if (win) win.location.href = url; else window.open(url, "_blank");
+    } catch (e) {
+      if (win) win.close();
+      throw e;
+    }
   }
 
   // On first load: fetch public brand, and restore the session if a token exists.
@@ -135,9 +144,9 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
-  const addCourse = useCallback(async (title, code) => {
-    try { applyAdmin(await api("/admin/courses", { method: "POST", token, body: { title, code } })); return true; }
-    catch { return false; }
+  const addCourse = useCallback(async (fields) => {
+    try { const d = await api("/admin/courses", { method: "POST", token, body: fields }); applyAdmin(d); return { ok: true, id: d.courseId }; }
+    catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
   const updateCourse = useCallback(async (id, fields) => {
@@ -168,8 +177,8 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addItem = useCallback(async (cid, bucket, value) => {
-    applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, bucket, value } }));
+  const addItem = useCallback(async (cid, groupId, bucket, value) => {
+    applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, value } }));
   }, [token]);
 
   const removeItem = useCallback(async (cid, bucket, itemId) => {
@@ -178,6 +187,22 @@ export function StoreProvider({ children }) {
 
   const reorderItems = useCallback(async (cid, bucket, orderedIds) => {
     applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
+  }, [token]);
+
+  /* ---- content groups ---- */
+  const addGroup = useCallback(async (cid, title) => {
+    try { applyAdmin(await api(`/admin/courses/${cid}/groups`, { method: "POST", token, body: { title } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const renameGroup = useCallback(async (cid, gid, title) => {
+    try { applyAdmin(await api(`/admin/courses/${cid}/groups/${gid}`, { method: "PUT", token, body: { title } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const deleteGroup = useCallback(async (cid, gid) => {
+    applyAdmin(await api(`/admin/courses/${cid}/groups/${gid}`, { method: "DELETE", token }));
+  }, [token]);
+  const reorderGroups = useCallback(async (cid, orderedIds) => {
+    applyAdmin(await api(`/admin/courses/${cid}/groups/reorder`, { method: "POST", token, body: { orderedIds } }));
   }, [token]);
 
   /* ---- certificates ---- */
@@ -277,6 +302,7 @@ export function StoreProvider({ children }) {
     login, logout, setBrand,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
+    addGroup, renameGroup, deleteGroup, reorderGroups,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     fetchCertTemplates, previewCertTemplate,

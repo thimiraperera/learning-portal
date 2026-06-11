@@ -6,12 +6,24 @@ import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 
+/* Build a sensible username suggestion from the full name: lowercase,
+   strip accents and punctuation. Admins can still type their own. */
+function suggestUsername(name) {
+  // NFD splits accented letters into base + combining mark; drop the marks
+  // (̀-ͯ) so "José" becomes "jose", then keep a-z0-9 only.
+  return name.trim().toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 24);
+}
+
 export default function Students() {
   const { users, courses, addStudent, removeStudent } = useStore();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
+  const [usernameEdited, setUsernameEdited] = useState(false);
   const [msg, setMsg] = useState(null); // { ok, msg, link, sent }
 
   const [qy, setQy] = useState("");
@@ -21,10 +33,15 @@ export default function Students() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const onName = (v) => {
+    setName(v);
+    if (!usernameEdited) setUsername(suggestUsername(v));
+  };
+
   const invite = async () => {
     const r = await addStudent(name, email, username);
     setMsg(r);
-    if (r.ok) { setName(""); setEmail(""); setUsername(""); }
+    if (r.ok) { setName(""); setEmail(""); setUsername(""); setUsernameEdited(false); }
   };
 
   const ql = qy.trim().toLowerCase();
@@ -52,13 +69,14 @@ export default function Students() {
         <div className="card-title">Invite a student</div>
         <div className="card-subtitle">No password is set here. The student creates it from the registration link.</div>
         <div className="form-group" style={{ marginBottom: 10 }}>
-          <input className="form-control" style={{ width: "100%" }} placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="form-control" style={{ width: "100%" }} placeholder="Full name" value={name} onChange={(e) => onName(e.target.value)} />
         </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <input className="form-control" placeholder="email@address.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="form-control" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input className="form-control" placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setUsernameEdited(true); }} />
           <button className="btn btn-primary" onClick={invite}><Mail /> Send invite</button>
         </div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>A username is suggested from the full name. You can change it before sending.</div>
         {msg && (
           <>
             <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")} style={{ marginTop: 16, marginBottom: msg.link ? 8 : 0 }}>
@@ -84,6 +102,7 @@ export default function Students() {
           <select className="form-control" style={{ flex: "0 0 150px" }} value={status} onChange={(e) => { setStatus(e.target.value); resetPage(); }}>
             <option value="all">All statuses</option>
             <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
             <option value="invited">Invited</option>
           </select>
           <SearchSelect style={{ flex: "1 1 220px" }} value={course} placeholder="All courses" allLabel="All courses"

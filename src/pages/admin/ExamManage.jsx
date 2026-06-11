@@ -17,6 +17,14 @@ const SAMPLE_CSV = [
 ].join("\r\n") + "\r\n";
 
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
+const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function fmtDuration(a, b) {
+  const ms = Number(b) - Number(a);
+  if (!Number.isFinite(ms) || ms <= 0) return "-";
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+}
 
 export default function ExamManage() {
   const { id } = useParams();
@@ -351,7 +359,7 @@ function ResultsTab({ exam }) {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Student</th><th>Score</th><th>Submitted</th></tr>
+            <tr><th>Student</th><th>Score</th><th>Written on</th><th>Time taken</th></tr>
           </thead>
           <tbody>
             {slice.map((a) => {
@@ -365,9 +373,8 @@ function ResultsTab({ exam }) {
                   <td>
                     <span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span>
                   </td>
-                  <td style={{ color: "#6B7280" }}>
-                    {new Date(Number(a.finished_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                  </td>
+                  <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateTime(a.finished_at)}</td>
+                  <td style={{ color: "#6B7280" }}>{fmtDuration(a.started_at, a.finished_at)}</td>
                 </tr>
               );
             })}

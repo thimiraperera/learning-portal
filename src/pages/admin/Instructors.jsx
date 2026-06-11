@@ -4,6 +4,7 @@ import { Presentation, CheckCircle, AlertTriangle, Plus, Eye, Trash2, Search, X 
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import PhoneInput from "../../components/PhoneInput.jsx";
 import { useStore } from "../../state.jsx";
 
 const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "", notify: false };
@@ -61,7 +62,7 @@ export default function Instructors() {
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <input className="form-control" placeholder="Title / role" value={form.title} onChange={set("title")} />
           <input className="form-control" placeholder="email@address.com" value={form.email} onChange={set("email")} />
-          <input className="form-control" placeholder="Phone" value={form.phone} onChange={set("phone")} />
+          <PhoneInput style={{ flex: "1 1 200px" }} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
           <select className="form-control" style={{ flex: "0 0 140px" }} value={form.gender} onChange={set("gender")}>
             <option value="">Gender</option>
             <option value="Male">Male</option>

@@ -4,6 +4,7 @@ import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import PhoneInput from "../../components/PhoneInput.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function InstructorManage() {
@@ -77,7 +78,7 @@ function ProfileTab({ instr, store, navigate }) {
         <div className="form-group"><label className="form-label">Email</label>
           <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Phone</label>
-          <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+          <PhoneInput value={phone} onChange={setPhone} /></div>
       </div>
       <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
         <select className="form-control" value={gender} onChange={(e) => setGender(e.target.value)}>

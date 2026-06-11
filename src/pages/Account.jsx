@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Save, CheckCircle, AlertTriangle, KeyRound, User, Upload, Trash2 } from "lucide-react";
 import Layout from "../components/Layout.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
 import { resizeToWebp } from "../lib/image.js";
 import { useStore } from "../state.jsx";
 
@@ -102,7 +103,7 @@ export default function Account() {
             </div>
             <div className="form-group">
               <label className="form-label">Phone</label>
-              <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+94 ..." />
+              <PhoneInput value={phone} onChange={setPhone} />
             </div>
           </div>
 

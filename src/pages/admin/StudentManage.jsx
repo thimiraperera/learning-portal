@@ -7,9 +7,18 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import PhoneInput from "../../components/PhoneInput.jsx";
 import { useStore } from "../../state.jsx";
 
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
+const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function fmtDuration(a, b) {
+  const ms = Number(b) - Number(a);
+  if (!Number.isFinite(ms) || ms <= 0) return "-";
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+}
 
 export default function StudentManage() {
   const { id } = useParams();
@@ -23,9 +32,9 @@ export default function StudentManage() {
   const [email, s] = entry;
 
   const tabs = [
+    { k: "profile", label: "Profile", icon: SettingsIcon },
     { k: "courses", label: "Courses", icon: BookOpen, n: s.enrolled.length },
     { k: "overview", label: "Overview", icon: BarChart3 },
-    { k: "profile", label: "Profile", icon: SettingsIcon },
   ];
 
   return (
@@ -62,9 +71,11 @@ function ProfileTab({ id, s, store, navigate }) {
   const [phone, setPhone] = useState(s.phone || "");
   const [gender, setGender] = useState(s.gender || "");
   const [notes, setNotes] = useState(s.notes || "");
+  const [status, setStatus] = useState(s.status || "active");
   const [msg, setMsg] = useState(null);
+  const invited = s.status === "invited";
 
-  const save = async () => setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes }));
+  const save = async () => setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, status }));
   const remove = async () => {
     if (!window.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`)) return;
     await store.removeStudent(s.email);
@@ -78,7 +89,15 @@ function ProfileTab({ id, s, store, navigate }) {
         <div className="form-group"><label className="form-label">Username</label>
           <input className="form-control locked-input" value={s.username} readOnly disabled /></div>
         <div className="form-group"><label className="form-label">Status</label>
-          <input className="form-control locked-input" value={s.status} readOnly disabled /></div>
+          {invited
+            ? <input className="form-control locked-input" value="invited (awaiting registration)" readOnly disabled />
+            : (
+              <select className="form-control" value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            )}
+        </div>
       </div>
       <div className="field-row">
         <div className="form-group"><label className="form-label">First name</label>
@@ -92,7 +111,7 @@ function ProfileTab({ id, s, store, navigate }) {
         <div className="form-group"><label className="form-label">Email</label>
           <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Phone</label>
-          <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+94 ..." /></div>
+          <PhoneInput value={phone} onChange={setPhone} /></div>
       </div>
       <div className="form-group" style={{ maxWidth: 300 }}><label className="form-label">Gender</label>
         <select className="form-control" value={gender} onChange={(e) => setGender(e.target.value)}>
@@ -130,6 +149,8 @@ function OverviewTab({ id, s, store, navigate }) {
   const avg = list.length
     ? Math.round((list.reduce((n, a) => n + (a.total > 0 ? Number(a.score) / a.total : 0), 0) / list.length) * 100)
     : null;
+  // How many times each exam was written (one row per attempt).
+  const timesByExam = list.reduce((m, a) => { m[a.exam_id] = (m[a.exam_id] || 0) + 1; return m; }, {});
 
   const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
   const safePage = Math.min(page, pageCount);
@@ -154,11 +175,12 @@ function OverviewTab({ id, s, store, navigate }) {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Exam</th><th>Course</th><th>Score</th><th>Submitted</th></tr>
+                <tr><th>Exam</th><th>Course</th><th>Score</th><th>Written on</th><th>Time taken</th></tr>
               </thead>
               <tbody>
                 {slice.map((a) => {
                   const pct = a.total > 0 ? Math.round((Number(a.score) / a.total) * 100) : 0;
+                  const times = timesByExam[a.exam_id] || 1;
                   return (
                     <tr key={a.id}>
                       <td>
@@ -166,12 +188,12 @@ function OverviewTab({ id, s, store, navigate }) {
                           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: "var(--primary)", fontFamily: "inherit", fontSize: "inherit", textAlign: "left" }}>
                           {a.examTitle}
                         </button>
+                        {times > 1 && <div style={{ fontSize: 12, color: "#9CA3AF" }}>Written {times} times</div>}
                       </td>
                       <td style={{ color: "#6B7280" }}>{a.course_id ? `${a.courseCode} - ${a.courseTitle}` : "-"}</td>
                       <td><span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span></td>
-                      <td style={{ color: "#6B7280" }}>
-                        {new Date(Number(a.finished_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                      </td>
+                      <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateTime(a.finished_at)}</td>
+                      <td style={{ color: "#6B7280" }}>{fmtDuration(a.started_at, a.finished_at)}</td>
                     </tr>
                   );
                 })}

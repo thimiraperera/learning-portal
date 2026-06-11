@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Pencil,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -228,25 +228,108 @@ function InstructorTab({ id, c, store, navigate }) {
 }
 
 function ContentManager({ id, c, store }) {
+  const { addGroup, reorderGroups } = store;
+  const [newGroup, setNewGroup] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [dragGid, setDragGid] = useState(null);
+  const [overGid, setOverGid] = useState(null);
+  const groups = c.groups || [];
+
+  const add = async () => {
+    if (!newGroup.trim()) return;
+    const r = await addGroup(id, newGroup.trim());
+    if (r.ok) { setNewGroup(""); setMsg(null); } else setMsg(r.msg);
+  };
+
+  const onDropGroup = async (targetGid) => {
+    setOverGid(null);
+    if (dragGid == null || dragGid === targetGid) { setDragGid(null); return; }
+    const ids = groups.map((g) => g.id);
+    const from = ids.indexOf(dragGid);
+    const to = ids.indexOf(targetGid);
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setDragGid(null);
+    await reorderGroups(id, ids);
+  };
+
   return (
     <>
-      <p style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Add items to each category. Drag the handle to reorder within a category.</p>
-      <ContentSection id={id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title or URL" />
-      <ContentSection id={id} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title or URL" />
-      <ContentSection id={id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title or filename" />
+      <p style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>
+        Organise content into groups (like Moodle sections). Drag a group by its handle to reorder, and drag items within a list to reorder them.
+      </p>
+      {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
+
+      {groups.length === 0 ? (
+        <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No groups yet. Create your first group below to start adding content.</p></div>
+      ) : groups.map((g) => (
+        <GroupCard key={g.id} id={id} group={g} store={store}
+          dragGid={dragGid} setDragGid={setDragGid} overGid={overGid} setOverGid={setOverGid} onDropGroup={onDropGroup} />
+      ))}
+
+      <div className="toolbar" style={{ marginTop: 4, marginBottom: 0 }}>
+        <input className="form-control" placeholder="New group title (e.g. Week 1, Module 2)" value={newGroup}
+          onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <button className="btn btn-primary" onClick={add}><Plus /> Add group</button>
+      </div>
     </>
   );
 }
 
-function ContentSection({ id, store, bucket, title, Icon, items, placeholder }) {
+function GroupCard({ id, group, store, dragGid, setDragGid, overGid, setOverGid, onDropGroup }) {
+  const { renameGroup, deleteGroup } = store;
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(group.title);
+  const count = group.recordings.length + group.links.length + group.materials.length;
+
+  const saveTitle = async () => { if (title.trim()) { await renameGroup(id, group.id, title.trim()); setEditing(false); } };
+  const remove = async () => {
+    if (!window.confirm(`Delete group "${group.title}"${count ? ` and its ${count} item${count === 1 ? "" : "s"}` : ""}? This cannot be undone.`)) return;
+    await deleteGroup(id, group.id);
+  };
+
+  return (
+    <div className={"group-card" + (overGid === group.id ? " drag-over" : "") + (dragGid === group.id ? " dragging" : "")}
+      onDragOver={(e) => { if (dragGid != null) { e.preventDefault(); setOverGid(group.id); } }}
+      onDrop={() => onDropGroup(group.id)}
+      onDragLeave={() => setOverGid((o) => (o === group.id ? null : o))}>
+      <div className="group-head">
+        <span className="drag-handle" draggable onDragStart={() => setDragGid(group.id)} onDragEnd={() => { setDragGid(null); setOverGid(null); }}>
+          <GripVertical />
+        </span>
+        {editing ? (
+          <>
+            <input className="form-control" style={{ flex: 1, height: 38 }} value={title} autoFocus
+              onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); }} />
+            <button className="btn btn-primary btn-sm" onClick={saveTitle}><Save /> Save</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setTitle(group.title); setEditing(false); }}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <div className="group-title">{group.title} <span className="tab-count">{count}</span></div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}><Pencil /> Rename</button>
+            <button className="icon-btn-plain" title="Delete group" onClick={remove}><Trash2 style={{ width: 16, height: 16 }} /></button>
+          </>
+        )}
+      </div>
+      <div className="group-body">
+        <ContentSection id={id} groupId={group.id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={group.recordings} placeholder="Recording title or URL" />
+        <ContentSection id={id} groupId={group.id} store={store} bucket="links" title="Course links" Icon={Link2} items={group.links} placeholder="Link title or URL" />
+        <ContentSection id={id} groupId={group.id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={group.materials} placeholder="Material title or filename" />
+      </div>
+    </div>
+  );
+}
+
+function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder }) {
   const { addItem, removeItem, reorderItems } = store;
   const [value, setValue] = useState("");
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
 
-  const add = async () => { if (value.trim()) { await addItem(id, bucket, value); setValue(""); } };
+  const add = async () => { if (value.trim()) { await addItem(id, groupId, bucket, value); setValue(""); } };
 
-  const onDrop = async (targetId) => {
+  const onDrop = async (e, targetId) => {
+    e.stopPropagation();
     setOverId(null);
     if (dragId == null || dragId === targetId) { setDragId(null); return; }
     const ids = items.map((it) => it.id);
@@ -258,7 +341,7 @@ function ContentSection({ id, store, bucket, title, Icon, items, placeholder }) 
   };
 
   return (
-    <div className="content-section">
+    <div className="content-section" style={{ marginBottom: 14 }}>
       <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
@@ -266,10 +349,10 @@ function ContentSection({ id, store, bucket, title, Icon, items, placeholder }) 
             <div key={it.id}
               className={"media-row drag-row" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
               draggable
-              onDragStart={() => setDragId(it.id)}
-              onDragOver={(e) => { e.preventDefault(); setOverId(it.id); }}
+              onDragStart={(e) => { e.stopPropagation(); setDragId(it.id); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOverId(it.id); }}
               onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
-              onDrop={() => onDrop(it.id)}
+              onDrop={(e) => onDrop(e, it.id)}
               onDragEnd={() => { setDragId(null); setOverId(null); }}>
               <span className="drag-handle"><GripVertical /></span>
               <div className="mr-body"><div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div></div>

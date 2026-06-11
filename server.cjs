@@ -90,6 +90,9 @@ app.post("/api/login", wrap(async (req, res) => {
   if (!u || !bcrypt.compareSync(String(password), u.password_hash)) {
     return res.status(401).json({ error: "Incorrect username or password." });
   }
+  if (u.status === "inactive") {
+    return res.status(403).json({ error: "This account is inactive. Please contact your administrator." });
+  }
   const token = crypto.randomBytes(24).toString("hex");
   await q("INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)", [token, u.id, Date.now()]);
   res.json({ token, user: await publicUser(u) });
@@ -185,6 +188,7 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
     phone: String(req.body?.phone || "").trim(),
     gender: String(req.body?.gender || ""),
     notes: String(req.body?.notes || ""),
+    status: String(req.body?.status || ""),
     email,
   });
   res.json(await adminState());
@@ -209,9 +213,19 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   const title = String(req.body?.title || "").trim();
   const code = String(req.body?.code || "").trim().toUpperCase();
   if (!title || !code) return res.status(400).json({ error: "Enter a title and a code." });
+  const blurb = String(req.body?.blurb || "").trim() || "Newly created course.";
+  const sessions = Number.parseInt(req.body?.sessions, 10) || 0;
+  const certTemplate = String(req.body?.certTemplate || "");
+  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
+    return res.status(400).json({ error: "Unknown certificate template." });
+  }
+  const instructorIds = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : [];
   const id = "c" + Date.now().toString(36);
-  await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions) VALUES (?,?,?, '', 'Newly created course.', 0)", [id, code, title]);
-  res.json(await adminState());
+  await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, ?)", [id, code, title, blurb, sessions, certTemplate]);
+  for (const iid of instructorIds) {
+    if (Number(iid)) await dbmod.addCourseInstructor(id, iid);
+  }
+  res.json({ ok: true, courseId: id, ...(await adminState()) });
 }));
 
 app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
@@ -624,12 +638,42 @@ app.post("/api/exams/:id/submit", auth, wrap(async (req, res) => {
   res.json({ finished: true, score, total: snap.questions.length });
 }));
 
+/* ---- content groups (Moodle-style sections) ---- */
+app.post("/api/admin/courses/:id/groups", auth, adminOnly, wrap(async (req, res) => {
+  const id = req.params.id;
+  const [[c]] = await q("SELECT id FROM courses WHERE id=?", [id]);
+  if (!c) return res.status(404).json({ error: "Course not found." });
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Enter a group title." });
+  await dbmod.addGroup(id, title);
+  res.json(await adminState());
+}));
+
+app.put("/api/admin/courses/:id/groups/:gid", auth, adminOnly, wrap(async (req, res) => {
+  const title = String(req.body?.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Enter a group title." });
+  await dbmod.renameGroup(req.params.id, Number(req.params.gid), title);
+  res.json(await adminState());
+}));
+
+app.delete("/api/admin/courses/:id/groups/:gid", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.deleteGroup(req.params.id, Number(req.params.gid));
+  res.json(await adminState());
+}));
+
+app.post("/api/admin/courses/:id/groups/reorder", auth, adminOnly, wrap(async (req, res) => {
+  if (!Array.isArray(req.body?.orderedIds)) return res.status(400).json({ error: "Invalid reorder." });
+  await dbmod.reorderGroups(req.params.id, req.body.orderedIds.map(Number));
+  res.json(await adminState());
+}));
+
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, bucket, value } = req.body || {};
+  const { courseId, groupId, bucket, value } = req.body || {};
   const v = String(value || "").trim();
   if (!BUCKET[bucket] || !v) return res.status(400).json({ error: "Invalid item." });
-  await dbmod.addCourseItem(courseId, bucket, v);
+  if (!(await dbmod.groupExists(courseId, Number(groupId)))) return res.status(400).json({ error: "Pick a group first." });
+  await dbmod.addCourseItem(courseId, Number(groupId), bucket, v);
   res.json(await adminState());
 }));
 

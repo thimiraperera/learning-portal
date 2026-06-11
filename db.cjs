@@ -52,14 +52,17 @@ const TABLES = [
      course_id VARCHAR(32) NOT NULL, instructor_id INT NOT NULL,
      PRIMARY KEY (course_id, instructor_id)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS content_groups (
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, position INT DEFAULT 0
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS recordings (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS links (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS materials (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), position INT DEFAULT 0
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS enrolments (
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, PRIMARY KEY (user_id, course_id)
@@ -193,6 +196,9 @@ async function init() {
   await ensureColumn("recordings", "position", "INT DEFAULT 0");
   await ensureColumn("links", "position", "INT DEFAULT 0");
   await ensureColumn("materials", "position", "INT DEFAULT 0");
+  await ensureColumn("recordings", "group_id", "INT DEFAULT 0");
+  await ensureColumn("links", "group_id", "INT DEFAULT 0");
+  await ensureColumn("materials", "group_id", "INT DEFAULT 0");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
@@ -220,6 +226,25 @@ async function init() {
     const [linked] = await q("SELECT id, instructor_id FROM courses WHERE instructor_id IS NOT NULL");
     for (const row of linked) await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [row.id, row.instructor_id]);
   }
+  // Content groups (Moodle-style sections): make sure every existing item
+  // belongs to a group, creating a "General" group per course as needed.
+  const [ungrouped] = await q(`SELECT DISTINCT course_id FROM (
+      SELECT course_id FROM recordings WHERE COALESCE(group_id,0)=0
+      UNION SELECT course_id FROM links WHERE COALESCE(group_id,0)=0
+      UNION SELECT course_id FROM materials WHERE COALESCE(group_id,0)=0
+    ) t`);
+  for (const { course_id } of ungrouped) {
+    const [[c]] = await q("SELECT id FROM courses WHERE id=?", [course_id]);
+    if (!c) continue;
+    let [[g]] = await q("SELECT id FROM content_groups WHERE course_id=? ORDER BY position, id LIMIT 1", [course_id]);
+    if (!g) {
+      const [r] = await q("INSERT INTO content_groups (course_id,title,position) VALUES (?, 'General', 0)", [course_id]);
+      g = { id: r.insertId };
+    }
+    for (const t of ["recordings", "links", "materials"]) {
+      await q(`UPDATE ${t} SET group_id=? WHERE course_id=? AND COALESCE(group_id,0)=0`, [g.id, course_id]);
+    }
+  }
 }
 
 /* ---- read helpers (assemble the shapes the frontend expects) ---- */
@@ -228,14 +253,21 @@ async function courseFull(id) {
   if (!c) return null;
   const [instructors] = await q(
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
-  const [recordings] = await q("SELECT id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
-  const [links] = await q("SELECT id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
-  const [materials] = await q("SELECT id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [recordings] = await q("SELECT id, group_id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
+  const [links] = await q("SELECT id, group_id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
+  const [materials] = await q("SELECT id, group_id, title AS t, size, ext FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [groupRows] = await q("SELECT id, title FROM content_groups WHERE course_id=? ORDER BY position, id", [id]);
+  const groups = groupRows.map((g) => ({
+    id: g.id, title: g.title,
+    recordings: recordings.filter((r) => r.group_id === g.id),
+    links: links.filter((r) => r.group_id === g.id),
+    materials: materials.filter((r) => r.group_id === g.id),
+  }));
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
     certTemplate: c.cert_template || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
-    recordings, links, materials,
+    recordings, links, materials, groups,
   };
 }
 async function coursesMap(ids) {
@@ -288,6 +320,10 @@ async function updateStudentProfile(id, f) {
   const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
   await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, notes=?, email=?, name=? WHERE id=? AND role='student'",
     [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.email, name || f.email, id]);
+  // Admins can flip active/inactive, but never override the pre-registration "invited" state.
+  if (f.status === "active" || f.status === "inactive") {
+    await q("UPDATE users SET status=? WHERE id=? AND role='student' AND status<>'invited'", [f.status, id]);
+  }
 }
 async function updateCourse(id, f) {
   await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=? WHERE id=?",
@@ -321,19 +357,21 @@ async function deleteCourse(id) {
   await q("DELETE FROM recordings WHERE course_id=?", [id]);
   await q("DELETE FROM links WHERE course_id=?", [id]);
   await q("DELETE FROM materials WHERE course_id=?", [id]);
+  await q("DELETE FROM content_groups WHERE course_id=?", [id]);
   await q("DELETE FROM enrolments WHERE course_id=?", [id]);
   await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
   await q("UPDATE exams SET course_id='' WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
-async function addCourseItem(courseId, bucket, value) {
+async function addCourseItem(courseId, groupId, bucket, value) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
-  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=?`, [courseId]);
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,title,date,length,position) VALUES (?,?, 'n/a','n/a', ?)", [courseId, value, p]);
-  else if (bucket === "links") await q("INSERT INTO links (course_id,title,url,position) VALUES (?,?, '#', ?)", [courseId, value, p]);
-  else await q("INSERT INTO materials (course_id,title,size,ext,position) VALUES (?,?, 'n/a','PDF', ?)", [courseId, value, p]);
+  const gid = Number(groupId) || 0;
+  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND group_id=?`, [courseId, gid]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,date,length,position) VALUES (?,?,?, 'n/a','n/a', ?)", [courseId, gid, value, p]);
+  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?, '#', ?)", [courseId, gid, value, p]);
+  else await q("INSERT INTO materials (course_id,group_id,title,size,ext,position) VALUES (?,?,?, 'n/a','PDF', ?)", [courseId, gid, value, p]);
 }
 async function removeCourseItem(courseId, bucket, itemId) {
   const t = ITEM_TABLE[bucket];
@@ -343,6 +381,27 @@ async function reorderItems(courseId, bucket, orderedIds) {
   const t = ITEM_TABLE[bucket];
   if (!t || !Array.isArray(orderedIds)) return;
   for (let i = 0; i < orderedIds.length; i++) await q(`UPDATE ${t} SET position=? WHERE id=? AND course_id=?`, [i, orderedIds[i], courseId]);
+}
+/* ---- content groups ---- */
+async function addGroup(courseId, title) {
+  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM content_groups WHERE course_id=?", [courseId]);
+  const [r] = await q("INSERT INTO content_groups (course_id,title,position) VALUES (?,?,?)", [courseId, title, p]);
+  return r.insertId;
+}
+async function renameGroup(courseId, gid, title) {
+  await q("UPDATE content_groups SET title=? WHERE id=? AND course_id=?", [title, gid, courseId]);
+}
+async function deleteGroup(courseId, gid) {
+  for (const t of ["recordings", "links", "materials"]) await q(`DELETE FROM ${t} WHERE course_id=? AND group_id=?`, [courseId, gid]);
+  await q("DELETE FROM content_groups WHERE id=? AND course_id=?", [gid, courseId]);
+}
+async function reorderGroups(courseId, orderedIds) {
+  if (!Array.isArray(orderedIds)) return;
+  for (let i = 0; i < orderedIds.length; i++) await q("UPDATE content_groups SET position=? WHERE id=? AND course_id=?", [i, orderedIds[i], courseId]);
+}
+async function groupExists(courseId, gid) {
+  const [[r]] = await q("SELECT id FROM content_groups WHERE id=? AND course_id=?", [gid, courseId]);
+  return !!r;
 }
 /* ---- certificates ---- */
 async function certExists(studentId, courseId) {
@@ -497,6 +556,7 @@ module.exports = {
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
+  addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
