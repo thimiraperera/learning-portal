@@ -21,6 +21,12 @@ const pool = mysql.createPool({
 
 const q = (sql, params) => pool.query(sql, params);
 
+// All tables use this one collation. Pinning it keeps JOINs from breaking when
+// the MySQL/MariaDB server default differs between table creations (newer
+// MariaDB defaults new tables to utf8mb4_uca1400_ai_ci, older ones to
+// utf8mb4_general_ci, and mixing the two makes string '=' comparisons fail).
+const COLLATE = "utf8mb4_general_ci";
+
 const TABLES = [
   `CREATE TABLE IF NOT EXISTS users (
      id INT AUTO_INCREMENT PRIMARY KEY,
@@ -38,46 +44,46 @@ const TABLES = [
      role VARCHAR(20) NOT NULL DEFAULT 'student',
      status VARCHAR(20) NOT NULL DEFAULT 'active',
      reg_token VARCHAR(64)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS courses (
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
      instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS instructors (
      id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL,
      email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT,
      gender VARCHAR(20) DEFAULT '', notes TEXT
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS course_instructors (
      course_id VARCHAR(32) NOT NULL, instructor_id INT NOT NULL,
      PRIMARY KEY (course_id, instructor_id)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS content_groups (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, position INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS recordings (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS links (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS materials (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, size VARCHAR(40), ext VARCHAR(16), filename VARCHAR(512), position INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS enrolments (
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, PRIMARY KEY (user_id, course_id)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS settings (
      k VARCHAR(64) PRIMARY KEY, v LONGTEXT
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS sessions (
      token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT, expires_at BIGINT
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS certificates (
      id INT AUTO_INCREMENT PRIMARY KEY, cert_no VARCHAR(40) NOT NULL UNIQUE,
      student_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, issued_at BIGINT,
      downloaded TINYINT DEFAULT 0, unlocked TINYINT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS exams (
      id INT AUTO_INCREMENT PRIMARY KEY,
      course_id VARCHAR(32) DEFAULT '',
@@ -85,7 +91,7 @@ const TABLES = [
      question_count INT DEFAULT 0,
      time_limit INT DEFAULT 0,
      created_at BIGINT
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS exam_questions (
      id INT AUTO_INCREMENT PRIMARY KEY,
      exam_id INT NOT NULL,
@@ -95,7 +101,7 @@ const TABLES = [
      qtype VARCHAR(10) DEFAULT 'single',
      corrects TEXT,
      position INT DEFAULT 0
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS exam_attempts (
      id INT AUTO_INCREMENT PRIMARY KEY,
      exam_id INT NOT NULL,
@@ -105,12 +111,12 @@ const TABLES = [
      score DECIMAL(6,2) DEFAULT 0,
      total INT DEFAULT 0,
      snapshot LONGTEXT
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS course_requests (
      id INT AUTO_INCREMENT PRIMARY KEY,
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, created_at BIGINT,
      UNIQUE KEY uniq_req (user_id, course_id)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -143,8 +149,23 @@ async function ensureAdmin() {
   console.log(`Created initial admin '${username}' (set ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_EMAIL / ADMIN_NAME to customise).`);
 }
 
+// Force every table onto the one collation. Older databases can hold a mix
+// (e.g. utf8mb4_general_ci alongside utf8mb4_uca1400_ai_ci) which makes
+// cross-table string JOINs throw "Illegal mix of collations". Converting any
+// stragglers here lets a plain deploy self-heal without manual SQL.
+async function normalizeCollations() {
+  const [tables] = await q(
+    "SELECT table_name AS t FROM information_schema.tables WHERE table_schema=DATABASE() AND table_collation<>?",
+    [COLLATE]
+  );
+  for (const row of tables) {
+    await q(`ALTER TABLE \`${row.t}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE ${COLLATE}`);
+  }
+}
+
 async function init() {
   for (const sql of TABLES) await q(sql);
+  await normalizeCollations();
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
   await ensureColumn("users", "phone", "VARCHAR(60) DEFAULT ''");
   await ensureColumn("users", "reg_token", "VARCHAR(64)");
