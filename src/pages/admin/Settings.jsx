@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, AlertOctagon } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import { useStore } from "../../state.jsx";
@@ -8,9 +7,8 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup, resetAll, logout,
+  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
-  const navigate = useNavigate();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
@@ -117,35 +115,7 @@ export default function Settings() {
 
       <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
       <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
-      <ResetCard resetAll={resetAll} logout={logout} navigate={navigate} />
     </Layout>
-  );
-}
-
-/* Danger zone: wipe all data and start fresh. */
-function ResetCard({ resetAll, logout, navigate }) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
-
-  const run = async () => {
-    if (!window.confirm("Reset ALL data? This permanently deletes every student, instructor, course, exam, certificate and uploaded file. Branding and SMTP settings are kept. This cannot be undone.")) return;
-    const typed = window.prompt('Type RESET to confirm you want to erase all data.');
-    if (typed !== "RESET") { setMsg({ ok: false, text: "Reset cancelled." }); return; }
-    setBusy(true); setMsg(null);
-    const r = await resetAll();
-    setBusy(false);
-    if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
-    setMsg({ ok: true, text: "All data has been reset. Signing you out..." });
-    setTimeout(async () => { await logout(); navigate("/login"); }, 1800);
-  };
-
-  return (
-    <div className="card" style={{ marginTop: 24, border: "1.5px solid #FECACA" }}>
-      <div className="card-title"><AlertOctagon style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--danger)" }} />Reset all data</div>
-      <div className="card-subtitle">Permanently delete all students, instructors, courses, exams, certificates and uploaded files, and recreate the default admin. Branding and SMTP settings are kept. This cannot be undone.</div>
-      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
-      <button className="btn btn-danger" disabled={busy} onClick={run}><Trash2 /> {busy ? "Resetting..." : "Reset all data"}</button>
-    </div>
   );
 }
 

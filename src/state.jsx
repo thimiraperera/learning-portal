@@ -265,11 +265,6 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
-  const resetAll = useCallback(async () => {
-    try { await api("/admin/clear-all", { method: "POST", token }); return { ok: true }; }
-    catch (e) { return { ok: false, msg: e.message }; }
-  }, [token]);
-
   /* ---- backup & restore ---- */
   const downloadBackup = useCallback((scope) => {
     const ext = scope === "db" ? "sql" : "zip";
@@ -422,7 +417,7 @@ export function StoreProvider({ children }) {
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
-    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, resetAll,
+    uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     requestCourse, approveRequest, declineRequest,

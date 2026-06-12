@@ -143,16 +143,6 @@ async function ensureAdmin() {
   console.log(`Created initial admin '${username}' (set ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_EMAIL / ADMIN_NAME to customise).`);
 }
 
-/* Wipe all content (keeps branding / SMTP / hCaptcha settings) and recreate
-   the env/default admin. Used by the admin "reset all data" button. */
-async function resetAllData() {
-  for (const t of ["exam_attempts", "exam_questions", "exams", "certificates", "enrolments", "course_instructors",
-    "recordings", "links", "materials", "content_groups", "courses", "instructors", "users", "sessions"]) {
-    await q(`DELETE FROM ${t}`);
-  }
-  await ensureAdmin();
-}
-
 async function init() {
   for (const sql of TABLES) await q(sql);
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
@@ -705,6 +695,6 @@ module.exports = {
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
-  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser, resetAllData,
+  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser,
   findLoginUser, setResetToken, getResetUser, applyReset,
 };
