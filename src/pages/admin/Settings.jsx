@@ -7,7 +7,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -84,7 +84,7 @@ export default function Settings() {
           <button className="btn btn-primary" onClick={save}><Save /> Save Settings</button>
         </div>
 
-        <SmtpCard smtp={smtp} saveSmtp={saveSmtp} />
+        <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
         </div>
 
         <div className="settings-col">
@@ -317,7 +317,7 @@ function HcaptchaCard({ hcaptcha, saveHcaptcha }) {
   );
 }
 
-function SmtpCard({ smtp, saveSmtp }) {
+function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
   const s = smtp || {};
   const [host, setHost] = useState(s.host || "");
   const [port, setPort] = useState(s.port || "587");
@@ -327,11 +327,20 @@ function SmtpCard({ smtp, saveSmtp }) {
   const [fromName, setFromName] = useState(s.fromName || "");
   const [useTls, setUseTls] = useState(s.useTls !== false);
   const [useSsl, setUseSsl] = useState(!!s.useSsl);
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const save = async () => {
     setMsg(await saveSmtp({ host, port, username, password, fromEmail, fromName, useTls, useSsl }));
     setPassword("");
+  };
+
+  const sendTest = async () => {
+    setTesting(true); setMsg(null);
+    const r = await sendTestMail(testTo.trim());
+    setTesting(false);
+    setMsg(r);
   };
 
   return (
@@ -384,6 +393,20 @@ function SmtpCard({ smtp, saveSmtp }) {
       </div>
 
       <button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</button>
+
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 22, paddingTop: 18 }}>
+        <label className="form-label">Send a test email</label>
+        <div className="card-subtitle" style={{ marginTop: 2 }}>Save your settings first, then send a test to confirm delivery. Leave blank to send to your own admin email.</div>
+        <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
+          <div className="tb-field" style={{ flex: "1 1 220px" }}>
+            <input className="form-control" style={{ width: "100%" }} type="email" placeholder="recipient@example.com (optional)"
+              value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+          </div>
+          <button className="btn btn-outline" disabled={testing || !host} onClick={sendTest}>
+            <Mail /> {testing ? "Sending..." : "Send test mail"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1134,6 +1134,20 @@ app.put("/api/admin/smtp", auth, adminOnly, wrap(async (req, res) => {
   }));
 }));
 
+/* Send a test email (to the signed-in admin, or a given address) so the admin
+   can confirm the saved SMTP settings actually deliver. */
+app.post("/api/admin/smtp/test", auth, adminOnly, wrap(async (req, res) => {
+  const to = String(req.body?.to || req.user.email || "").trim();
+  if (!to || !to.includes("@")) return res.status(400).json({ error: "No valid destination email. Add an email to your account or enter one." });
+  const html = await emailHtml("SMTP test email", "Checking your outgoing mail",
+    mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(req.user))}</strong>,`) +
+    mailer.statusBox("This is a test message from your learning portal. If it reached your inbox, SMTP is configured correctly.", "success") +
+    mailer.muted("You can safely ignore this email."));
+  const mail = await sendMail(to, "SMTP test email", html);
+  if (!mail.sent) return res.status(400).json({ error: mail.reason || "Could not send the test email." });
+  res.json({ ok: true, to });
+}));
+
 /* ---- branding ---- */
 app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
   const brand = {

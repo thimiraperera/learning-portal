@@ -410,6 +410,12 @@ export function StoreProvider({ children }) {
       return { ok: true, msg: "SMTP settings saved." };
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const sendTestMail = useCallback(async (to) => {
+    try {
+      const d = await api("/admin/smtp/test", { method: "POST", token, body: { to } });
+      return { ok: true, msg: `Test email sent to ${d.to}. Check the inbox (and spam).` };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   const value = {
     ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, brand, smtp, hcaptcha,
@@ -426,7 +432,7 @@ export function StoreProvider({ children }) {
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
-    updateAccount, changePassword, saveSmtp,
+    updateAccount, changePassword, saveSmtp, sendTestMail,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
