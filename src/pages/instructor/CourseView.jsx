@@ -1,6 +1,7 @@
 import { useParams, useNavigate, Navigate } from "react-router-dom";
-import { ArrowLeft, PlayCircle, Link2, FileDown, Calendar, Clock, Layers, Users } from "lucide-react";
+import { ArrowLeft, PlayCircle, Link2, FileDown, Layers } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import { openUrl } from "../student/CourseDetail.jsx";
 import { useStore } from "../../state.jsx";
 
 /* Read-only course view for instructors: the grouped content of a course
@@ -35,14 +36,18 @@ export default function InstructorCourseView() {
                 <div key={g.id} className="content-section">
                   <div className="content-section-head"><Layers /> {g.title} <span className="tab-count">{n}</span></div>
                   {g.recordings.map((r) => (
-                    <Row key={`r${r.id}`} icon={PlayCircle} title={r.t} meta={<><Calendar /> {r.d} <span className="dot" /> <Clock /> {r.len}</>} />
+                    <Row key={`r${r.id}`} icon={PlayCircle} title={r.t}
+                      action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
                   ))}
                   {g.links.map((r) => (
-                    <Row key={`l${r.id}`} icon={Link2} title={r.t} meta={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.u}</span>} />
+                    <Row key={`l${r.id}`} icon={Link2} title={r.t}
+                      action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
                   ))}
                   {g.materials.map((r) => (
-                    <Row key={`m${r.id}`} icon={FileDown} title={r.t} meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>}
-                      action={r.filename ? "Download" : null} onAction={r.filename ? () => downloadMaterial(r.id, r.t) : null} />
+                    <Row key={`m${r.id}`} icon={FileDown} title={r.t}
+                      meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null}
+                      action={r.filename ? "Download" : (r.u ? "Open" : null)}
+                      onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)} />
                   ))}
                 </div>
               );
@@ -58,7 +63,7 @@ function Row({ icon: Icon, title, meta, action, onAction }) {
       <div className="mr-icon"><Icon /></div>
       <div className="mr-body">
         <div className="mr-title">{title}</div>
-        <div className="mr-meta">{meta}</div>
+        {meta && <div className="mr-meta">{meta}</div>}
       </div>
       {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
     </div>

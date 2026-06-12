@@ -150,7 +150,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests() };
 }
 
 /* ---- public ---- */
@@ -180,7 +180,8 @@ app.post("/api/login", wrap(async (req, res) => {
   const { username, password, code, captcha, remember } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
   if (!(await checkCaptcha(captcha))) return res.status(400).json({ error: "Captcha verification failed. Please try again." });
-  const [[u]] = await q("SELECT * FROM users WHERE lower(username)=lower(?)", [String(username).trim()]);
+  const idv = String(username).trim().toLowerCase();
+  const [[u]] = await q("SELECT * FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [idv, idv]);
   if (!u || !bcrypt.compareSync(String(password), u.password_hash)) {
     return res.status(401).json({ error: "Incorrect username or password." });
   }
@@ -276,8 +277,33 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), brand: await dbmod.getBrand() });
   }
+}));
+
+/* ---- student: request enrolment in a course ---- */
+app.post("/api/courses/:id/request", auth, wrap(async (req, res) => {
+  if (req.user.role !== "student") return res.status(403).json({ error: "Students only." });
+  const cid = req.params.id;
+  const [[c]] = await q("SELECT id FROM courses WHERE id=?", [cid]);
+  if (!c) return res.status(404).json({ error: "Course not found." });
+  if ((await dbmod.enrolledIds(req.user.id)).includes(cid)) return res.status(400).json({ error: "You are already enrolled in this course." });
+  await dbmod.createRequest(req.user.id, cid);
+  res.json({ ok: true, requests: await dbmod.studentRequestIds(req.user.id) });
+}));
+
+/* ---- admin: enrolment requests ---- */
+app.post("/api/admin/requests/:id/approve", auth, adminOnly, wrap(async (req, res) => {
+  const r = await dbmod.getRequest(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: "Request not found." });
+  await q("INSERT IGNORE INTO enrolments (user_id,course_id) VALUES (?,?)", [r.user_id, r.course_id]);
+  await dbmod.deleteRequest(r.id);
+  res.json(await adminState());
+}));
+
+app.post("/api/admin/requests/:id/decline", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.deleteRequest(Number(req.params.id));
+  res.json(await adminState());
 }));
 
 /* ---- admin: invite a student (sends a registration link, no password set here) ---- */
@@ -356,6 +382,7 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
     const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
     if (has) await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
     else await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?)", [u.id, cid]);
+    await dbmod.clearRequest(u.id, cid); // resolve any pending request for this pair
   }
   res.json(await adminState());
 }));
@@ -883,11 +910,11 @@ async function removeFiles(relPaths) {
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, groupId, bucket, value } = req.body || {};
-  const v = String(value || "").trim();
-  if (!BUCKET[bucket] || !v) return res.status(400).json({ error: "Invalid item." });
+  const { courseId, groupId, bucket, title, url } = req.body || {};
+  const t = String(title || "").trim();
+  if (!BUCKET[bucket] || !t) return res.status(400).json({ error: "Enter a title." });
   if (!(await dbmod.groupExists(courseId, Number(groupId)))) return res.status(400).json({ error: "Pick a group first." });
-  await dbmod.addCourseItem(courseId, Number(groupId), bucket, v);
+  await dbmod.addCourseItem(courseId, Number(groupId), bucket, t, String(url || "").trim());
   res.json(await adminState());
 }));
 

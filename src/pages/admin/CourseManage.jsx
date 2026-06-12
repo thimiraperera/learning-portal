@@ -347,9 +347,9 @@ function GroupCard({ id, group, store, dragGid, setDragGid, overGid, setOverGid,
         )}
       </div>
       <div className="group-body">
-        <ContentSection id={id} groupId={group.id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={group.recordings} placeholder="Recording title or URL" />
-        <ContentSection id={id} groupId={group.id} store={store} bucket="links" title="Course links" Icon={Link2} items={group.links} placeholder="Link title or URL" />
-        <ContentSection id={id} groupId={group.id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={group.materials} placeholder="Material title or filename" />
+        <ContentSection id={id} groupId={group.id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={group.recordings} placeholder="Recording title" />
+        <ContentSection id={id} groupId={group.id} store={store} bucket="links" title="Course links" Icon={Link2} items={group.links} placeholder="Link title" />
+        <ContentSection id={id} groupId={group.id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={group.materials} placeholder="Material title" />
       </div>
     </div>
   );
@@ -358,13 +358,19 @@ function GroupCard({ id, group, store, dragGid, setDragGid, overGid, setOverGid,
 function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder }) {
   const { addItem, removeItem, reorderItems, uploadMaterial } = store;
   const [value, setValue] = useState("");
+  const [url, setUrl] = useState("");
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const isMaterials = bucket === "materials";
 
-  const add = async () => { if (value.trim()) { await addItem(id, groupId, bucket, value); setValue(""); } };
+  const add = async () => {
+    if (!value.trim()) { setErr("Enter a title."); return; }
+    setErr(null);
+    const r = await addItem(id, groupId, bucket, value.trim(), url.trim());
+    if (r.ok) { setValue(""); setUrl(""); } else setErr(r.msg);
+  };
 
   const onFile = async (e) => {
     const file = e.target.files?.[0];
@@ -405,7 +411,9 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
               <span className="drag-handle"><GripVertical /></span>
               <div className="mr-body">
                 <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
-                {it.filename && <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>}
+                {it.filename
+                  ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
+                  : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
               </div>
               <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
             </div>
@@ -413,9 +421,11 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
         </div>
       )}
       {err && <div className="field-error" style={{ marginTop: 8 }}>{err}</div>}
-      <div className="toolbar" style={{ marginTop: 10, marginBottom: 0 }}>
-        <input className="form-control" placeholder={placeholder} value={value}
+      <div className="toolbar" style={{ marginTop: 10, marginBottom: 0, alignItems: "flex-start" }}>
+        <input className="form-control" style={{ flex: "1 1 160px" }} placeholder={placeholder} value={value}
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <input className="form-control" style={{ flex: "1 1 200px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
+          onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
         <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
         {isMaterials && (
           <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>

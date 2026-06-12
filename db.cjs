@@ -106,6 +106,11 @@ const TABLES = [
      total INT DEFAULT 0,
      snapshot LONGTEXT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS course_requests (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, created_at BIGINT,
+     UNIQUE KEY uniq_req (user_id, course_id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -165,6 +170,8 @@ async function init() {
   await ensureColumn("links", "group_id", "INT DEFAULT 0");
   await ensureColumn("materials", "group_id", "INT DEFAULT 0");
   await ensureColumn("materials", "filename", "VARCHAR(512)");
+  await ensureColumn("recordings", "url", "TEXT");
+  await ensureColumn("materials", "url", "TEXT");
   await ensureColumn("sessions", "expires_at", "BIGINT");
   await ensureColumn("users", "reset_token", "VARCHAR(64)");
   await ensureColumn("users", "reset_expires", "BIGINT");
@@ -225,9 +232,9 @@ async function courseFull(id) {
   if (!c) return null;
   const [instructors] = await q(
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
-  const [recordings] = await q("SELECT id, group_id, title AS t, date AS d, length AS len FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
+  const [recordings] = await q("SELECT id, group_id, title AS t, url AS u FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
   const [links] = await q("SELECT id, group_id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
-  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename, url AS u FROM materials WHERE course_id=? ORDER BY position, id", [id]);
   const [groupRows] = await q("SELECT id, title FROM content_groups WHERE course_id=? ORDER BY position, id", [id]);
   const groups = groupRows.map((g) => ({
     id: g.id, title: g.title,
@@ -252,8 +259,30 @@ async function enrolledIds(userId) {
   const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=?", [userId]);
   return rows.map((r) => r.course_id);
 }
+
+/* ---- course enrolment requests ---- */
+async function createRequest(userId, courseId) {
+  await q("INSERT IGNORE INTO course_requests (user_id,course_id,created_at) VALUES (?,?,?)", [userId, courseId, Date.now()]);
+}
+async function studentRequestIds(userId) {
+  const [rows] = await q("SELECT course_id FROM course_requests WHERE user_id=?", [userId]);
+  return rows.map((r) => r.course_id);
+}
+async function pendingRequests() {
+  const [rows] = await q(`SELECT r.id, r.user_id, r.course_id, r.created_at,
+      u.name AS studentName, u.email AS studentEmail, co.code AS courseCode, co.title AS courseTitle
+    FROM course_requests r JOIN users u ON u.id=r.user_id JOIN courses co ON co.id=r.course_id
+    ORDER BY r.created_at`);
+  return rows;
+}
+async function getRequest(id) {
+  const [[r]] = await q("SELECT * FROM course_requests WHERE id=?", [id]);
+  return r || null;
+}
+async function deleteRequest(id) { await q("DELETE FROM course_requests WHERE id=?", [id]); }
+async function clearRequest(userId, courseId) { await q("DELETE FROM course_requests WHERE user_id=? AND course_id=?", [userId, courseId]); }
 async function lockedCourses(ids) {
-  const [rows] = await q("SELECT id, title FROM courses ORDER BY id");
+  const [rows] = await q("SELECT id, code, title, blurb, sessions FROM courses ORDER BY title");
   return rows.filter((c) => !ids.includes(c.id));
 }
 async function usersMap() {
@@ -357,14 +386,15 @@ async function deleteCourse(id) {
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
-async function addCourseItem(courseId, groupId, bucket, value) {
+async function addCourseItem(courseId, groupId, bucket, title, url) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
   const gid = Number(groupId) || 0;
+  const u = String(url || "").trim();
   const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND group_id=?`, [courseId, gid]);
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,date,length,position) VALUES (?,?,?, 'n/a','n/a', ?)", [courseId, gid, value, p]);
-  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?, '#', ?)", [courseId, gid, value, p]);
-  else await q("INSERT INTO materials (course_id,group_id,title,size,ext,position) VALUES (?,?,?, 'n/a','PDF', ?)", [courseId, gid, value, p]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position) VALUES (?,?,?,?, '','', ?)", [courseId, gid, title, u, p]);
+  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?,?, ?)", [courseId, gid, title, u, p]);
+  else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position) VALUES (?,?,?,?, '','LINK', ?)", [courseId, gid, title, u, p]);
 }
 async function removeCourseItem(courseId, bucket, itemId) {
   const t = ITEM_TABLE[bucket];
@@ -667,6 +697,7 @@ module.exports = {
   addCourseInstructor, removeCourseInstructor,
   addCourseItem, removeCourseItem, reorderItems,
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
+  createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,

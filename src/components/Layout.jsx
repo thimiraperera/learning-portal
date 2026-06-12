@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion,
+  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -15,7 +15,7 @@ function initials(name) {
 
 /* Sidebar nav differs by role; same chrome as invoice-workflow base.html */
 export default function Layout({ title, children }) {
-  const { currentUser, courses, brand, logout } = useStore();
+  const { currentUser, courses, brand, logout, requests } = useStore();
   const navigate = useNavigate();
   const role = currentUser?.role;
   const isAdmin = role === "admin";
@@ -28,6 +28,7 @@ export default function Layout({ title, children }) {
     { to: "/admin/students", label: "Students", icon: Users, end: true },
     { to: "/admin/courses", label: "Courses", icon: BookOpen },
     { to: "/admin/instructors", label: "Instructors", icon: Presentation },
+    { to: "/admin/requests", label: "Requests", icon: Inbox, count: (requests || []).length },
     { to: "/admin/exams", label: "Exams", icon: FileQuestion },
     { to: "/admin/certificates", label: "Certificates", icon: Award },
     { to: "/admin/settings", label: "Settings", icon: Settings },
@@ -64,6 +65,7 @@ export default function Layout({ title, children }) {
             <NavLink key={it.to} to={it.to} end={it.end}
               className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
               <it.icon className="nav-icon" /> {it.label}
+              {it.count > 0 && <span className="nav-count">{it.count}</span>}
             </NavLink>
           ))}
           {isInstructor && (
@@ -83,6 +85,9 @@ export default function Layout({ title, children }) {
                 <LayoutDashboard className="nav-icon" /> Dashboard
               </NavLink>
               <CoursesAccordion courses={courses} enrolled={currentUser.enrolled} />
+              <NavLink to="/browse" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+                <Compass className="nav-icon" /> Browse Courses
+              </NavLink>
               <NavLink to="/account" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
                 <UserCog className="nav-icon" /> My Account
               </NavLink>

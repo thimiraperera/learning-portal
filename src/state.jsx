@@ -39,6 +39,7 @@ export function StoreProvider({ children }) {
   const [instructors, setInstructors] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [exams, setExams] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
@@ -52,6 +53,7 @@ export function StoreProvider({ children }) {
     setCertificates(data.certificates || []);
     setExams(data.exams || []);
     setLocked(data.locked || []);
+    setRequests(data.requests || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
     if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
@@ -62,6 +64,7 @@ export function StoreProvider({ children }) {
     if (data.instructors) setInstructors(data.instructors);
     if (data.certificates) setCertificates(data.certificates);
     if (data.exams) setExams(data.exams);
+    if (data.requests) setRequests(data.requests);
   };
 
   async function fetchBlobDownload(path, filename) {
@@ -211,8 +214,21 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addItem = useCallback(async (cid, groupId, bucket, value) => {
-    applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, value } }));
+  const addItem = useCallback(async (cid, groupId, bucket, title, url) => {
+    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, title, url } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
+  /* ---- course enrolment requests ---- */
+  const requestCourse = useCallback(async (cid) => {
+    try { const d = await api(`/courses/${cid}/request`, { method: "POST", token }); setRequests(d.requests || []); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const approveRequest = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/requests/${id}/approve`, { method: "POST", token }));
+  }, [token]);
+  const declineRequest = useCallback(async (id) => {
+    applyAdmin(await api(`/admin/requests/${id}/decline`, { method: "POST", token }));
   }, [token]);
 
   const removeItem = useCallback(async (cid, bucket, itemId) => {
@@ -401,7 +417,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, brand, smtp, hcaptcha,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, brand, smtp, hcaptcha,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -409,6 +425,7 @@ export function StoreProvider({ children }) {
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup, resetAll,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,
+    requestCourse, approveRequest, declineRequest,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
     issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
     fetchCertTemplates, previewCertTemplate,

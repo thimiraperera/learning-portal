@@ -9,6 +9,7 @@ import Account from "./pages/Account.jsx";
 import Dashboard from "./pages/student/Dashboard.jsx";
 import MyCourses from "./pages/student/MyCourses.jsx";
 import CourseDetail from "./pages/student/CourseDetail.jsx";
+import Browse from "./pages/student/Browse.jsx";
 import Students from "./pages/admin/Students.jsx";
 import StudentManage from "./pages/admin/StudentManage.jsx";
 import Courses from "./pages/admin/Courses.jsx";
@@ -17,6 +18,7 @@ import Instructors from "./pages/admin/Instructors.jsx";
 import InstructorManage from "./pages/admin/InstructorManage.jsx";
 import Certificates from "./pages/admin/Certificates.jsx";
 import Settings from "./pages/admin/Settings.jsx";
+import Requests from "./pages/admin/Requests.jsx";
 import Exams from "./pages/admin/Exams.jsx";
 import ExamManage from "./pages/admin/ExamManage.jsx";
 import ExamTake from "./pages/student/ExamTake.jsx";
@@ -64,6 +66,7 @@ function Routed() {
       <Route path="/" element={<RequireRole role="student"><Dashboard /></RequireRole>} />
       <Route path="/courses" element={<RequireRole role="student"><MyCourses /></RequireRole>} />
       <Route path="/courses/:id" element={<RequireRole role="student"><CourseDetail /></RequireRole>} />
+      <Route path="/browse" element={<RequireRole role="student"><Browse /></RequireRole>} />
       <Route path="/exams/:id" element={<RequireRole role="student"><ExamTake /></RequireRole>} />
 
       {/* instructor */}
@@ -81,6 +84,7 @@ function Routed() {
       <Route path="/admin/courses/:id" element={<RequireRole role="admin"><CourseManage /></RequireRole>} />
       <Route path="/admin/instructors" element={<RequireRole role="admin"><Instructors /></RequireRole>} />
       <Route path="/admin/instructors/:id" element={<RequireRole role="admin"><InstructorManage /></RequireRole>} />
+      <Route path="/admin/requests" element={<RequireRole role="admin"><Requests /></RequireRole>} />
       <Route path="/admin/exams" element={<RequireRole role="admin"><Exams /></RequireRole>} />
       <Route path="/admin/exams/:id" element={<RequireRole role="admin"><ExamManage /></RequireRole>} />
       <Route path="/admin/certificates" element={<RequireRole role="admin"><Certificates /></RequireRole>} />

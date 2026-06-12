@@ -61,14 +61,13 @@ export default function Dashboard() {
 
       {locked.length > 0 && (
         <div style={{ marginTop: 30 }}>
-          <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 4px" }}>
-            OTHER COURSES (NOT ENROLLED)
+          <div className="section-header">
+            <div className="card-title">Other courses</div>
+            <Link to="/browse" className="view-all">Browse {locked.length} <ArrowRight /></Link>
           </div>
-          <div className="locked-list">
-            {locked.map((c) => (
-              <div key={c.id} className="locked-pill"><Lock /> {c.title}</div>
-            ))}
-          </div>
+          <p style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6 }}>
+            {locked.length} course{locked.length === 1 ? "" : "s"} you can request to join.
+          </p>
         </div>
       )}
     </Layout>

@@ -6,6 +6,13 @@ import {
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 
+/* Open a user-entered URL safely in a new tab, adding https:// if missing. */
+export function openUrl(u) {
+  if (!u) return;
+  const href = /^https?:\/\//i.test(u) ? u : "https://" + u;
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -55,17 +62,18 @@ export default function CourseDetail() {
                   <div key={g.id} className="content-section">
                     <div className="content-section-head"><Layers /> {g.title} <span className="tab-count">{n}</span></div>
                     {g.recordings.map((r) => (
-                      <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t} action="Watch"
-                        meta={<><Calendar /> {r.d} <span className="dot" /> <Clock /> {r.len}</>} />
+                      <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t}
+                        action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
                     ))}
                     {g.links.map((r) => (
-                      <MediaRow key={`l${r.id}`} icon={Link2} title={r.t} action="Open"
-                        meta={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.u}</span>} />
+                      <MediaRow key={`l${r.id}`} icon={Link2} title={r.t}
+                        action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
                     ))}
                     {g.materials.map((r) => (
-                      <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t} action={r.filename ? "Download" : null}
-                        onAction={r.filename ? () => downloadMaterial(r.id, r.t) : null}
-                        meta={<><span className="ext-tag">{r.ext}</span> {r.size}</>} />
+                      <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t}
+                        action={r.filename ? "Download" : (r.u ? "Open" : null)}
+                        onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)}
+                        meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null} />
                     ))}
                   </div>
                 );
@@ -106,7 +114,7 @@ function MediaRow({ icon: Icon, title, meta, action, onAction }) {
       <div className="mr-icon"><Icon /></div>
       <div className="mr-body">
         <div className="mr-title">{title}</div>
-        <div className="mr-meta">{meta}</div>
+        {meta && <div className="mr-meta">{meta}</div>}
       </div>
       {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
     </div>
