@@ -128,6 +128,7 @@ async function publicUser(u) {
     avatar: u.avatar || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
     twoFactor: !!u.totp_enabled,
+    regNo: u.reg_no || "",
     enrolled: await dbmod.enrolledIds(u.id),
   };
 }
@@ -271,7 +272,7 @@ app.post("/api/reset/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), ...(await adminState()) });
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), ...(await adminState()) });
   } else if (u.role === "instructor") {
     const ins = await dbmod.instructorByUserId(u.id);
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
@@ -368,6 +369,7 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
     phone: String(req.body?.phone || "").trim(),
     gender,
     notes: String(req.body?.notes || ""),
+    nic: String(req.body?.nic || "").trim(),
     status: String(req.body?.status || ""),
     email,
   });
@@ -1209,6 +1211,12 @@ app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
     logo: String(req.body?.logo || ""),
   };
   res.json(await dbmod.setBrandValue(brand));
+}));
+
+/* ---- student registration number format ---- */
+app.get("/api/admin/regnum", auth, adminOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
+app.put("/api/admin/regnum", auth, adminOnly, wrap(async (req, res) => {
+  res.json(await dbmod.setRegConfig({ prefix: req.body?.prefix, width: req.body?.width }));
 }));
 
 /* JSON error handler (catches multer / middleware errors before the SPA fallback). */

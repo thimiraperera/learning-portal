@@ -45,6 +45,7 @@ export function StoreProvider({ children }) {
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
+  const [regnum, setRegnumLocal] = useState({ prefix: "", width: 4 });
   const [ready, setReady] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -61,6 +62,7 @@ export function StoreProvider({ children }) {
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
     if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
+    if (data.regnum) setRegnumLocal(data.regnum);
   };
   const applyAdmin = (data) => {
     if (data.courses) setCourses(data.courses);
@@ -415,6 +417,14 @@ export function StoreProvider({ children }) {
       return { ok: true, msg: "SMTP settings saved." };
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const saveRegnum = useCallback(async (fields) => {
+    try {
+      const saved = await api("/admin/regnum", { method: "PUT", token, body: fields });
+      setRegnumLocal(saved);
+      return { ok: true, msg: "Registration number format saved. It applies to new numbers only." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const sendTestMail = useCallback(async (to) => {
     try {
       const d = await api("/admin/smtp/test", { method: "POST", token, body: { to } });
@@ -446,7 +456,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, payments, brand, smtp, hcaptcha,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, payments, brand, smtp, hcaptcha, regnum,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -460,7 +470,7 @@ export function StoreProvider({ children }) {
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
-    updateAccount, changePassword, saveSmtp, sendTestMail,
+    updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

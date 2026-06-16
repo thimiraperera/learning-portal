@@ -55,7 +55,7 @@ export default function StudentManage() {
       <button className="back-link" onClick={() => navigate("/admin/students")}><ArrowLeft /> All students</button>
 
       <div className="page-hero">
-        <div className="ph-code">Student</div>
+        <div className="ph-code">Student{s.reg_no ? ` · ${s.reg_no}` : ""}</div>
         <h1>{s.name}</h1>
         <p>@{s.username} · {s.enrolled.length} course{s.enrolled.length === 1 ? "" : "s"}</p>
       </div>
@@ -85,6 +85,7 @@ function ProfileTab({ id, s, store, navigate }) {
   const [phone, setPhone] = useState(s.phone || "");
   const [gender, setGender] = useState(s.gender || "");
   const [notes, setNotes] = useState(s.notes || "");
+  const [nic, setNic] = useState(s.nic || "");
   const [status, setStatus] = useState(s.status || "active");
   const [msg, setMsg] = useState(null);
   const [fieldErr, setFieldErr] = useState({});
@@ -97,7 +98,7 @@ function ProfileTab({ id, s, store, navigate }) {
     if (!gender) er.gender = "Select a gender.";
     setFieldErr(er);
     if (Object.keys(er).length > 0) { setMsg(null); return; }
-    setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, status }));
+    setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, nic, status }));
   };
   const remove = async () => {
     if (!window.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`)) return;
@@ -108,6 +109,12 @@ function ProfileTab({ id, s, store, navigate }) {
   return (
     <div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Registration number</label>
+          <input className="form-control locked-input" value={s.reg_no || "(assigned on first registration)"} readOnly disabled /></div>
+        <div className="form-group"><label className="form-label">NIC <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional, admin only)</span></label>
+          <input className="form-control" value={nic} placeholder="NIC number" onChange={(e) => setNic(e.target.value)} /></div>
+      </div>
       <div className="field-row">
         <div className="form-group"><label className="form-label">Username</label>
           <input className="form-control locked-input" value={s.username} readOnly disabled /></div>

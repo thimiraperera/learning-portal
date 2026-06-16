@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import { useStore } from "../../state.jsx";
@@ -7,7 +7,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, regnum, saveRegnum, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -109,6 +109,7 @@ export default function Settings() {
         </div>
 
         <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
+        <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <TwoFactor />
         </div>
       </div>
@@ -313,6 +314,47 @@ function HcaptchaCard({ hcaptcha, saveHcaptcha }) {
       </div>
 
       <button className="btn btn-primary" onClick={save}><Save /> Save hCaptcha settings</button>
+    </div>
+  );
+}
+
+function RegNumberCard({ regnum, saveRegnum }) {
+  const [prefix, setPrefix] = useState(regnum.prefix || "");
+  const [width, setWidth] = useState(String(regnum.width || 4));
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { setPrefix(regnum.prefix || ""); setWidth(String(regnum.width || 4)); }, [regnum.prefix, regnum.width]);
+
+  const w = Math.min(12, Math.max(1, Number(width) || 4));
+  const example = (prefix || "") + "1".padStart(w, "0");
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    setMsg(await saveRegnum({ prefix: prefix.trim(), width: w }));
+    setBusy(false);
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><Hash style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Student registration numbers</div>
+      <div className="card-subtitle">Set the format for the auto-generated number each student is given. Numbers already issued never change, this only affects new students.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+
+      <div className="field-row">
+        <div className="form-group">
+          <label className="form-label">Prefix <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span></label>
+          <input className="form-control" value={prefix} placeholder="e.g. CEM" onChange={(e) => setPrefix(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Number length</label>
+          <input className="form-control" type="number" min="1" max="12" value={width} onChange={(e) => setWidth(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Example: <strong style={{ color: "#374151" }}>{example}</strong></div>
+
+      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save format"}</button>
     </div>
   );
 }

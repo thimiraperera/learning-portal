@@ -205,6 +205,8 @@ async function init() {
   await ensureColumn("users", "totp_secret", "VARCHAR(64)");
   await ensureColumn("users", "totp_enabled", "TINYINT DEFAULT 0");
   await ensureColumn("instructors", "user_id", "INT");
+  await ensureColumn("users", "nic", "VARCHAR(40) DEFAULT ''");
+  await ensureColumn("users", "reg_no", "VARCHAR(64) DEFAULT ''");
   // Checkbox questions earn partial marks, so attempt scores can be fractional.
   await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
@@ -213,6 +215,10 @@ async function init() {
     await q("UPDATE users SET first_name=?, last_name=? WHERE id=?", [parts.shift() || "", parts.join(" "), u.id]);
   }
   await ensureAdmin();
+  // Give every student a registration number. Existing students (e.g. imported
+  // directly) get one here in id order; new ones get theirs at invite time.
+  const [noReg] = await q("SELECT id FROM users WHERE role='student' AND COALESCE(reg_no,'')='' ORDER BY id");
+  for (const r of noReg) await assignRegNo(r.id);
   // Migrate any free-text course instructors into the instructors table.
   const [[{ ni }]] = await q("SELECT COUNT(*) AS ni FROM instructors");
   if (ni === 0) {
@@ -376,6 +382,7 @@ async function usersMap() {
       id: u.id, name: displayName(u), username: u.username, email: u.email,
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
       gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
+      nic: u.nic || "", reg_no: u.reg_no || "",
       role: u.role, status: u.status, enrolled: await enrolledIds(u.id),
     };
   }
@@ -385,8 +392,9 @@ async function inviteStudent({ name, email, username, token }) {
   const parts = name.trim().split(/\s+/);
   const first = parts.shift() || "";
   const last = parts.join(" ");
-  await q("INSERT INTO users (name,first_name,last_name,nickname,phone,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '','', ?,?, '', 'student','invited', ?)",
+  const [r] = await q("INSERT INTO users (name,first_name,last_name,nickname,phone,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '','', ?,?, '', 'student','invited', ?)",
     [name.trim(), first, last, username, email, token]);
+  await assignRegNo(r.insertId);
 }
 async function getInvite(token) {
   const [[u]] = await q("SELECT id, name, email, username FROM users WHERE reg_token=? AND status='invited'", [token]);
@@ -400,8 +408,8 @@ async function completeRegistration(token, f, passwordHash) {
 }
 async function updateStudentProfile(id, f) {
   const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
-  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, notes=?, email=?, name=? WHERE id=? AND role='student'",
-    [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.email, name || f.email, id]);
+  await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, notes=?, nic=?, email=?, name=? WHERE id=? AND role='student'",
+    [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.nic || "", f.email, name || f.email, id]);
   // Admins can flip active/inactive, but never override the pre-registration "invited" state.
   if (f.status === "active" || f.status === "inactive") {
     await q("UPDATE users SET status=? WHERE id=? AND role='student' AND status<>'invited'", [f.status, id]);
@@ -731,6 +739,44 @@ async function deleteAdminUser(id) {
   await q("DELETE FROM users WHERE id=? AND role='admin'", [id]);
 }
 
+/* ---- student registration numbers ---- */
+// Format: <prefix><zero-padded sequence>. The admin sets prefix + width; the
+// sequence counter ("next") is managed internally and never reset by the admin,
+// so issued numbers stay stable and unique even if the format changes later.
+const REGNUM_DEFAULT = { prefix: "", width: 4, next: 1 };
+async function getRegConfig() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='regnum'");
+  return row ? { ...REGNUM_DEFAULT, ...JSON.parse(row.v) } : { ...REGNUM_DEFAULT };
+}
+async function getRegConfigForClient() {
+  const { prefix, width } = await getRegConfig();
+  return { prefix, width };
+}
+async function setRegConfig(next) {
+  const cur = await getRegConfig();
+  const merged = {
+    prefix: String(next.prefix != null ? next.prefix : cur.prefix).slice(0, 16),
+    width: Math.min(12, Math.max(1, Number(next.width) || cur.width || 4)),
+    next: cur.next,
+  };
+  await q("INSERT INTO settings (k,v) VALUES ('regnum',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
+  return { prefix: merged.prefix, width: merged.width };
+}
+function formatRegNo(cfg, n) { return String(cfg.prefix || "") + String(n).padStart(cfg.width || 4, "0"); }
+// Assign the next registration number to a student that has none yet. Returns
+// the existing number untouched if one is already set (numbers never change).
+async function assignRegNo(userId) {
+  const [[u]] = await q("SELECT reg_no FROM users WHERE id=?", [userId]);
+  if (!u) return null;
+  if (u.reg_no && u.reg_no.trim()) return u.reg_no;
+  const cfg = await getRegConfig();
+  const n = cfg.next || 1;
+  const regNo = formatRegNo(cfg, n);
+  await q("UPDATE users SET reg_no=? WHERE id=?", [regNo, userId]);
+  await q("INSERT INTO settings (k,v) VALUES ('regnum',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify({ ...cfg, next: n + 1 })]);
+  return regNo;
+}
+
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -790,6 +836,7 @@ module.exports = {
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
+  getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getHcaptcha, getHcaptchaForClient, setHcaptcha,
   hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser,
   findLoginUser, setResetToken, getResetUser, applyReset,

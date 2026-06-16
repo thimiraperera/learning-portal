@@ -39,6 +39,9 @@ export default function Dashboard() {
       <div className="page-hero">
         <h1>Welcome back, {greeting}.</h1>
         <p>You're enrolled in {my.length} {my.length === 1 ? "course" : "courses"}.</p>
+        {currentUser.regNo && (
+          <p style={{ marginTop: 6, fontSize: 13 }}>Registration No: <strong style={{ color: "var(--primary)" }}>{currentUser.regNo}</strong></p>
+        )}
       </div>
 
       <div className="stats-grid">
