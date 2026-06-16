@@ -7,6 +7,7 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
@@ -207,6 +208,8 @@ async function init() {
   await ensureColumn("instructors", "user_id", "INT");
   await ensureColumn("users", "nic", "VARCHAR(40) DEFAULT ''");
   await ensureColumn("users", "reg_no", "VARCHAR(64) DEFAULT ''");
+  await ensureColumn("enrolments", "locked", "TINYINT DEFAULT 0");
+  await ensureColumn("payment_plans", "last_reminded", "BIGINT");
   // Checkbox questions earn partial marks, so attempt scores can be fractional.
   await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
@@ -287,6 +290,21 @@ async function coursesMap(ids) {
 async function enrolledIds(userId) {
   const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=?", [userId]);
   return rows.map((r) => r.course_id);
+}
+
+/* ---- per-student course access lock ---- */
+// A locked enrolment keeps the student enrolled but blocks access to that
+// course's content (used when a student has not paid, or any other reason).
+async function setCourseLock(userId, courseId, locked) {
+  await q("UPDATE enrolments SET locked=? WHERE user_id=? AND course_id=?", [locked ? 1 : 0, userId, courseId]);
+}
+async function lockedCourseIds(userId) {
+  const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=? AND locked=1", [userId]);
+  return rows.map((r) => r.course_id);
+}
+async function isCourseLocked(userId, courseId) {
+  const [[r]] = await q("SELECT locked FROM enrolments WHERE user_id=? AND course_id=?", [userId, courseId]);
+  return !!(r && r.locked);
 }
 
 /* ---- course enrolment requests ---- */
@@ -376,7 +394,7 @@ async function deletePayment(paymentId) { await q("DELETE FROM payments WHERE id
 // feeds the admin "needs locking" notice; we never lock automatically.
 async function overduePayments() {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const [rows] = await q(`SELECT p.id AS plan_id, p.user_id, p.course_id, p.total_fee, p.due_date,
+  const [rows] = await q(`SELECT p.id AS plan_id, p.user_id, p.course_id, p.total_fee, p.due_date, p.last_reminded,
        u.name AS studentName, u.email AS studentEmail,
        co.code AS courseCode, co.title AS courseTitle,
        COALESCE((SELECT SUM(amount) FROM payments WHERE plan_id=p.id),0) AS paid
@@ -400,7 +418,7 @@ async function usersMap() {
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
       gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
       nic: u.nic || "", reg_no: u.reg_no || "",
-      role: u.role, status: u.status, enrolled: await enrolledIds(u.id),
+      role: u.role, status: u.status, enrolled: await enrolledIds(u.id), lockedCourses: await lockedCourseIds(u.id),
     };
   }
   return map;
@@ -794,6 +812,29 @@ async function assignRegNo(userId) {
   return regNo;
 }
 
+/* ---- overdue payment reminders ---- */
+// Config holds whether daily reminders are on, plus a secret key the cron URL
+// uses to authenticate (so the daily job can run without a logged-in admin).
+async function getRemindersConfig() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='reminders'");
+  let cfg = row ? JSON.parse(row.v) : { enabled: false, key: "" };
+  if (!cfg.key) {
+    cfg.key = crypto.randomBytes(18).toString("hex");
+    await q("INSERT INTO settings (k,v) VALUES ('reminders',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(cfg)]);
+  }
+  return { enabled: !!cfg.enabled, key: cfg.key };
+}
+async function setRemindersConfig(next) {
+  const cur = await getRemindersConfig();
+  const merged = { enabled: !!next.enabled, key: cur.key };
+  await q("INSERT INTO settings (k,v) VALUES ('reminders',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
+  return merged;
+}
+async function markReminded(planIds, when) {
+  if (!planIds || !planIds.length) return;
+  await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
+}
+
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
@@ -847,6 +888,8 @@ module.exports = {
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   studentPlans, allPlans, upsertPlan, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
+  setCourseLock, lockedCourseIds, isCourseLocked,
+  getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,

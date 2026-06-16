@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play,
+  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
@@ -16,13 +16,14 @@ export function openUrl(u) {
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses, exams, downloadMaterial } = useStore();
+  const { currentUser, courses, exams, downloadMaterial, paymentLocked } = useStore();
   const [tab, setTab] = useState("recordings");
 
   // Guard: never render a course the student isn't enrolled in.
   if (!currentUser.enrolled.includes(id)) return <Navigate to="/" replace />;
   const c = courses[id];
-  const myExams = exams.filter((x) => x.course_id === id);
+  const isLocked = (paymentLocked || []).includes(id);
+  const myExams = isLocked ? [] : exams.filter((x) => x.course_id === id);
 
   const tabs = [
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
@@ -43,6 +44,14 @@ export default function CourseDetail() {
         <p>{c.blurb}</p>
       </div>
 
+      {isLocked && (
+        <div className="card" style={{ marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
+          <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Course access locked</div>
+          <div className="card-subtitle" style={{ marginBottom: 0 }}>Access to this course is currently locked. This usually means a payment is outstanding. Please settle your balance or contact your administrator to restore access.</div>
+        </div>
+      )}
+
+      {!isLocked && (
       <div className="card">
         <div className="tabs">
           {tabs.map((t) => (
@@ -105,6 +114,7 @@ export default function CourseDetail() {
           );
         })}
       </div>
+      )}
     </Layout>
   );
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
-  BarChart3, Award, FileQuestion, Wallet,
+  BarChart3, Award, FileQuestion, Wallet, Lock, Unlock,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -252,11 +252,12 @@ function OvStat({ label, value, icon: Icon, bg, color }) {
   );
 }
 
-function CoursesTab({ email, s, store, navigate }) {
-  const { courses, toggleEnrol } = store;
+function CoursesTab({ id, email, s, store, navigate }) {
+  const { courses, toggleEnrol, setCourseLock } = store;
   const [sel, setSel] = useState("");
   const enrolled = s.enrolled.map((cid) => [cid, courses[cid]]).filter(([, c]) => c);
   const available = Object.entries(courses).filter(([cid]) => !s.enrolled.includes(cid));
+  const lockedSet = new Set(s.lockedCourses || []);
 
   const add = async () => { if (sel) { await toggleEnrol(email, sel); setSel(""); } };
 
@@ -265,20 +266,30 @@ function CoursesTab({ email, s, store, navigate }) {
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROLLED ({enrolled.length})</div>
       {enrolled.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 18 }}>Not enrolled in any course yet.</p> : (
         <div style={{ marginBottom: 22 }}>
-          {enrolled.map(([cid, c]) => (
-            <div key={cid} className="assigned-row">
-              <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                onClick={() => navigate(`/admin/courses/${cid}`)}>
-                <span className="mr-icon" style={{ width: 34, height: 34 }}><BookOpen /></span>
-                <span>
-                  <span className="ar-title" style={{ display: "block" }}>{c.title}</span>
-                  <span className="ar-sub">{c.code}</span>
-                </span>
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, cid)}><UserMinus /> Remove</button>
-              <ChevronRight style={{ width: 16, height: 16, color: "#9CA3AF" }} />
-            </div>
-          ))}
+          {enrolled.map(([cid, c]) => {
+            const locked = lockedSet.has(cid);
+            return (
+              <div key={cid} className="assigned-row">
+                <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                  onClick={() => navigate(`/admin/courses/${cid}`)}>
+                  <span className="mr-icon" style={{ width: 34, height: 34 }}><BookOpen /></span>
+                  <span>
+                    <span className="ar-title" style={{ display: "block" }}>
+                      {c.title}
+                      {locked && <span className="badge badge-rejected" style={{ marginLeft: 8 }}>locked</span>}
+                    </span>
+                    <span className="ar-sub">{c.code}</span>
+                  </span>
+                </button>
+                <button className={"btn btn-sm " + (locked ? "btn-outline" : "btn-ghost")} title={locked ? "Unlock access" : "Lock access (e.g. unpaid)"}
+                  onClick={() => setCourseLock(id, cid, !locked)}>
+                  {locked ? <><Unlock /> Unlock</> : <><Lock /> Lock</>}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, cid)}><UserMinus /> Remove</button>
+                <ChevronRight style={{ width: 16, height: 16, color: "#9CA3AF" }} />
+              </div>
+            );
+          })}
         </div>
       )}
 

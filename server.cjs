@@ -83,7 +83,9 @@ const uploadBackup = multer({ storage: multer.memoryStorage(), limits: { fileSiz
 async function userCanAccessCourse(user, courseId) {
   if (user.role === "admin") return true;
   if (user.role === "instructor") return dbmod.instructorTeaches(user.id, courseId);
-  return (await dbmod.enrolledIds(user.id)).includes(courseId);
+  if (!(await dbmod.enrolledIds(user.id)).includes(courseId)) return false;
+  if (await dbmod.isCourseLocked(user.id, courseId)) return false; // locked enrolment blocks access
+  return true;
 }
 
 /* Send mail via the stored SMTP settings. Returns {sent, reason}. */
@@ -103,6 +105,36 @@ async function sendMail(to, subject, html, attachments) {
   } catch (e) {
     return { sent: false, reason: e.message };
   }
+}
+
+/* Email overdue-payment reminders, one message per student listing their
+   overdue courses. force=true ignores the ~daily throttle (admin "Send now");
+   the scheduled cron passes force=false so it only reminds once a day. */
+async function sendOverdueReminders({ force }) {
+  const overdue = await dbmod.overduePayments();
+  const now = Date.now();
+  const throttle = 20 * 60 * 60 * 1000;
+  const eligible = force ? overdue : overdue.filter((o) => !o.last_reminded || now - Number(o.last_reminded) > throttle);
+  const byStudent = {};
+  for (const o of eligible) {
+    if (!o.studentEmail) continue;
+    (byStudent[o.user_id] ||= { email: o.studentEmail, name: o.studentName, items: [], planIds: [] });
+    byStudent[o.user_id].items.push(o);
+    byStudent[o.user_id].planIds.push(o.plan_id);
+  }
+  const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
+  let sent = 0, failed = 0;
+  for (const s of Object.values(byStudent)) {
+    const rows = s.items.map((o) => [`${o.courseCode} - ${o.courseTitle}`, `${rs(o.remaining)} (due ${o.due_date})`]);
+    const html = await emailHtml("Payment overdue", "A reminder about your course fees",
+      mailer.paragraph(`Hello <strong>${mailer.esc(s.name)}</strong>,`) +
+      mailer.statusBox("These course payments are past their due date. Please settle them to keep your course access active.", "warn") +
+      mailer.infoTable(rows) +
+      mailer.muted("If you have already paid, please ignore this message or contact your administrator."));
+    const m = await sendMail(s.email, "Payment reminder", html);
+    if (m.sent) { sent++; await dbmod.markReminded(s.planIds, now); } else failed++;
+  }
+  return { students: Object.keys(byStudent).length, sent, failed };
 }
 
 async function certPdf(cert) {
@@ -272,13 +304,19 @@ app.post("/api/reset/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), ...(await adminState()) });
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig(), ...(await adminState()) });
   } else if (u.role === "instructor") {
     const ins = await dbmod.instructorByUserId(u.id);
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: await dbmod.studentPlans(u.id), brand: await dbmod.getBrand() });
+    const courses = await dbmod.coursesMap(ids);
+    const paymentLocked = await dbmod.lockedCourseIds(u.id);
+    // Locked courses stay visible but their content is withheld until unlocked.
+    for (const cid of paymentLocked) {
+      if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [] });
+    }
+    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: await dbmod.studentPlans(u.id), brand: await dbmod.getBrand() });
   }
 }));
 
@@ -380,6 +418,16 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
 app.post("/api/admin/students/:id/lock", auth, adminOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
   await q("UPDATE users SET status='inactive' WHERE id=? AND role='student' AND status<>'invited'", [id]);
+  res.json(await adminState());
+}));
+
+/* ---- admin: lock/unlock a student's access to one course ---- */
+app.post("/api/admin/students/:id/courses/:courseId/lock", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const cid = String(req.params.courseId);
+  const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [id, cid]);
+  if (!has) return res.status(404).json({ error: "Student is not enrolled in this course." });
+  await dbmod.setCourseLock(id, cid, req.body?.locked ? 1 : 0);
   res.json(await adminState());
 }));
 
@@ -864,6 +912,7 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
   if (!exam || !exam.course_id) return res.status(404).json({ error: "Exam not found." });
   const enrolled = await dbmod.enrolledIds(req.user.id);
   if (!enrolled.includes(exam.course_id)) return res.status(403).json({ error: "You are not enrolled in this course." });
+  if (await dbmod.isCourseLocked(req.user.id, exam.course_id)) return res.status(403).json({ error: "Access to this course is locked." });
   const [bank] = await q("SELECT id, question, options, correct, qtype, corrects FROM exam_questions WHERE exam_id=?", [eid]);
   if (bank.length === 0) return res.status(400).json({ error: "This exam has no questions yet." });
 
@@ -1217,6 +1266,24 @@ app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
 app.get("/api/admin/regnum", auth, adminOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
 app.put("/api/admin/regnum", auth, adminOnly, wrap(async (req, res) => {
   res.json(await dbmod.setRegConfig({ prefix: req.body?.prefix, width: req.body?.width }));
+}));
+
+/* ---- overdue payment reminders ---- */
+app.get("/api/admin/reminders", auth, adminOnly, wrap(async (_req, res) => res.json(await dbmod.getRemindersConfig())));
+app.put("/api/admin/reminders", auth, adminOnly, wrap(async (req, res) => {
+  res.json(await dbmod.setRemindersConfig({ enabled: !!req.body?.enabled }));
+}));
+// Admin "Send now": email every overdue student immediately.
+app.post("/api/admin/reminders/send", auth, adminOnly, wrap(async (_req, res) => {
+  res.json(await sendOverdueReminders({ force: true }));
+}));
+// Daily cron target. Public but key-protected (no logged-in admin needed).
+// Add in cPanel Cron: curl -s "https://<site>/api/cron/payment-reminders?key=KEY"
+app.get("/api/cron/payment-reminders", wrap(async (req, res) => {
+  const cfg = await dbmod.getRemindersConfig();
+  if (!cfg.enabled) return res.json({ ok: false, reason: "reminders disabled" });
+  if (String(req.query.key || "") !== cfg.key) return res.status(403).json({ error: "Invalid key" });
+  res.json({ ok: true, ...(await sendOverdueReminders({ force: false })) });
 }));
 
 /* JSON error handler (catches multer / middleware errors before the SPA fallback). */

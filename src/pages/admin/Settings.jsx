@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import { useStore } from "../../state.jsx";
@@ -7,7 +7,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, regnum, saveRegnum, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, regnum, saveRegnum, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -110,6 +110,7 @@ export default function Settings() {
 
         <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
         <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
+        <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
         <TwoFactor />
         </div>
       </div>
@@ -361,6 +362,50 @@ function RegNumberCard({ regnum, saveRegnum }) {
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Example: <strong style={{ color: "#374151" }}>{example}</strong></div>
 
       <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save format"}</button>
+    </div>
+  );
+}
+
+function RemindersCard({ reminders, saveReminders, sendRemindersNow }) {
+  const [enabled, setEnabled] = useState(!!reminders.enabled);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEnabled(!!reminders.enabled); }, [reminders.enabled]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://your-site";
+  const cronUrl = `${origin}/api/cron/payment-reminders?key=${reminders.key || "..."}`;
+  const cronCmd = `curl -s "${cronUrl}"`;
+
+  const toggle = async (v) => { setEnabled(v); setMsg(await saveReminders(v)); };
+  const sendNow = async () => {
+    setBusy(true); setMsg(null);
+    const r = await sendRemindersNow();
+    setBusy(false);
+    setMsg(r.ok
+      ? { ok: true, msg: `Sent ${r.sent} reminder${r.sent === 1 ? "" : "s"} (${r.students} student${r.students === 1 ? "" : "s"} overdue${r.failed ? `, ${r.failed} failed` : ""}).` }
+      : { ok: false, msg: r.msg });
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><Bell style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Overdue payment reminders</div>
+      <div className="card-subtitle">Email students whose payments are past due. Reminders need SMTP configured above.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+
+      <label className="check-row" style={{ marginBottom: 16 }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => toggle(e.target.checked)} /> Enable daily automatic reminders
+      </label>
+
+      <button className="btn btn-outline" disabled={busy} onClick={sendNow}><Mail /> {busy ? "Sending..." : "Send reminders now"}</button>
+
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
+        <label className="form-label">Daily schedule (cPanel Cron Job)</label>
+        <div className="card-subtitle" style={{ marginTop: 2 }}>To send automatically each day, add this as a cPanel Cron Job (e.g. once daily). It only sends while the toggle above is on.</div>
+        <div style={{ background: "#F8FAFD", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", fontFamily: "monospace", fontSize: 12, color: "#374151", wordBreak: "break-all" }}>{cronCmd}</div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Keep this URL private; the key lets the job run without logging in.</div>
+      </div>
     </div>
   );
 }

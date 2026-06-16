@@ -15,7 +15,7 @@ function initials(name) {
 
 /* Sidebar nav differs by role; same chrome as invoice-workflow base.html */
 export default function Layout({ title, children }) {
-  const { currentUser, courses, brand, logout, requests } = useStore();
+  const { currentUser, courses, brand, logout, requests, overdue } = useStore();
   const navigate = useNavigate();
   const role = currentUser?.role;
   const isAdmin = role === "admin";
@@ -31,7 +31,7 @@ export default function Layout({ title, children }) {
     { to: "/admin/requests", label: "Requests", icon: Inbox, count: (requests || []).length },
     { to: "/admin/exams", label: "Exams", icon: FileQuestion },
     { to: "/admin/certificates", label: "Certificates", icon: Award },
-    { to: "/admin/payments", label: "Payments", icon: Wallet },
+    { to: "/admin/payments", label: "Payments", icon: Wallet, count: (overdue || []).length },
     { to: "/admin/settings", label: "Settings", icon: Settings },
     { to: "/account", label: "My Account", icon: UserCog },
   ];

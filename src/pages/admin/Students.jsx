@@ -17,9 +17,29 @@ function suggestUsername(name) {
     .slice(0, 24);
 }
 
+const isPastDue = (d) => {
+  if (!d) return false;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const dt = new Date(d + "T00:00:00");
+  return !isNaN(dt) && dt < t;
+};
+/* A student's overall payment status across their plans. */
+function buildPayStatus(plans) {
+  const byUser = {};
+  for (const p of plans) (byUser[p.user_id] ||= []).push(p);
+  const out = {};
+  for (const uid in byUser) {
+    const list = byUser[uid];
+    out[uid] = list.some((p) => p.remaining > 0 && isPastDue(p.due_date)) ? "overdue"
+      : list.some((p) => p.remaining > 0) ? "balance" : "paid";
+  }
+  return out;
+}
+
 export default function Students() {
-  const { users, courses, addStudent, removeStudent } = useStore();
+  const { users, courses, addStudent, removeStudent, plans } = useStore();
   const navigate = useNavigate();
+  const payStatusByUser = buildPayStatus(plans);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -30,6 +50,7 @@ export default function Students() {
   const [status, setStatus] = useState("all");
   const [course, setCourse] = useState("all");
   const [gender, setGender] = useState("all");
+  const [pay, setPay] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -61,13 +82,14 @@ export default function Students() {
     .filter(([, s]) => status === "all" || s.status === status)
     .filter(([, s]) => course === "all" || s.enrolled.includes(course))
     .filter(([, s]) => gender === "all" || s.gender === gender)
+    .filter(([, s]) => pay === "all" || (payStatusByUser[s.id] || "none") === pay)
     .filter(([e, s]) => !ql || s.name.toLowerCase().includes(ql) || e.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
-  const activeFilters = (status !== "all") + (course !== "all") + (gender !== "all") + (ql ? 1 : 0);
+  const activeFilters = (status !== "all") + (course !== "all") + (gender !== "all") + (pay !== "all") + (ql ? 1 : 0);
 
   return (
     <Layout title="Students">
@@ -134,8 +156,15 @@ export default function Students() {
             <option value="Male">Male</option>
             <option value="Female">Female</option>
           </select>
+          <select className="form-control" style={{ flex: "0 0 160px" }} value={pay} onChange={(e) => { setPay(e.target.value); resetPage(); }}>
+            <option value="all">Any payment</option>
+            <option value="overdue">Overdue</option>
+            <option value="balance">Has balance</option>
+            <option value="paid">Fully paid</option>
+            <option value="none">No plan</option>
+          </select>
           {activeFilters > 0 && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setCourse("all"); setGender("all"); resetPage(); }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setCourse("all"); setGender("all"); setPay("all"); resetPage(); }}>
               <X /> Clear
             </button>
           )}

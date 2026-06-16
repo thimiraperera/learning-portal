@@ -23,9 +23,11 @@ function isPastDue(d) {
 }
 
 export default function Dashboard() {
-  const { currentUser, courses, locked, certificates, downloadCertificate, payments } = useStore();
+  const { currentUser, courses, locked, certificates, downloadCertificate, payments, paymentLocked } = useStore();
   const navigate = useNavigate();
   const my = currentUser.enrolled;
+  const overduePlans = (payments || []).filter((p) => p.remaining > 0 && isPastDue(p.due_date));
+  const lockedCount = (paymentLocked || []).length;
 
   const totalRecordings = my.reduce((n, id) => n + (courses[id]?.recordings.length || 0), 0);
   const totalMaterials = my.reduce((n, id) => n + (courses[id]?.materials.length || 0), 0);
@@ -43,6 +45,12 @@ export default function Dashboard() {
           <p style={{ marginTop: 6, fontSize: 13 }}>Registration No: <strong style={{ color: "var(--primary)" }}>{currentUser.regNo}</strong></p>
         )}
       </div>
+
+      {overduePlans.length > 0 && (
+        <div className="alert alert-danger" style={{ marginBottom: 18 }}>
+          <AlertTriangle /> You have {overduePlans.length} overdue payment{overduePlans.length === 1 ? "" : "s"}. Please settle to keep your course access active{lockedCount > 0 ? `; ${lockedCount} course${lockedCount === 1 ? " is" : "s are"} currently locked.` : "."} See "My payments" below.
+        </div>
+      )}
 
       <div className="stats-grid">
         <Stat label="Enrolled Courses" value={my.length} sub="Active enrolments" icon={BookOpen} bg="#EBF2FF" color="#1E509B" />

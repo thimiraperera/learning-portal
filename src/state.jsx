@@ -43,6 +43,8 @@ export function StoreProvider({ children }) {
   const [overdue, setOverdue] = useState([]); // admin: students with past-due balances
   const [plans, setPlans] = useState([]); // admin: all payment plans (Payments page)
   const [payments, setPayments] = useState([]); // student: own payment plans
+  const [paymentLocked, setPaymentLocked] = useState([]); // student: locked course ids
+  const [reminders, setRemindersLocal] = useState({ enabled: false, key: "" }); // admin
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
@@ -61,6 +63,8 @@ export function StoreProvider({ children }) {
     setOverdue(data.overdue || []);
     setPlans(data.paymentPlans || []);
     setPayments(data.payments || []);
+    setPaymentLocked(data.paymentLocked || []);
+    if (data.reminders) setRemindersLocal(data.reminders);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
     if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
@@ -457,9 +461,21 @@ export function StoreProvider({ children }) {
     try { applyAdmin(await api(`/admin/students/${id}/lock`, { method: "POST", token })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const setCourseLock = useCallback(async (id, courseId, locked) => {
+    try { applyAdmin(await api(`/admin/students/${id}/courses/${courseId}/lock`, { method: "POST", token, body: { locked } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const saveReminders = useCallback(async (enabled) => {
+    try { const d = await api("/admin/reminders", { method: "PUT", token, body: { enabled } }); setRemindersLocal(d); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const sendRemindersNow = useCallback(async () => {
+    try { const d = await api("/admin/reminders/send", { method: "POST", token }); return { ok: true, ...d }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, brand, smtp, hcaptcha, regnum,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, hcaptcha, regnum,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -475,6 +491,7 @@ export function StoreProvider({ children }) {
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
     updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent,
+    setCourseLock, saveReminders, sendRemindersNow,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
