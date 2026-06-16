@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Search, Eye, X } from "lucide-react";
+import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Search, Eye, X, Lock } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -17,8 +17,72 @@ function suggestUsername(name) {
     .slice(0, 24);
 }
 
+const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
+
+/* Admin "dashboard" notice: students whose balance is past its due date.
+   Locking is always manual, surfaced here for the admin to act on. */
+function OverdueNotice({ overdue, lockStudent, navigate }) {
+  const [busy, setBusy] = useState(0);
+  const byStudent = useMemo(() => {
+    const m = {};
+    for (const o of overdue || []) {
+      (m[o.user_id] ||= { id: o.user_id, name: o.studentName, email: o.studentEmail, items: [], total: 0 });
+      m[o.user_id].items.push(o);
+      m[o.user_id].total += Number(o.remaining || 0);
+    }
+    return Object.values(m);
+  }, [overdue]);
+
+  if (byStudent.length === 0) return null;
+
+  const lock = async (st) => {
+    if (!window.confirm(`Lock ${st.name}? They will be set to inactive and cannot sign in until reactivated. This does not happen automatically.`)) return;
+    setBusy(st.id);
+    await lockStudent(st.id);
+    setBusy(0);
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
+      <div className="card-title" style={{ color: "var(--danger)" }}>
+        <AlertTriangle style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} />
+        Payments overdue ({byStudent.length} student{byStudent.length === 1 ? "" : "s"})
+      </div>
+      <div className="card-subtitle">These students have a past-due balance and may need locking. Review and lock manually, nothing is locked automatically.</div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Student</th><th>Overdue courses</th><th>Outstanding</th><th></th></tr></thead>
+          <tbody>
+            {byStudent.map((st) => (
+              <tr key={st.id}>
+                <td>
+                  <button onClick={() => navigate(`/admin/students/${st.id}`)}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: "var(--primary)", fontFamily: "inherit", fontSize: "inherit", textAlign: "left" }}>
+                    {st.name}
+                  </button>
+                  <div style={{ fontSize: 12, color: "#9CA3AF" }}>{st.email}</div>
+                </td>
+                <td style={{ color: "#6B7280", fontSize: 13 }}>
+                  {st.items.map((o) => (
+                    <div key={o.plan_id}>{o.courseCode} - {o.courseTitle} <span style={{ color: "#9CA3AF" }}>(due {o.due_date})</span></div>
+                  ))}
+                </td>
+                <td style={{ whiteSpace: "nowrap", fontWeight: 700, color: "var(--danger)" }}>{rs(st.total)}</td>
+                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <button className="btn btn-outline btn-sm" style={{ marginRight: 8 }} onClick={() => navigate(`/admin/students/${st.id}`)}><Eye /> View</button>
+                  <button className="btn btn-danger btn-sm" disabled={busy === st.id} onClick={() => lock(st)}><Lock /> {busy === st.id ? "Locking..." : "Lock"}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Students() {
-  const { users, courses, addStudent, removeStudent } = useStore();
+  const { users, courses, addStudent, removeStudent, overdue, lockStudent } = useStore();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -75,6 +139,8 @@ export default function Students() {
         <h1>Students</h1>
         <p>Invite a student by email. They receive a registration link to confirm their details and set a password.</p>
       </div>
+
+      <OverdueNotice overdue={overdue} lockStudent={lockStudent} navigate={navigate} />
 
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="card-title">Invite a student</div>

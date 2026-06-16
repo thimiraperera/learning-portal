@@ -150,7 +150,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests(), overdue: await dbmod.overduePayments() };
 }
 
 /* ---- public ---- */
@@ -277,7 +277,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses: await dbmod.coursesMap(ids), locked: await dbmod.lockedCourses(ids), certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: await dbmod.studentPlans(u.id), brand: await dbmod.getBrand() });
   }
 }));
 
@@ -344,6 +344,8 @@ app.delete("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
   if (u) {
     await q("DELETE FROM enrolments WHERE user_id=?", [u.id]);
     await q("DELETE FROM exam_attempts WHERE user_id=?", [u.id]);
+    await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE user_id=?)", [u.id]);
+    await q("DELETE FROM payment_plans WHERE user_id=?", [u.id]);
     await q("DELETE FROM users WHERE id=?", [u.id]);
   }
   res.json(await adminState());
@@ -370,6 +372,57 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
     email,
   });
   res.json(await adminState());
+}));
+
+/* ---- admin: lock a student (manual, never automatic) ---- */
+app.post("/api/admin/students/:id/lock", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  await q("UPDATE users SET status='inactive' WHERE id=? AND role='student' AND status<>'invited'", [id]);
+  res.json(await adminState());
+}));
+
+/* ---- admin: installment payment plans ---- */
+app.get("/api/admin/students/:id/plans", auth, adminOnly, wrap(async (req, res) => {
+  res.json({ plans: await dbmod.studentPlans(Number(req.params.id)) });
+}));
+
+app.put("/api/admin/students/:id/plans/:courseId", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const cid = String(req.params.courseId);
+  const [[u]] = await q("SELECT id FROM users WHERE id=? AND role='student'", [id]);
+  if (!u) return res.status(404).json({ error: "Student not found." });
+  const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [id, cid]);
+  if (!has) return res.status(400).json({ error: "Enrol the student in this course before setting a payment plan." });
+  const totalFee = Math.max(0, Number(req.body?.totalFee) || 0);
+  const regFee = Math.max(0, Number(req.body?.regFee) || 0);
+  const dueDate = String(req.body?.dueDate || "").slice(0, 20);
+  await dbmod.upsertPlan(id, cid, { totalFee, regFee, dueDate });
+  res.json({ plans: await dbmod.studentPlans(id), ...(await adminState()) });
+}));
+
+app.delete("/api/admin/students/:id/plans/:courseId", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  await dbmod.deletePlan(id, String(req.params.courseId));
+  res.json({ plans: await dbmod.studentPlans(id), ...(await adminState()) });
+}));
+
+app.post("/api/admin/plans/:planId/payments", auth, adminOnly, wrap(async (req, res) => {
+  const planId = Number(req.params.planId);
+  const plan = await dbmod.planById(planId);
+  if (!plan) return res.status(404).json({ error: "Payment plan not found." });
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "Enter a payment amount greater than zero." });
+  const note = String(req.body?.note || "").slice(0, 255);
+  const paidAt = Number(req.body?.paidAt) || Date.now();
+  await dbmod.addPayment(planId, amount, note, paidAt);
+  res.json({ plans: await dbmod.studentPlans(plan.user_id), ...(await adminState()) });
+}));
+
+app.delete("/api/admin/payments/:paymentId", auth, adminOnly, wrap(async (req, res) => {
+  const pid = Number(req.params.paymentId);
+  const userId = await dbmod.paymentOwnerUser(pid);
+  await dbmod.deletePayment(pid);
+  res.json({ plans: userId ? await dbmod.studentPlans(userId) : [], ...(await adminState()) });
 }));
 
 /* ---- admin: enrolment toggle ---- */

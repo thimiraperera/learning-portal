@@ -2,14 +2,28 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock, ArrowRight, Award, Download, AlertTriangle,
+  Wallet, CheckCircle,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 
 const RECENT_COUNT = 6;
 
+const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
+function fmtDue(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+function isPastDue(d) {
+  if (!d) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dt = new Date(d + "T00:00:00");
+  return !isNaN(dt) && dt < today;
+}
+
 export default function Dashboard() {
-  const { currentUser, courses, locked, certificates, downloadCertificate } = useStore();
+  const { currentUser, courses, locked, certificates, downloadCertificate, payments } = useStore();
   const navigate = useNavigate();
   const my = currentUser.enrolled;
 
@@ -57,6 +71,8 @@ export default function Dashboard() {
         </>
       )}
 
+      {payments && payments.length > 0 && <PaymentsSection plans={payments} />}
+
       {certificates.length > 0 && <CertificatesSection certificates={certificates} download={downloadCertificate} />}
 
       {locked.length > 0 && (
@@ -98,6 +114,48 @@ function CertificatesSection({ certificates, download }) {
             {canDownload
               ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
               : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PaymentsSection({ plans }) {
+  return (
+    <div className="card" style={{ marginTop: 28 }}>
+      <div className="card-title"><Wallet style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />My payments</div>
+      <div className="card-subtitle">Your registration and installment payments for each course.</div>
+      {plans.map((p) => {
+        const paidUp = p.remaining <= 0;
+        const overdue = !paidUp && isPastDue(p.due_date);
+        const tone = paidUp ? { bg: "#F0FDF4", border: "#16A34A", color: "#065F46" }
+          : overdue ? { bg: "#FEF2F2", border: "#DC2626", color: "#991B1B" }
+            : { bg: "#EFF6FF", border: "#2563EB", color: "#1E40AF" };
+        const message = paidUp
+          ? "Fully paid. Thank you."
+          : `You have ${rs(p.remaining)} remaining${p.due_date ? `, due on ${fmtDue(p.due_date)}` : ""}.${overdue ? " This payment is overdue." : ""}`;
+        return (
+          <div key={p.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700 }}>{p.courseTitle} <span className="cc-code" style={{ marginLeft: 4 }}>{p.courseCode}</span></div>
+              <div style={{ fontSize: 12.5, color: "#6B7280" }}>Total {rs(p.total_fee)} · Paid {rs(p.paid)}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "10px 12px", borderRadius: 10, background: tone.bg, border: `1px solid ${tone.border}`, color: tone.color, fontSize: 13.5, fontWeight: 600 }}>
+              {paidUp ? <CheckCircle style={{ width: 16, height: 16 }} /> : <AlertTriangle style={{ width: 16, height: 16 }} />}
+              {message}
+            </div>
+            {p.payments.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 6px" }}>PAYMENTS RECEIVED</div>
+                {p.payments.map((pay) => (
+                  <div key={pay.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#6B7280", padding: "3px 0" }}>
+                    <span>{fmtDue(new Date(Number(pay.paid_at)).toISOString().slice(0, 10))}{pay.note ? ` · ${pay.note}` : ""}</span>
+                    <span style={{ fontWeight: 600, color: "#374151" }}>{rs(pay.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

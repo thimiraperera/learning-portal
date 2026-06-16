@@ -40,6 +40,8 @@ export function StoreProvider({ children }) {
   const [certificates, setCertificates] = useState([]);
   const [exams, setExams] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [overdue, setOverdue] = useState([]); // admin: students with past-due balances
+  const [payments, setPayments] = useState([]); // student: own payment plans
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
@@ -54,6 +56,8 @@ export function StoreProvider({ children }) {
     setExams(data.exams || []);
     setLocked(data.locked || []);
     setRequests(data.requests || []);
+    setOverdue(data.overdue || []);
+    setPayments(data.payments || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
     if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
@@ -65,6 +69,7 @@ export function StoreProvider({ children }) {
     if (data.certificates) setCertificates(data.certificates);
     if (data.exams) setExams(data.exams);
     if (data.requests) setRequests(data.requests);
+    if (data.overdue) setOverdue(data.overdue);
   };
 
   async function fetchBlobDownload(path, filename) {
@@ -417,8 +422,31 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
+  /* ---- installment payments ---- */
+  const fetchStudentPlans = useCallback((id) => api(`/admin/students/${id}/plans`, { token }).then((d) => d.plans || []), [token]);
+  const savePlan = useCallback(async (id, courseId, fields) => {
+    try { const d = await api(`/admin/students/${id}/plans/${courseId}`, { method: "PUT", token, body: fields }); applyAdmin(d); return { ok: true, plans: d.plans }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const removePlan = useCallback(async (id, courseId) => {
+    try { const d = await api(`/admin/students/${id}/plans/${courseId}`, { method: "DELETE", token }); applyAdmin(d); return { ok: true, plans: d.plans }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const addPayment = useCallback(async (planId, fields) => {
+    try { const d = await api(`/admin/plans/${planId}/payments`, { method: "POST", token, body: fields }); applyAdmin(d); return { ok: true, plans: d.plans }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const removePayment = useCallback(async (paymentId) => {
+    try { const d = await api(`/admin/payments/${paymentId}`, { method: "DELETE", token }); applyAdmin(d); return { ok: true, plans: d.plans }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const lockStudent = useCallback(async (id) => {
+    try { applyAdmin(await api(`/admin/students/${id}/lock`, { method: "POST", token })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, brand, smtp, hcaptcha,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, payments, brand, smtp, hcaptcha,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -433,6 +461,7 @@ export function StoreProvider({ children }) {
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
     updateAccount, changePassword, saveSmtp, sendTestMail,
+    fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

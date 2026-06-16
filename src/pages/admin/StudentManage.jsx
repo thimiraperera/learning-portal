@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
-  BarChart3, Award, FileQuestion,
+  BarChart3, Award, FileQuestion, Wallet,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -11,6 +11,18 @@ import PhoneInput from "../../components/PhoneInput.jsx";
 import { useStore } from "../../state.jsx";
 
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
+const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
+const fmtDate = (d) => {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+};
+const isPastDue = (d) => {
+  if (!d) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dt = new Date(d + "T00:00:00");
+  return !isNaN(dt) && dt < today;
+};
 const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 function fmtDuration(a, b) {
   const ms = Number(b) - Number(a);
@@ -34,6 +46,7 @@ export default function StudentManage() {
   const tabs = [
     { k: "profile", label: "Profile", icon: SettingsIcon },
     { k: "courses", label: "Courses", icon: BookOpen, n: s.enrolled.length },
+    { k: "payments", label: "Payments", icon: Wallet },
     { k: "overview", label: "Overview", icon: BarChart3 },
   ];
 
@@ -57,6 +70,7 @@ export default function StudentManage() {
         </div>
         {tab === "profile" && <ProfileTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
         {tab === "courses" && <CoursesTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
+        {tab === "payments" && <PaymentsTab id={sid} s={s} store={store} />}
         {tab === "overview" && <OverviewTab id={sid} s={s} store={store} navigate={navigate} />}
       </div>
     </Layout>
@@ -269,6 +283,144 @@ function CoursesTab({ email, s, store, navigate }) {
             onChange={setSel} />
           <button className="btn btn-primary" onClick={add}><Plus /> Enrol</button>
         </div>
+      )}
+    </div>
+  );
+}
+
+function PaymentsTab({ id, s, store }) {
+  const { courses, fetchStudentPlans } = store;
+  const [plans, setPlans] = useState(null); // null = loading
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchStudentPlans(id).then((p) => { if (alive) setPlans(p); }).catch(() => { if (alive) setPlans([]); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const enrolled = s.enrolled.map((cid) => [cid, courses[cid]]).filter(([, c]) => c);
+  const planByCourse = {};
+  (plans || []).forEach((p) => { planByCourse[p.course_id] = p; });
+
+  const apply = (r) => { if (r.ok) { setPlans(r.plans); setMsg(null); } else setMsg({ ok: false, text: r.msg }); };
+
+  if (plans === null) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
+
+  return (
+    <div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Set a fee plan per course and record payments as they arrive. The student sees their balance and due date in their portal. Locking is manual, see the Students page.</div>
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+      {enrolled.length === 0 ? (
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrol the student in a course first to set up a payment plan.</p>
+      ) : (
+        enrolled.map(([cid, c]) => (
+          <PlanCard key={cid} id={id} cid={cid} course={c} plan={planByCourse[cid]} store={store} onApply={apply} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function PlanCard({ id, cid, course, plan, store, onApply }) {
+  const { savePlan, removePlan, addPayment, removePayment } = store;
+  const [totalFee, setTotalFee] = useState(plan ? String(plan.total_fee) : "");
+  const [regFee, setRegFee] = useState(plan ? String(plan.reg_fee) : "");
+  const [dueDate, setDueDate] = useState(plan ? plan.due_date || "" : "");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [paidDate, setPaidDate] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (plan) { setTotalFee(String(plan.total_fee)); setRegFee(String(plan.reg_fee)); setDueDate(plan.due_date || ""); }
+  }, [plan?.id, plan?.total_fee, plan?.reg_fee, plan?.due_date]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async () => onApply(await savePlan(id, cid, { totalFee: Number(totalFee) || 0, regFee: Number(regFee) || 0, dueDate }));
+  const del = async () => {
+    if (!window.confirm(`Remove the payment plan for ${course.title}? This also deletes its recorded payments.`)) return;
+    onApply(await removePlan(id, cid));
+  };
+  const pay = async () => {
+    setErr("");
+    if (!(Number(amount) > 0)) { setErr("Enter an amount greater than zero."); return; }
+    const paidAt = paidDate ? new Date(paidDate + "T00:00:00").getTime() : Date.now();
+    const r = await addPayment(plan.id, { amount: Number(amount), note: note.trim(), paidAt });
+    if (r.ok) { setAmount(""); setNote(""); setPaidDate(""); }
+    onApply(r);
+  };
+  const delPay = async (payId) => onApply(await removePayment(payId));
+
+  const overdue = plan && plan.remaining > 0 && isPastDue(plan.due_date);
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, marginBottom: 12 }}>{course.title} <span className="cc-code" style={{ marginLeft: 4 }}>{course.code}</span></div>
+
+      <div className="toolbar" style={{ marginBottom: 12, alignItems: "flex-end" }}>
+        <div className="tb-field" style={{ flex: "1 1 120px" }}>
+          <label className="form-label">Total fee (Rs.)</label>
+          <input className="form-control" type="number" min="0" value={totalFee} onChange={(e) => setTotalFee(e.target.value)} placeholder="40000" />
+        </div>
+        <div className="tb-field" style={{ flex: "1 1 120px" }}>
+          <label className="form-label">Registration fee (Rs.)</label>
+          <input className="form-control" type="number" min="0" value={regFee} onChange={(e) => setRegFee(e.target.value)} placeholder="5000" />
+        </div>
+        <div className="tb-field" style={{ flex: "1 1 150px" }}>
+          <label className="form-label">Balance due date</label>
+          <input className="form-control" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={save}><Save /> {plan ? "Update plan" : "Create plan"}</button>
+        {plan && <button className="btn btn-ghost" onClick={del}><Trash2 /> Remove</button>}
+      </div>
+
+      {plan && (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <span className="badge badge-accepted">Paid {rs(plan.paid)}</span>
+            <span className={"badge " + (plan.remaining > 0 ? "badge-pending" : "badge-accepted")}>Remaining {rs(plan.remaining)}</span>
+            {plan.due_date && <span className={"badge " + (overdue ? "badge-rejected" : "badge-pending")}>Due {fmtDate(plan.due_date)}{overdue ? " (overdue)" : ""}</span>}
+          </div>
+
+          {plan.payments.length > 0 && (
+            <div className="table-wrap" style={{ marginBottom: 12 }}>
+              <table>
+                <thead><tr><th>Date</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+                <tbody>
+                  {plan.payments.map((p) => (
+                    <tr key={p.id}>
+                      <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(new Date(Number(p.paid_at)).toISOString().slice(0, 10))}</td>
+                      <td style={{ color: "#6B7280" }}>{p.note || "-"}</td>
+                      <td style={{ fontWeight: 600 }}>{rs(p.amount)}</td>
+                      <td style={{ textAlign: "right" }}>
+                        <button className="icon-btn-plain" title="Delete payment" onClick={() => delPay(p.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>RECORD A PAYMENT</div>
+          <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
+            <div className="tb-field" style={{ flex: "0 0 130px" }}>
+              <label className="form-label">Amount (Rs.)</label>
+              <input className="form-control" type="number" min="0" value={amount} onChange={(e) => { setAmount(e.target.value); setErr(""); }} placeholder="5000" />
+            </div>
+            <div className="tb-field" style={{ flex: "1 1 160px" }}>
+              <label className="form-label">Note</label>
+              <input className="form-control" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Registration fee" />
+            </div>
+            <div className="tb-field" style={{ flex: "0 0 150px" }}>
+              <label className="form-label">Paid on</label>
+              <input className="form-control" type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+            </div>
+            <button className="btn btn-primary" onClick={pay}><Plus /> Add payment</button>
+          </div>
+          {err && <div className="field-error">{err}</div>}
+        </>
       )}
     </div>
   );

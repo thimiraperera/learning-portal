@@ -117,6 +117,18 @@ const TABLES = [
      user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, created_at BIGINT,
      UNIQUE KEY uniq_req (user_id, course_id)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS payment_plans (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     user_id INT NOT NULL, course_id VARCHAR(32) NOT NULL,
+     total_fee DECIMAL(12,2) DEFAULT 0, reg_fee DECIMAL(12,2) DEFAULT 0,
+     due_date VARCHAR(20) DEFAULT '', created_at BIGINT,
+     UNIQUE KEY uniq_plan (user_id, course_id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS payments (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     plan_id INT NOT NULL, amount DECIMAL(12,2) DEFAULT 0,
+     note VARCHAR(255) DEFAULT '', paid_at BIGINT, created_at BIGINT
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -296,6 +308,66 @@ async function lockedCourses(ids) {
   const [rows] = await q("SELECT id, code, title, blurb, sessions FROM courses ORDER BY title");
   return rows.filter((c) => !ids.includes(c.id));
 }
+/* ---- installment payment tracking ---- */
+// One plan per (student, course). Remaining is always computed live as
+// total_fee minus the sum of recorded payments, so it can never drift.
+async function studentPlans(userId) {
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.total_fee, p.reg_fee, p.due_date, p.created_at,
+       co.code AS courseCode, co.title AS courseTitle
+     FROM payment_plans p JOIN courses co ON co.id=p.course_id
+     WHERE p.user_id=? ORDER BY co.title`, [userId]);
+  const [pays] = await q(`SELECT pay.id, pay.plan_id, pay.amount, pay.note, pay.paid_at
+     FROM payments pay JOIN payment_plans p ON p.id=pay.plan_id
+     WHERE p.user_id=? ORDER BY pay.paid_at, pay.id`, [userId]);
+  return plans.map((pl) => {
+    const list = pays.filter((x) => x.plan_id === pl.id).map((x) => ({ ...x, amount: Number(x.amount) }));
+    const total = Number(pl.total_fee);
+    const paid = list.reduce((n, x) => n + x.amount, 0);
+    return { ...pl, total_fee: total, reg_fee: Number(pl.reg_fee), payments: list, paid, remaining: Math.max(0, total - paid) };
+  });
+}
+async function upsertPlan(userId, courseId, f) {
+  await q(`INSERT INTO payment_plans (user_id,course_id,total_fee,reg_fee,due_date,created_at) VALUES (?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), due_date=VALUES(due_date)`,
+    [userId, courseId, f.totalFee, f.regFee, f.dueDate, Date.now()]);
+}
+async function planById(planId) {
+  const [[p]] = await q("SELECT * FROM payment_plans WHERE id=?", [planId]);
+  return p || null;
+}
+async function deletePlan(userId, courseId) {
+  const [[p]] = await q("SELECT id FROM payment_plans WHERE user_id=? AND course_id=?", [userId, courseId]);
+  if (!p) return;
+  await q("DELETE FROM payments WHERE plan_id=?", [p.id]);
+  await q("DELETE FROM payment_plans WHERE id=?", [p.id]);
+}
+async function addPayment(planId, amount, note, paidAt) {
+  await q("INSERT INTO payments (plan_id,amount,note,paid_at,created_at) VALUES (?,?,?,?,?)", [planId, amount, note, paidAt, Date.now()]);
+}
+async function paymentOwnerUser(paymentId) {
+  const [[r]] = await q("SELECT p.user_id FROM payments pay JOIN payment_plans p ON p.id=pay.plan_id WHERE pay.id=?", [paymentId]);
+  return r ? r.user_id : null;
+}
+async function deletePayment(paymentId) { await q("DELETE FROM payments WHERE id=?", [paymentId]); }
+// Active, still-enrolled students whose balance is past its due date. This
+// feeds the admin "needs locking" notice; we never lock automatically.
+async function overduePayments() {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const [rows] = await q(`SELECT p.id AS plan_id, p.user_id, p.course_id, p.total_fee, p.due_date,
+       u.name AS studentName, u.email AS studentEmail,
+       co.code AS courseCode, co.title AS courseTitle,
+       COALESCE((SELECT SUM(amount) FROM payments WHERE plan_id=p.id),0) AS paid
+     FROM payment_plans p
+     JOIN users u ON u.id=p.user_id
+     JOIN courses co ON co.id=p.course_id
+     WHERE u.role='student' AND u.status='active' AND p.due_date<>'' AND p.due_date < ?
+       AND EXISTS (SELECT 1 FROM enrolments e WHERE e.user_id=p.user_id AND e.course_id=p.course_id)
+     ORDER BY p.due_date`, [today]);
+  return rows
+    .map((r) => ({ ...r, total_fee: Number(r.total_fee), paid: Number(r.paid), remaining: Math.max(0, Number(r.total_fee) - Number(r.paid)) }))
+    .filter((r) => r.remaining > 0);
+}
+
 async function usersMap() {
   const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id");
   const map = {};
@@ -394,6 +466,8 @@ async function deleteCourse(id) {
   await q("DELETE FROM enrolments WHERE course_id=?", [id]);
   await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
   await q("UPDATE exams SET course_id='' WHERE course_id=?", [id]);
+  await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
+  await q("DELETE FROM payment_plans WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
@@ -709,6 +783,7 @@ module.exports = {
   addCourseItem, removeCourseItem, reorderItems,
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
+  studentPlans, upsertPlan, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
