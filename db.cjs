@@ -282,7 +282,7 @@ async function courseFull(id) {
   };
 }
 async function coursesMap(ids) {
-  const [rows] = await q("SELECT id FROM courses ORDER BY id");
+  const [rows] = await q("SELECT id FROM courses ORDER BY id DESC"); // newest first
   const map = {};
   for (const { id } of rows) if (!ids || ids.includes(id)) map[id] = await courseFull(id);
   return map;
@@ -319,7 +319,7 @@ async function pendingRequests() {
   const [rows] = await q(`SELECT r.id, r.user_id, r.course_id, r.created_at,
       u.name AS studentName, u.email AS studentEmail, co.code AS courseCode, co.title AS courseTitle
     FROM course_requests r JOIN users u ON u.id=r.user_id JOIN courses co ON co.id=r.course_id
-    ORDER BY r.created_at`);
+    ORDER BY r.created_at DESC`); // newest first
   return rows;
 }
 async function getRequest(id) {
@@ -329,7 +329,7 @@ async function getRequest(id) {
 async function deleteRequest(id) { await q("DELETE FROM course_requests WHERE id=?", [id]); }
 async function clearRequest(userId, courseId) { await q("DELETE FROM course_requests WHERE user_id=? AND course_id=?", [userId, courseId]); }
 async function lockedCourses(ids) {
-  const [rows] = await q("SELECT id, code, title, blurb, sessions FROM courses ORDER BY title");
+  const [rows] = await q("SELECT id, code, title, blurb, sessions FROM courses ORDER BY id DESC"); // newest first
   return rows.filter((c) => !ids.includes(c.id));
 }
 /* ---- installment payment tracking ---- */
@@ -360,7 +360,7 @@ async function allPlans() {
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
-     ORDER BY u.name, co.title`);
+     ORDER BY p.created_at DESC, p.id DESC`); // newest first
   return plans.map((p) => {
     const total = Number(p.total_fee);
     const paid = Number(p.paid);
@@ -410,7 +410,7 @@ async function overduePayments() {
 }
 
 async function usersMap() {
-  const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id");
+  const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id DESC"); // newest first
   const map = {};
   for (const u of rows) {
     map[u.email] = {
@@ -458,7 +458,7 @@ async function updateCourse(id, f) {
 async function instructorsList() {
   const [rows] = await q(`SELECT i.id, i.name, i.email, i.phone, i.title, i.bio, i.gender, i.notes, i.user_id,
       u.username AS loginUsername, u.status AS loginStatus, u.totp_enabled AS twoFactor
-    FROM instructors i LEFT JOIN users u ON u.id=i.user_id ORDER BY i.name`);
+    FROM instructors i LEFT JOIN users u ON u.id=i.user_id ORDER BY i.id DESC`); // newest first
   return rows.map((r) => ({ ...r, twoFactor: !!r.twoFactor }));
 }
 async function instructorByUserId(userId) {
@@ -762,7 +762,7 @@ async function createAdmin({ name, username, email, password }) {
     [name.trim(), first, last, username, email, bcrypt.hashSync(password, 10)]);
 }
 async function adminsList() {
-  const [rows] = await q("SELECT id, name, username, email, status FROM users WHERE role='admin' ORDER BY id");
+  const [rows] = await q("SELECT id, name, username, email, status FROM users WHERE role='admin' ORDER BY id DESC"); // newest first
   return rows;
 }
 async function countAdmins() {

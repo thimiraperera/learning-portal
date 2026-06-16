@@ -13,7 +13,7 @@ export default function MyCourses() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
 
-  const my = currentUser.enrolled;
+  const my = [...currentUser.enrolled].reverse(); // newest enrolment first
   const pageCount = Math.max(1, Math.ceil(my.length / PER_PAGE));
   const safePage = Math.min(page, pageCount);
   const slice = my.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);

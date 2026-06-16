@@ -127,7 +127,7 @@ function CoursesAccordion({ courses, enrolled, base = "/courses", label = "My Co
       {open && (
         <div className="nav-sub">
           {enrolled.length === 0 && <div className="nav-sub-empty">No courses yet</div>}
-          {enrolled.map((id) => courses[id] && (
+          {[...enrolled].reverse().map((id) => courses[id] && (
             <NavLink key={id} to={`${base}/${id}`}
               className={({ isActive }) => "nav-subitem" + (isActive ? " active" : "")}>
               {courses[id].title}
