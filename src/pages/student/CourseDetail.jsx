@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Calendar, Clock, FileQuestion, Play, Layers,
+  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
@@ -17,17 +17,17 @@ export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser, courses, exams, downloadMaterial } = useStore();
-  const [tab, setTab] = useState("content");
+  const [tab, setTab] = useState("recordings");
 
   // Guard: never render a course the student isn't enrolled in.
   if (!currentUser.enrolled.includes(id)) return <Navigate to="/" replace />;
   const c = courses[id];
-  const groups = c.groups || [];
-  const contentCount = c.recordings.length + c.links.length + c.materials.length;
   const myExams = exams.filter((x) => x.course_id === id);
 
   const tabs = [
-    { k: "content", label: "Course content", icon: Layers, n: contentCount },
+    { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
+    { k: "links", label: "Course links", icon: Link2, n: c.links.length },
+    { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
     ...(myExams.length > 0 ? [{ k: "exam", label: "Exams", icon: FileQuestion, n: myExams.length }] : []),
   ];
 
@@ -52,32 +52,33 @@ export default function CourseDetail() {
           ))}
         </div>
 
-        {tab === "content" && (
-          contentCount === 0
-            ? <div className="empty-state"><div className="empty-icon"><Layers /></div><p>No content has been published for this course yet.</p></div>
-            : groups.map((g) => {
-                const n = g.recordings.length + g.links.length + g.materials.length;
-                if (n === 0) return null;
-                return (
-                  <div key={g.id} className="content-section">
-                    <div className="content-section-head"><Layers /> {g.title} <span className="tab-count">{n}</span></div>
-                    {g.recordings.map((r) => (
-                      <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t}
-                        action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
-                    ))}
-                    {g.links.map((r) => (
-                      <MediaRow key={`l${r.id}`} icon={Link2} title={r.t}
-                        action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
-                    ))}
-                    {g.materials.map((r) => (
-                      <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t}
-                        action={r.filename ? "Download" : (r.u ? "Open" : null)}
-                        onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)}
-                        meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null} />
-                    ))}
-                  </div>
-                );
-              })
+        {tab === "recordings" && (
+          c.recordings.length === 0
+            ? <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No recordings have been published yet.</p></div>
+            : c.recordings.map((r) => (
+                <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t}
+                  action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
+              ))
+        )}
+
+        {tab === "links" && (
+          c.links.length === 0
+            ? <div className="empty-state"><div className="empty-icon"><Link2 /></div><p>No course links have been added yet.</p></div>
+            : c.links.map((r) => (
+                <MediaRow key={`l${r.id}`} icon={Link2} title={r.t}
+                  action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
+              ))
+        )}
+
+        {tab === "materials" && (
+          c.materials.length === 0
+            ? <div className="empty-state"><div className="empty-icon"><FileDown /></div><p>No materials have been added yet.</p></div>
+            : c.materials.map((r) => (
+                <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t}
+                  action={r.filename ? "Download" : (r.u ? "Open" : null)}
+                  onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)}
+                  meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null} />
+              ))
         )}
 
         {tab === "exam" && myExams.map((x) => {

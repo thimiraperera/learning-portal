@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Pencil, Upload,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -14,7 +14,7 @@ export default function CourseManage() {
   const store = useStore();
   const { courses, users } = store;
   const c = courses[id];
-  const [tab, setTab] = useState("content"); // content is the default open tab
+  const [tab, setTab] = useState("recordings"); // open on the first content tab
 
   if (!c) return <Navigate to="/admin/courses" replace />;
 
@@ -22,7 +22,9 @@ export default function CourseManage() {
 
   const tabs = [
     { k: "details", label: "Course details", icon: SettingsIcon },
-    { k: "content", label: "Course content", icon: PlayCircle },
+    { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
+    { k: "links", label: "Course links", icon: Link2, n: c.links.length },
+    { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
     { k: "students", label: "Enrolled students", icon: Users, n: enrolledCount },
     { k: "instructor", label: "Instructors", icon: Presentation, n: c.instructors.length },
   ];
@@ -54,7 +56,9 @@ export default function CourseManage() {
         </div>
 
         {tab === "details" && <DetailsTab id={id} c={c} store={store} navigate={navigate} />}
-        {tab === "content" && <ContentManager id={id} c={c} store={store} />}
+        {tab === "recordings" && <ContentSection id={id} groupId={0} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title" />}
+        {tab === "links" && <ContentSection id={id} groupId={0} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title" />}
+        {tab === "materials" && <ContentSection id={id} groupId={0} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title" />}
         {tab === "students" && <StudentsTab id={id} store={store} navigate={navigate} />}
         {tab === "instructor" && <InstructorTab id={id} c={c} store={store} navigate={navigate} />}
       </div>
@@ -258,99 +262,6 @@ function InstructorTab({ id, c, store, navigate }) {
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function ContentManager({ id, c, store }) {
-  const { addGroup, reorderGroups } = store;
-  const [newGroup, setNewGroup] = useState("");
-  const [msg, setMsg] = useState(null);
-  const [dragGid, setDragGid] = useState(null);
-  const [overGid, setOverGid] = useState(null);
-  const groups = c.groups || [];
-
-  const add = async () => {
-    if (!newGroup.trim()) return;
-    const r = await addGroup(id, newGroup.trim());
-    if (r.ok) { setNewGroup(""); setMsg(null); } else setMsg(r.msg);
-  };
-
-  const onDropGroup = async (targetGid) => {
-    setOverGid(null);
-    if (dragGid == null || dragGid === targetGid) { setDragGid(null); return; }
-    const ids = groups.map((g) => g.id);
-    const from = ids.indexOf(dragGid);
-    const to = ids.indexOf(targetGid);
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
-    setDragGid(null);
-    await reorderGroups(id, ids);
-  };
-
-  return (
-    <>
-      <p style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>
-        Organise content into groups (like Moodle sections). Drag a group by its handle to reorder, and drag items within a list to reorder them.
-      </p>
-      {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
-
-      {groups.length === 0 ? (
-        <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No groups yet. Create your first group below to start adding content.</p></div>
-      ) : groups.map((g) => (
-        <GroupCard key={g.id} id={id} group={g} store={store}
-          dragGid={dragGid} setDragGid={setDragGid} overGid={overGid} setOverGid={setOverGid} onDropGroup={onDropGroup} />
-      ))}
-
-      <div className="toolbar" style={{ marginTop: 4, marginBottom: 0 }}>
-        <input className="form-control" placeholder="New group title (e.g. Week 1, Module 2)" value={newGroup}
-          onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
-        <button className="btn btn-primary" onClick={add}><Plus /> Add group</button>
-      </div>
-    </>
-  );
-}
-
-function GroupCard({ id, group, store, dragGid, setDragGid, overGid, setOverGid, onDropGroup }) {
-  const { renameGroup, deleteGroup } = store;
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(group.title);
-  const count = group.recordings.length + group.links.length + group.materials.length;
-
-  const saveTitle = async () => { if (title.trim()) { await renameGroup(id, group.id, title.trim()); setEditing(false); } };
-  const remove = async () => {
-    if (!window.confirm(`Delete group "${group.title}"${count ? ` and its ${count} item${count === 1 ? "" : "s"}` : ""}? This cannot be undone.`)) return;
-    await deleteGroup(id, group.id);
-  };
-
-  return (
-    <div className={"group-card" + (overGid === group.id ? " drag-over" : "") + (dragGid === group.id ? " dragging" : "")}
-      onDragOver={(e) => { if (dragGid != null) { e.preventDefault(); setOverGid(group.id); } }}
-      onDrop={() => onDropGroup(group.id)}
-      onDragLeave={() => setOverGid((o) => (o === group.id ? null : o))}>
-      <div className="group-head">
-        <span className="drag-handle" draggable onDragStart={() => setDragGid(group.id)} onDragEnd={() => { setDragGid(null); setOverGid(null); }}>
-          <GripVertical />
-        </span>
-        {editing ? (
-          <>
-            <input className="form-control" style={{ flex: 1, height: 38 }} value={title} autoFocus
-              onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); }} />
-            <button className="btn btn-primary btn-sm" onClick={saveTitle}><Save /> Save</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setTitle(group.title); setEditing(false); }}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <div className="group-title">{group.title} <span className="tab-count">{count}</span></div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}><Pencil /> Rename</button>
-            <button className="icon-btn-plain" title="Delete group" onClick={remove}><Trash2 style={{ width: 16, height: 16 }} /></button>
-          </>
-        )}
-      </div>
-      <div className="group-body">
-        <ContentSection id={id} groupId={group.id} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={group.recordings} placeholder="Recording title" />
-        <ContentSection id={id} groupId={group.id} store={store} bucket="links" title="Course links" Icon={Link2} items={group.links} placeholder="Link title" />
-        <ContentSection id={id} groupId={group.id} store={store} bucket="materials" title="Materials" Icon={FileDown} items={group.materials} placeholder="Material title" />
-      </div>
     </div>
   );
 }
