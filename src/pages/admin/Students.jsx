@@ -18,6 +18,13 @@ function suggestUsername(name) {
     .slice(0, 24);
 }
 
+const PAY_COL = {
+  overdue: { cls: "badge-rejected", label: "Overdue" },
+  balance: { cls: "badge-pending", label: "Has balance" },
+  paid: { cls: "badge-accepted", label: "Paid" },
+  none: { cls: "badge-muted", label: "No plan" },
+};
+
 /* A student's overall payment status across their plans, as filter buckets. */
 function buildPayStatus(plans) {
   const byUser = {};
@@ -172,10 +179,12 @@ export default function Students() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Student</th><th>Username</th><th>Status</th><th></th></tr>
+                  <tr><th>Student</th><th>Username</th><th>Gender</th><th>Status</th><th>Payment</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {slice.map(([email, s]) => (
+                  {slice.map(([email, s]) => {
+                    const pc = PAY_COL[payStatusByUser[s.id] || "none"];
+                    return (
                     <tr key={email}>
                       <td>
                         <button onClick={() => navigate(`/admin/students/${s.id}`)}
@@ -185,7 +194,9 @@ export default function Students() {
                         <div style={{ fontSize: 12, color: "#9CA3AF" }}>{email}</div>
                       </td>
                       <td style={{ color: "#6B7280" }}>{s.username}</td>
+                      <td style={{ color: "#6B7280" }}>{s.gender || "-"}</td>
                       <td><span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")}>{s.status}</span></td>
+                      <td><span className={"badge " + pc.cls}>{pc.label}</span></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)} style={{ marginRight: 8 }}>
                           <Eye /> View
@@ -195,7 +206,8 @@ export default function Students() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

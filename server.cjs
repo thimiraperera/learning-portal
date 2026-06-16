@@ -168,6 +168,13 @@ function generateScheduleItems(t) {
   return items;
 }
 
+// Give a student the course's payment plan (if the course has a valid one), so
+// every enrolled student automatically follows the course-assigned schedule.
+async function applyCoursePlanToStudent(userId, courseId) {
+  const items = generateScheduleItems(await dbmod.getCoursePlan(courseId));
+  if (items.length && !items.some((it) => !it.dueDate)) await dbmod.setPlanSchedule(userId, courseId, items);
+}
+
 async function certPdf(cert) {
   const brand = await dbmod.getBrand();
   return generateCertificate({
@@ -367,6 +374,7 @@ app.post("/api/admin/requests/:id/approve", auth, adminOnly, wrap(async (req, re
   const r = await dbmod.getRequest(Number(req.params.id));
   if (!r) return res.status(404).json({ error: "Request not found." });
   await q("INSERT IGNORE INTO enrolments (user_id,course_id) VALUES (?,?)", [r.user_id, r.course_id]);
+  await applyCoursePlanToStudent(r.user_id, r.course_id);
   await dbmod.deleteRequest(r.id);
   res.json(await adminState());
 }));
@@ -541,7 +549,7 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
   if (u && course) {
     const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
     if (has) await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
-    else await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?)", [u.id, cid]);
+    else { await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?)", [u.id, cid]); await applyCoursePlanToStudent(u.id, cid); }
     await dbmod.clearRequest(u.id, cid); // resolve any pending request for this pair
   }
   res.json(await adminState());

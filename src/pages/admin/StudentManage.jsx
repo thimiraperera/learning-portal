@@ -330,13 +330,13 @@ function PaymentsTab({ id, s, store }) {
 
   return (
     <div>
-      <div className="card-subtitle" style={{ marginTop: 0 }}>Set a fee plan per course and record payments as they arrive. The student sees their balance and due date in their portal. Locking is manual, see the Students page.</div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>The schedule for each course comes from that course's payment plan. Record what the student pays and it fills the registration fee and installments in order automatically.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
       {enrolled.length === 0 ? (
-        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrol the student in a course first to set up a payment plan.</p>
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrol the student in a course first.</p>
       ) : (
         enrolled.map(([cid, c]) => (
-          <PlanCard key={cid} id={id} cid={cid} course={c} plan={planByCourse[cid]} store={store} onApply={apply} />
+          <PlanCard key={cid} course={c} plan={planByCourse[cid]} store={store} onApply={apply} />
         ))
       )}
     </div>
@@ -398,53 +398,16 @@ function PaymentHistoryTab({ id, store }) {
   );
 }
 
-function PlanCard({ id, cid, course, plan, store, onApply }) {
-  const { savePlan, removePlan, addPayment, removePayment } = store;
-  const sig = JSON.stringify((plan?.installments || []).map((i) => [i.label, i.amount, i.due_date]));
-  const [regAmount, setRegAmount] = useState("");
-  const [regDue, setRegDue] = useState("");
-  const [insts, setInsts] = useState([]); // [{ amount, dueDate }]
-  const [splitTotal, setSplitTotal] = useState("");
+/* Record-only view: the schedule comes from the course's payment plan (applied
+   to enrolled students). The admin records payments here; the waterfall fills
+   the registration fee and installments in order automatically. */
+function PlanCard({ course, plan, store, onApply }) {
+  const { addPayment, removePayment } = store;
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [paidDate, setPaidDate] = useState("");
   const [err, setErr] = useState("");
 
-  // Load the editor from the saved schedule (first line = registration fee).
-  useEffect(() => {
-    const list = plan?.installments || [];
-    setRegAmount(list[0] ? String(list[0].amount) : "");
-    setRegDue(list[0] ? list[0].due_date || "" : "");
-    setInsts(list.slice(1).map((i) => ({ amount: String(i.amount), dueDate: i.due_date || "" })));
-  }, [plan?.id, sig]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const setInst = (i, field, val) => setInsts((arr) => arr.map((x, k) => (k === i ? { ...x, [field]: val } : x)));
-  const addInst = () => setInsts((arr) => [...arr, { amount: "", dueDate: "" }]);
-  const removeInst = (i) => setInsts((arr) => arr.filter((_, k) => k !== i));
-  const split = () => {
-    const t = Number(splitTotal);
-    if (!(t > 0) || insts.length === 0) return;
-    const each = Math.round((t / insts.length) * 100) / 100;
-    setInsts((arr) => arr.map((x, k) => ({ ...x, amount: String(k === arr.length - 1 ? Math.round((t - each * (arr.length - 1)) * 100) / 100 : each) })));
-  };
-
-  const buildItems = () => {
-    const items = [];
-    if (Number(regAmount) > 0) items.push({ label: "Registration fee", amount: Number(regAmount), dueDate: regDue });
-    insts.forEach((it, i) => { if (Number(it.amount) > 0) items.push({ label: `Installment ${i + 1}`, amount: Number(it.amount), dueDate: it.dueDate }); });
-    return items;
-  };
-  const save = async () => {
-    setErr("");
-    const items = buildItems();
-    if (items.length === 0) { setErr("Add a registration fee or at least one installment."); return; }
-    if (items.some((it) => !it.dueDate)) { setErr("Every line needs a due date."); return; }
-    onApply(await savePlan(id, cid, { items }));
-  };
-  const del = async () => {
-    if (!window.confirm(`Remove the payment plan for ${course.title}? This also deletes its recorded payments.`)) return;
-    onApply(await removePlan(id, cid));
-  };
   const pay = async () => {
     setErr("");
     if (!(Number(amount) > 0)) { setErr("Enter a payment amount greater than zero."); return; }
@@ -456,7 +419,6 @@ function PlanCard({ id, cid, course, plan, store, onApply }) {
   const delPay = async (payId) => onApply(await removePayment(payId));
 
   const pb = plan ? planBadge(plan.status) : null;
-  const plannedTotal = (Number(regAmount) || 0) + insts.reduce((n, x) => n + (Number(x.amount) || 0), 0);
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -470,45 +432,11 @@ function PlanCard({ id, cid, course, plan, store, onApply }) {
         )}
       </div>
 
-      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>PAYMENT SCHEDULE</div>
-      <div className="toolbar" style={{ marginBottom: 8, alignItems: "flex-end" }}>
-        <div className="tb-field" style={{ flex: "1 1 140px" }}>
-          <label className="form-label">Registration fee (Rs.)</label>
-          <input className="form-control" type="number" min="0" value={regAmount} onChange={(e) => setRegAmount(e.target.value)} placeholder="5000" />
-        </div>
-        <div className="tb-field" style={{ flex: "0 0 160px" }}>
-          <label className="form-label">Due date</label>
-          <input className="form-control" type="date" value={regDue} onChange={(e) => setRegDue(e.target.value)} />
-        </div>
-      </div>
-      {insts.map((it, i) => (
-        <div className="toolbar" key={i} style={{ marginBottom: 8, alignItems: "flex-end" }}>
-          <div className="tb-field" style={{ flex: "1 1 140px" }}>
-            <label className="form-label">Installment {i + 1} (Rs.)</label>
-            <input className="form-control" type="number" min="0" value={it.amount} onChange={(e) => setInst(i, "amount", e.target.value)} placeholder="10000" />
-          </div>
-          <div className="tb-field" style={{ flex: "0 0 160px" }}>
-            <label className="form-label">Due date</label>
-            <input className="form-control" type="date" value={it.dueDate} onChange={(e) => setInst(i, "dueDate", e.target.value)} />
-          </div>
-          <button className="icon-btn-plain" title="Remove installment" onClick={() => removeInst(i)}><Trash2 style={{ width: 16, height: 16 }} /></button>
-        </div>
-      ))}
-      <div className="toolbar" style={{ marginBottom: 10, alignItems: "flex-end" }}>
-        <button className="btn btn-ghost btn-sm" onClick={addInst}><Plus /> Add installment</button>
-        <input className="form-control" style={{ flex: "0 0 150px" }} type="number" min="0" value={splitTotal} onChange={(e) => setSplitTotal(e.target.value)} placeholder="Total to split" />
-        <button className="btn btn-ghost btn-sm" onClick={split} disabled={!insts.length}>Split equally</button>
-        <span style={{ fontSize: 12.5, color: "#9CA3AF", marginLeft: "auto" }}>Total fee: {rs(plannedTotal)}</span>
-      </div>
-      <div style={{ display: "flex", gap: 10 }}>
-        <button className="btn btn-primary" onClick={save}><Save /> {plan ? "Update schedule" : "Create plan"}</button>
-        {plan && <button className="btn btn-ghost" onClick={del}><Trash2 /> Remove plan</button>}
-      </div>
-      {err && <div className="field-error" style={{ marginTop: 6 }}>{err}</div>}
-
-      {plan && (
+      {!plan ? (
+        <div style={{ fontSize: 13, color: "#9CA3AF" }}>No payment plan for this course yet. Set it in the course's <strong>Payment plan</strong> tab and apply it; the schedule then appears here for recording payments.</div>
+      ) : (
         <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "16px 0 12px" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             <span className="badge badge-accepted">Paid {rs(plan.paid)}</span>
             <span className={"badge " + (plan.remaining > 0 ? "badge-pending" : "badge-accepted")}>Remaining {rs(plan.remaining)}</span>
             <span className="badge badge-muted">Total {rs(plan.total)}</span>
@@ -554,7 +482,7 @@ function PlanCard({ id, cid, course, plan, store, onApply }) {
           )}
 
           <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 6px" }}>RECORD A PAYMENT</div>
-          <div className="card-subtitle" style={{ marginTop: 0 }}>Enter the amount received; it is applied to the earliest unpaid installments automatically.</div>
+          <div className="card-subtitle" style={{ marginTop: 0 }}>Enter the amount received; it fills the registration fee and installments in order automatically.</div>
           <div className="toolbar" style={{ marginBottom: 0, alignItems: "flex-end" }}>
             <div className="tb-field" style={{ flex: "0 0 130px" }}>
               <label className="form-label">Amount (Rs.)</label>
@@ -570,6 +498,7 @@ function PlanCard({ id, cid, course, plan, store, onApply }) {
             </div>
             <button className="btn btn-primary" onClick={pay}><Plus /> Add payment</button>
           </div>
+          {err && <div className="field-error" style={{ marginTop: 6 }}>{err}</div>}
         </>
       )}
     </div>

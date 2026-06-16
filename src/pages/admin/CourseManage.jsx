@@ -242,26 +242,25 @@ function CoursePlanTab({ id, store }) {
   if (!plan) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
 
   const set = (k) => (e) => setPlan((p) => ({ ...p, [k]: e.target.value }));
-  const save = async () => {
+  // Save the template and immediately apply it to every enrolled student, so
+  // each student follows the course plan with no per-student setup.
+  const saveAndApply = async () => {
     setBusy(true); setMsg(null);
     const r = await saveCoursePlan(id, plan);
+    if (!r.ok) { setBusy(false); setMsg({ ok: false, text: r.msg }); return; }
+    setPlan(r.plan); setPreview(r.preview || []);
+    const a = await applyCoursePlan(id);
     setBusy(false);
-    if (r.ok) { setPlan(r.plan); setPreview(r.preview || []); setMsg({ ok: true, text: "Plan saved. Use Apply to push it to enrolled students." }); }
-    else setMsg({ ok: false, text: r.msg });
-  };
-  const apply = async () => {
-    if (!window.confirm("Apply this schedule to every enrolled student? It replaces their current schedule. Recorded payments are kept and re-applied across the new schedule.")) return;
-    setBusy(true); setMsg(null);
-    const r = await applyCoursePlan(id);
-    setBusy(false);
-    setMsg(r.ok ? { ok: true, text: `Applied to ${r.applied} enrolled student${r.applied === 1 ? "" : "s"}.` } : { ok: false, text: r.msg });
+    setMsg(a.ok
+      ? { ok: true, text: `Saved and applied to ${a.applied} enrolled student${a.applied === 1 ? "" : "s"}. New enrolments get it automatically.` }
+      : { ok: false, text: `Saved, but applying failed: ${a.msg}` });
   };
 
   const previewTotal = preview.reduce((n, x) => n + Number(x.amount || 0), 0);
 
   return (
     <div style={{ maxWidth: 680 }}>
-      <div className="card-subtitle" style={{ marginTop: 0 }}>Set a default fee plan for this course, save it, then apply it to all enrolled students. Each student can still be adjusted individually on their page.</div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Set the fee plan for this course. Saving applies it to every enrolled student, and anyone enrolled later follows it automatically. You then record each student's payments on their own Payments tab.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
 
       <div className="field-row">
@@ -280,8 +279,7 @@ function CoursePlanTab({ id, store }) {
         <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> Save plan</button>
-        <button className="btn btn-outline" disabled={busy} onClick={apply}><Users /> Apply to enrolled students</button>
+        <button className="btn btn-primary" disabled={busy} onClick={saveAndApply}><Save /> {busy ? "Saving..." : "Save & apply to enrolled students"}</button>
       </div>
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>SCHEDULE PREVIEW (SAVED)</div>
