@@ -5,6 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
+import { payFilterBucket } from "../../lib/payments.js";
 
 /* Build a sensible username suggestion from the full name: lowercase,
    strip accents and punctuation. Admins can still type their own. */
@@ -17,21 +18,14 @@ function suggestUsername(name) {
     .slice(0, 24);
 }
 
-const isPastDue = (d) => {
-  if (!d) return false;
-  const t = new Date(); t.setHours(0, 0, 0, 0);
-  const dt = new Date(d + "T00:00:00");
-  return !isNaN(dt) && dt < t;
-};
-/* A student's overall payment status across their plans. */
+/* A student's overall payment status across their plans, as filter buckets. */
 function buildPayStatus(plans) {
   const byUser = {};
   for (const p of plans) (byUser[p.user_id] ||= []).push(p);
   const out = {};
   for (const uid in byUser) {
-    const list = byUser[uid];
-    out[uid] = list.some((p) => p.remaining > 0 && isPastDue(p.due_date)) ? "overdue"
-      : list.some((p) => p.remaining > 0) ? "balance" : "paid";
+    const buckets = byUser[uid].map((p) => payFilterBucket(p.status));
+    out[uid] = buckets.includes("overdue") ? "overdue" : buckets.includes("balance") ? "balance" : buckets.includes("paid") ? "paid" : "none";
   }
   return out;
 }

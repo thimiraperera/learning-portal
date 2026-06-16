@@ -5,32 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
-
-const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
-const fmtDate = (d) => {
-  if (!d) return "-";
-  const dt = new Date(d + "T00:00:00");
-  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-};
-const isPastDue = (d) => {
-  if (!d) return false;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const dt = new Date(d + "T00:00:00");
-  return !isNaN(dt) && dt < today;
-};
-
-/* The status of a plan, used for the badge and the status filter. */
-function planStatus(p) {
-  if (p.remaining <= 0) return "paid";
-  if (isPastDue(p.due_date)) return "overdue";
-  return p.paid > 0 ? "partial" : "unpaid";
-}
-const STATUS_BADGE = {
-  paid: { cls: "badge-accepted", label: "Paid" },
-  partial: { cls: "badge-pending", label: "Partial" },
-  unpaid: { cls: "badge-muted", label: "Unpaid" },
-  overdue: { cls: "badge-rejected", label: "Overdue" },
-};
+import { rs, fmtDate, planBadge } from "../../lib/payments.js";
 
 export default function Payments() {
   const { plans, courses } = useStore();
@@ -48,10 +23,9 @@ export default function Payments() {
     .filter((p) => course === "all" || String(p.course_id) === String(course))
     .filter((p) => {
       if (status === "all") return true;
-      const st = planStatus(p);
-      if (status === "paid") return st === "paid";
-      if (status === "unpaid") return st !== "paid"; // any outstanding balance
-      if (status === "overdue") return st === "overdue";
+      if (status === "paid") return p.status === "paid";
+      if (status === "unpaid") return p.status !== "paid"; // any outstanding balance
+      if (status === "overdue") return p.status === "overdue";
       return true;
     })
     .filter((p) => !ql
@@ -108,11 +82,11 @@ export default function Payments() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Student</th><th>Course</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Due</th><th>Status</th><th></th></tr>
+                  <tr><th>Student</th><th>Course</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Next due</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
                   {slice.map((p) => {
-                    const st = STATUS_BADGE[planStatus(p)];
+                    const st = planBadge(p.status);
                     return (
                       <tr key={p.id}>
                         <td>
@@ -123,11 +97,14 @@ export default function Payments() {
                           <div style={{ fontSize: 12, color: "#9CA3AF" }}>{p.studentRegNo || p.studentEmail}</div>
                         </td>
                         <td style={{ color: "#6B7280" }}>{p.courseCode} - {p.courseTitle}</td>
-                        <td style={{ whiteSpace: "nowrap" }}>{rs(p.total_fee)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>{rs(p.total)}</td>
                         <td style={{ whiteSpace: "nowrap", color: "#16A34A" }}>{rs(p.paid)}</td>
                         <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{rs(p.remaining)}</td>
-                        <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(p.due_date)}</td>
-                        <td><span className={"badge " + st.cls}>{st.label}</span></td>
+                        <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{p.nextDue ? fmtDate(p.nextDue.due_date) : "-"}</td>
+                        <td>
+                          <span className={"badge " + st.cls}>{st.label}</span>
+                          {p.missedCount > 0 && <span className="badge badge-rejected" style={{ marginLeft: 4 }}>{p.missedCount} missed</span>}
+                        </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${p.user_id}`)}><Eye /> View</button>
                         </td>

@@ -130,6 +130,11 @@ const TABLES = [
      plan_id INT NOT NULL, amount DECIMAL(12,2) DEFAULT 0,
      note VARCHAR(255) DEFAULT '', paid_at BIGINT, created_at BIGINT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS payment_installments (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     plan_id INT NOT NULL, seq INT DEFAULT 0,
+     label VARCHAR(64) DEFAULT '', amount DECIMAL(12,2) DEFAULT 0, due_date VARCHAR(20) DEFAULT ''
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -222,6 +227,19 @@ async function init() {
   // directly) get one here in id order; new ones get theirs at invite time.
   const [noReg] = await q("SELECT id FROM users WHERE role='student' AND COALESCE(reg_no,'')='' ORDER BY id");
   for (const r of noReg) await assignRegNo(r.id);
+  // Migrate older single-due-date plans into the installment schedule: a
+  // registration line plus a balance installment, using the old due date.
+  const [oldPlans] = await q(`SELECT p.id, p.total_fee, p.reg_fee, p.due_date FROM payment_plans p
+     WHERE NOT EXISTS (SELECT 1 FROM payment_installments i WHERE i.plan_id=p.id)`);
+  for (const p of oldPlans) {
+    const total = Number(p.total_fee) || 0, reg = Number(p.reg_fee) || 0, due = p.due_date || "";
+    if (total <= 0 && reg <= 0) continue;
+    let seq = 1;
+    if (reg > 0) await q("INSERT INTO payment_installments (plan_id,seq,label,amount,due_date) VALUES (?,?,?,?,?)", [p.id, seq++, "Registration fee", Math.min(reg, total || reg), due]);
+    const bal = Math.max(0, total - reg);
+    if (bal > 0) await q("INSERT INTO payment_installments (plan_id,seq,label,amount,due_date) VALUES (?,?,?,?,?)", [p.id, seq++, "Installment 1", bal, due]);
+    if (reg <= 0 && bal <= 0 && total > 0) await q("INSERT INTO payment_installments (plan_id,seq,label,amount,due_date) VALUES (?,?,?,?,?)", [p.id, 1, "Full payment", total, due]);
+  }
   // Migrate any free-text course instructors into the instructors table.
   const [[{ ni }]] = await q("SELECT COUNT(*) AS ni FROM instructors");
   if (ni === 0) {
@@ -333,44 +351,92 @@ async function lockedCourses(ids) {
   return rows.filter((c) => !ids.includes(c.id));
 }
 /* ---- installment payment tracking ---- */
-// One plan per (student, course). Remaining is always computed live as
-// total_fee minus the sum of recorded payments, so it can never drift.
+/* A plan is a registration fee plus a list of installments, each with an amount
+   and a due date. Recorded payments are one pool applied to the schedule in
+   order (a "waterfall"): each installment is filled before money flows to the
+   next, and any extra carries forward. Everything below is computed live so
+   totals and statuses never drift. */
+function buildPlan(p, insts, pays, today) {
+  // Work in integer cents so the waterfall and the plan-level totals can never
+  // disagree by a floating-point epsilon (which would otherwise show "Paid"
+  // next to a still-partial installment, or email a fully-paid student).
+  const cents = (v) => Math.round(Number(v) * 100);
+  const totalPaidC = pays.reduce((n, x) => n + cents(x.amount), 0);
+  let runningC = totalPaidC;
+  const installments = insts.map((it) => {
+    const amountC = cents(it.amount);
+    const coveredC = Math.min(runningC, amountC);
+    runningC = Math.max(0, runningC - amountC);
+    const fullyPaid = amountC > 0 ? coveredC >= amountC : true;
+    const overdue = !fullyPaid && it.due_date && it.due_date < today;
+    const status = fullyPaid ? "paid" : overdue ? "missed" : coveredC > 0 ? "partial" : "upcoming";
+    return { id: it.id, seq: it.seq, label: it.label, amount: amountC / 100, due_date: it.due_date || "", covered: coveredC / 100, status };
+  });
+  const totalC = installments.reduce((n, x) => n + cents(x.amount), 0);
+  const missedCount = installments.filter((x) => x.status === "missed").length;
+  // First installment that is not fully paid; drives both nextDue and the plan
+  // status, so the plan badge always agrees with the schedule rows.
+  const next = installments.find((x) => x.status !== "paid") || null;
+  const status = installments.length === 0 ? "empty"
+    : !next ? "paid"
+      : missedCount > 0 ? "overdue"
+        : totalPaidC > 0 ? "partial" : "pending";
+  return {
+    id: p.id, user_id: p.user_id, course_id: p.course_id,
+    courseCode: p.courseCode, courseTitle: p.courseTitle,
+    studentName: p.studentName, studentEmail: p.studentEmail, studentStatus: p.studentStatus, studentRegNo: p.studentRegNo,
+    last_reminded: p.last_reminded,
+    installments,
+    payments: pays.map((x) => ({ id: x.id, amount: Number(x.amount), note: x.note, paid_at: x.paid_at })),
+    total: totalC / 100, paid: totalPaidC / 100,
+    remaining: Math.max(0, totalC - totalPaidC) / 100, missedCount,
+    nextDue: next ? { label: next.label, amount: next.amount, due_date: next.due_date, status: next.status } : null,
+    status,
+  };
+}
+// Enrich plan rows with their schedule + payments using two batched queries.
+async function enrichPlans(planRows) {
+  if (!planRows.length) return [];
+  const today = new Date().toISOString().slice(0, 10);
+  const ids = planRows.map((p) => p.id);
+  const ph = ids.map(() => "?").join(",");
+  const [insts] = await q(`SELECT id, plan_id, seq, label, amount, due_date FROM payment_installments WHERE plan_id IN (${ph}) ORDER BY seq, id`, ids);
+  const [pays] = await q(`SELECT id, plan_id, amount, note, paid_at FROM payments WHERE plan_id IN (${ph}) ORDER BY paid_at, id`, ids);
+  const byI = {}; for (const r of insts) (byI[r.plan_id] ||= []).push(r);
+  const byP = {}; for (const r of pays) (byP[r.plan_id] ||= []).push(r);
+  return planRows.map((p) => buildPlan(p, byI[p.id] || [], byP[p.id] || [], today));
+}
 async function studentPlans(userId) {
-  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.total_fee, p.reg_fee, p.due_date, p.created_at,
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
        co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p JOIN courses co ON co.id=p.course_id
      WHERE p.user_id=? ORDER BY co.title`, [userId]);
-  const [pays] = await q(`SELECT pay.id, pay.plan_id, pay.amount, pay.note, pay.paid_at
-     FROM payments pay JOIN payment_plans p ON p.id=pay.plan_id
-     WHERE p.user_id=? ORDER BY pay.paid_at, pay.id`, [userId]);
-  return plans.map((pl) => {
-    const list = pays.filter((x) => x.plan_id === pl.id).map((x) => ({ ...x, amount: Number(x.amount) }));
-    const total = Number(pl.total_fee);
-    const paid = list.reduce((n, x) => n + x.amount, 0);
-    return { ...pl, total_fee: total, reg_fee: Number(pl.reg_fee), payments: list, paid, remaining: Math.max(0, total - paid) };
-  });
+  return enrichPlans(plans);
 }
-// Every payment plan across all students, with student + course info and the
-// live paid/remaining totals. Feeds the admin Payments page.
 async function allPlans() {
-  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.total_fee, p.reg_fee, p.due_date, p.created_at,
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
        u.name AS studentName, u.email AS studentEmail, u.status AS studentStatus, u.reg_no AS studentRegNo,
-       co.code AS courseCode, co.title AS courseTitle,
-       COALESCE((SELECT SUM(amount) FROM payments WHERE plan_id=p.id),0) AS paid
+       co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
      ORDER BY p.created_at DESC, p.id DESC`); // newest first
-  return plans.map((p) => {
-    const total = Number(p.total_fee);
-    const paid = Number(p.paid);
-    return { ...p, total_fee: total, reg_fee: Number(p.reg_fee), paid, remaining: Math.max(0, total - paid) };
-  });
+  return enrichPlans(plans);
 }
-async function upsertPlan(userId, courseId, f) {
-  await q(`INSERT INTO payment_plans (user_id,course_id,total_fee,reg_fee,due_date,created_at) VALUES (?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), due_date=VALUES(due_date)`,
-    [userId, courseId, f.totalFee, f.regFee, f.dueDate, Date.now()]);
+// Replace a plan's whole schedule. items: [{label, amount, dueDate}] in order
+// (the first is the registration fee). Creates the plan row if it is new.
+async function setPlanSchedule(userId, courseId, items) {
+  await q(`INSERT INTO payment_plans (user_id,course_id,created_at) VALUES (?,?,?)
+     ON DUPLICATE KEY UPDATE course_id=VALUES(course_id)`, [userId, courseId, Date.now()]);
+  const [[plan]] = await q("SELECT id FROM payment_plans WHERE user_id=? AND course_id=?", [userId, courseId]);
+  await q("DELETE FROM payment_installments WHERE plan_id=?", [plan.id]);
+  let seq = 1;
+  for (const it of items) {
+    await q("INSERT INTO payment_installments (plan_id,seq,label,amount,due_date) VALUES (?,?,?,?,?)",
+      [plan.id, seq, String(it.label || `Installment ${seq}`).slice(0, 64), Math.max(0, Number(it.amount) || 0), String(it.dueDate || "").slice(0, 20)]);
+    seq++;
+  }
+  return plan.id;
 }
 async function planById(planId) {
   const [[p]] = await q("SELECT * FROM payment_plans WHERE id=?", [planId]);
@@ -380,6 +446,7 @@ async function deletePlan(userId, courseId) {
   const [[p]] = await q("SELECT id FROM payment_plans WHERE user_id=? AND course_id=?", [userId, courseId]);
   if (!p) return;
   await q("DELETE FROM payments WHERE plan_id=?", [p.id]);
+  await q("DELETE FROM payment_installments WHERE plan_id=?", [p.id]);
   await q("DELETE FROM payment_plans WHERE id=?", [p.id]);
 }
 async function addPayment(planId, amount, note, paidAt) {
@@ -390,23 +457,18 @@ async function paymentOwnerUser(paymentId) {
   return r ? r.user_id : null;
 }
 async function deletePayment(paymentId) { await q("DELETE FROM payments WHERE id=?", [paymentId]); }
-// Active, still-enrolled students whose balance is past its due date. This
-// feeds the admin "needs locking" notice; we never lock automatically.
+// Active, still-enrolled students with at least one missed installment.
+// Feeds the admin Payments badge and the overdue reminder emails.
 async function overduePayments() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const [rows] = await q(`SELECT p.id AS plan_id, p.user_id, p.course_id, p.total_fee, p.due_date, p.last_reminded,
-       u.name AS studentName, u.email AS studentEmail,
-       co.code AS courseCode, co.title AS courseTitle,
-       COALESCE((SELECT SUM(amount) FROM payments WHERE plan_id=p.id),0) AS paid
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
+       u.name AS studentName, u.email AS studentEmail, u.status AS studentStatus, u.reg_no AS studentRegNo,
+       co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
-     WHERE u.role='student' AND u.status='active' AND p.due_date<>'' AND p.due_date < ?
-       AND EXISTS (SELECT 1 FROM enrolments e WHERE e.user_id=p.user_id AND e.course_id=p.course_id)
-     ORDER BY p.due_date`, [today]);
-  return rows
-    .map((r) => ({ ...r, total_fee: Number(r.total_fee), paid: Number(r.paid), remaining: Math.max(0, Number(r.total_fee) - Number(r.paid)) }))
-    .filter((r) => r.remaining > 0);
+     WHERE u.role='student' AND u.status='active'
+       AND EXISTS (SELECT 1 FROM enrolments e WHERE e.user_id=p.user_id AND e.course_id=p.course_id)`);
+  return (await enrichPlans(plans)).filter((p) => p.missedCount > 0);
 }
 
 async function usersMap() {
@@ -510,6 +572,7 @@ async function deleteCourse(id) {
   await q("DELETE FROM course_instructors WHERE course_id=?", [id]);
   await q("UPDATE exams SET course_id='' WHERE course_id=?", [id]);
   await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
+  await q("DELETE FROM payment_installments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
   await q("DELETE FROM payment_plans WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
@@ -887,7 +950,7 @@ module.exports = {
   addCourseItem, removeCourseItem, reorderItems,
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
-  studentPlans, allPlans, upsertPlan, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
+  studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,

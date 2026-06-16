@@ -108,27 +108,33 @@ async function sendMail(to, subject, html, attachments) {
 }
 
 /* Email overdue-payment reminders, one message per student listing their
-   overdue courses. force=true ignores the ~daily throttle (admin "Send now");
-   the scheduled cron passes force=false so it only reminds once a day. */
+   missed installments. force=true ignores the ~daily throttle (admin "Send
+   now"); the scheduled cron passes force=false so it only reminds once a day. */
 async function sendOverdueReminders({ force }) {
-  const overdue = await dbmod.overduePayments();
+  const overdue = await dbmod.overduePayments(); // enriched plans with missedCount > 0
   const now = Date.now();
   const throttle = 20 * 60 * 60 * 1000;
   const eligible = force ? overdue : overdue.filter((o) => !o.last_reminded || now - Number(o.last_reminded) > throttle);
   const byStudent = {};
   for (const o of eligible) {
     if (!o.studentEmail) continue;
-    (byStudent[o.user_id] ||= { email: o.studentEmail, name: o.studentName, items: [], planIds: [] });
-    byStudent[o.user_id].items.push(o);
-    byStudent[o.user_id].planIds.push(o.plan_id);
+    (byStudent[o.user_id] ||= { email: o.studentEmail, name: o.studentName, plans: [], planIds: [] });
+    byStudent[o.user_id].plans.push(o);
+    byStudent[o.user_id].planIds.push(o.id);
   }
   const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
   let sent = 0, failed = 0;
   for (const s of Object.values(byStudent)) {
-    const rows = s.items.map((o) => [`${o.courseCode} - ${o.courseTitle}`, `${rs(o.remaining)} (due ${o.due_date})`]);
+    const rows = [];
+    for (const p of s.plans) {
+      for (const i of p.installments.filter((x) => x.status === "missed")) {
+        const owing = i.amount - i.covered;
+        rows.push([`${p.courseCode} - ${i.label}`, `${rs(owing)} (was due ${i.due_date})`]);
+      }
+    }
     const html = await emailHtml("Payment overdue", "A reminder about your course fees",
       mailer.paragraph(`Hello <strong>${mailer.esc(s.name)}</strong>,`) +
-      mailer.statusBox("These course payments are past their due date. Please settle them to keep your course access active.", "warn") +
+      mailer.statusBox("The installments below are past their due date. Please settle them to keep your course access active.", "warn") +
       mailer.infoTable(rows) +
       mailer.muted("If you have already paid, please ignore this message or contact your administrator."));
     const m = await sendMail(s.email, "Payment reminder", html);
@@ -384,6 +390,7 @@ app.delete("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
     await q("DELETE FROM enrolments WHERE user_id=?", [u.id]);
     await q("DELETE FROM exam_attempts WHERE user_id=?", [u.id]);
     await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE user_id=?)", [u.id]);
+    await q("DELETE FROM payment_installments WHERE plan_id IN (SELECT id FROM payment_plans WHERE user_id=?)", [u.id]);
     await q("DELETE FROM payment_plans WHERE user_id=?", [u.id]);
     await q("DELETE FROM users WHERE id=?", [u.id]);
   }
@@ -443,10 +450,15 @@ app.put("/api/admin/students/:id/plans/:courseId", auth, adminOnly, wrap(async (
   if (!u) return res.status(404).json({ error: "Student not found." });
   const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [id, cid]);
   if (!has) return res.status(400).json({ error: "Enrol the student in this course before setting a payment plan." });
-  const totalFee = Math.max(0, Number(req.body?.totalFee) || 0);
-  const regFee = Math.max(0, Number(req.body?.regFee) || 0);
-  const dueDate = String(req.body?.dueDate || "").slice(0, 20);
-  await dbmod.upsertPlan(id, cid, { totalFee, regFee, dueDate });
+  // items: ordered schedule lines [{label, amount, dueDate}]; first is the
+  // registration fee. Every line needs a due date and a non-negative amount.
+  const raw = Array.isArray(req.body?.items) ? req.body.items : [];
+  const items = raw
+    .map((it) => ({ label: String(it.label || "").slice(0, 64), amount: Math.max(0, Number(it.amount) || 0), dueDate: String(it.dueDate || "").slice(0, 20) }))
+    .filter((it) => it.amount > 0);
+  if (items.some((it) => !it.dueDate)) return res.status(400).json({ error: "Every installment needs a due date." });
+  if (items.length === 0) { await dbmod.deletePlan(id, cid); }
+  else await dbmod.setPlanSchedule(id, cid, items);
   res.json({ plans: await dbmod.studentPlans(id), ...(await adminState()) });
 }));
 
