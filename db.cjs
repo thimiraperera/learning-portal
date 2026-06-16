@@ -135,6 +135,11 @@ const TABLES = [
      plan_id INT NOT NULL, seq INT DEFAULT 0,
      label VARCHAR(64) DEFAULT '', amount DECIMAL(12,2) DEFAULT 0, due_date VARCHAR(20) DEFAULT ''
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS course_payment_plans (
+     course_id VARCHAR(32) PRIMARY KEY,
+     total_fee DECIMAL(12,2) DEFAULT 0, reg_fee DECIMAL(12,2) DEFAULT 0, installments INT DEFAULT 0,
+     start_date VARCHAR(20) DEFAULT '', completion_date VARCHAR(20) DEFAULT ''
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
 async function ensureColumn(table, col, decl) {
@@ -471,6 +476,25 @@ async function overduePayments() {
   return (await enrichPlans(plans)).filter((p) => p.missedCount > 0);
 }
 
+/* ---- course-level installment plan template ---- */
+// A reusable default schedule for a course (registration fee + N installments,
+// spread between a start and a completion date). The admin applies it to all
+// enrolled students, which writes each student's own schedule.
+async function getCoursePlan(courseId) {
+  const [[row]] = await q("SELECT * FROM course_payment_plans WHERE course_id=?", [courseId]);
+  if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
+  return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "" };
+}
+async function setCoursePlan(courseId, f) {
+  const total = Math.max(0, Number(f.total_fee) || 0);
+  const reg = Math.max(0, Number(f.reg_fee) || 0);
+  const inst = Math.max(0, Math.min(36, Math.floor(Number(f.installments) || 0)));
+  await q(`INSERT INTO course_payment_plans (course_id,total_fee,reg_fee,installments,start_date,completion_date) VALUES (?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date)`,
+    [courseId, total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20)]);
+  return getCoursePlan(courseId);
+}
+
 async function usersMap() {
   const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id DESC"); // newest first
   const map = {};
@@ -574,6 +598,7 @@ async function deleteCourse(id) {
   await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
   await q("DELETE FROM payment_installments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
   await q("DELETE FROM payment_plans WHERE course_id=?", [id]);
+  await q("DELETE FROM course_payment_plans WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
@@ -951,6 +976,7 @@ module.exports = {
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
+  getCoursePlan, setCoursePlan,
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -27,6 +27,7 @@ export default function CourseManage() {
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
     { k: "students", label: "Enrolled students", icon: Users, n: enrolledCount },
+    { k: "plan", label: "Payment plan", icon: Wallet },
     { k: "instructor", label: "Instructors", icon: Presentation, n: c.instructors.length },
   ];
 
@@ -61,6 +62,7 @@ export default function CourseManage() {
         {tab === "links" && <ContentSection id={id} groupId={0} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title" />}
         {tab === "materials" && <ContentSection id={id} groupId={0} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title" />}
         {tab === "students" && <StudentsTab id={id} store={store} navigate={navigate} />}
+        {tab === "plan" && <CoursePlanTab id={id} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} c={c} store={store} navigate={navigate} />}
       </div>
     </Layout>
@@ -136,7 +138,7 @@ function StudentsTab({ id, store, navigate }) {
   (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
-  const [enrolment, setEnrolment] = useState("all"); // all | enrolled | not
+  const [enrolment, setEnrolment] = useState("enrolled"); // all | enrolled | not; default shows this course's students
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -153,7 +155,7 @@ function StudentsTab({ id, store, navigate }) {
   const safePage = Math.min(page, pageCount);
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
-  const activeFilters = (status !== "all") + (enrolment !== "all") + (ql ? 1 : 0);
+  const activeFilters = (status !== "all") + (enrolment !== "enrolled") + (ql ? 1 : 0);
 
   return (
     <>
@@ -175,7 +177,7 @@ function StudentsTab({ id, store, navigate }) {
           <option value="invited">Invited</option>
         </select>
         {activeFilters > 0 && (
-          <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setEnrolment("all"); resetPage(); }}><X /> Clear</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setEnrolment("enrolled"); resetPage(); }}><X /> Clear</button>
         )}
       </div>
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{enrolledCount} enrolled in this course · {filtered.length} of {all.length} students shown</div>
@@ -217,6 +219,89 @@ function StudentsTab({ id, store, navigate }) {
         </>
       )}
     </>
+  );
+}
+
+function CoursePlanTab({ id, store }) {
+  const { fetchCoursePlan, saveCoursePlan, applyCoursePlan } = store;
+  const [plan, setPlan] = useState(null);
+  const [preview, setPreview] = useState([]);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCoursePlan(id)
+      .then((d) => { if (alive) { setPlan(d.plan); setPreview(d.preview || []); } })
+      .catch(() => { if (alive) setPlan({ total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  if (!plan) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
+
+  const set = (k) => (e) => setPlan((p) => ({ ...p, [k]: e.target.value }));
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const r = await saveCoursePlan(id, plan);
+    setBusy(false);
+    if (r.ok) { setPlan(r.plan); setPreview(r.preview || []); setMsg({ ok: true, text: "Plan saved. Use Apply to push it to enrolled students." }); }
+    else setMsg({ ok: false, text: r.msg });
+  };
+  const apply = async () => {
+    if (!window.confirm("Apply this schedule to every enrolled student? It replaces their current schedule. Recorded payments are kept and re-applied across the new schedule.")) return;
+    setBusy(true); setMsg(null);
+    const r = await applyCoursePlan(id);
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: `Applied to ${r.applied} enrolled student${r.applied === 1 ? "" : "s"}.` } : { ok: false, text: r.msg });
+  };
+
+  const previewTotal = preview.reduce((n, x) => n + Number(x.amount || 0), 0);
+
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Set a default fee plan for this course, save it, then apply it to all enrolled students. Each student can still be adjusted individually on their page.</div>
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Total fee (Rs.)</label>
+          <input className="form-control" type="number" min="0" value={plan.total_fee} onChange={set("total_fee")} placeholder="45000" /></div>
+        <div className="form-group"><label className="form-label">Registration fee (Rs.)</label>
+          <input className="form-control" type="number" min="0" value={plan.reg_fee} onChange={set("reg_fee")} placeholder="5000" /></div>
+      </div>
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Number of installments</label>
+          <input className="form-control" type="number" min="0" max="36" value={plan.installments} onChange={set("installments")} placeholder="4" /></div>
+        <div className="form-group"><label className="form-label">First payment / start date</label>
+          <input className="form-control" type="date" value={plan.start_date} onChange={set("start_date")} /></div>
+      </div>
+      <div className="form-group" style={{ maxWidth: 320 }}><label className="form-label">Complete all payments by <span className="req">*</span></label>
+        <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+        <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> Save plan</button>
+        <button className="btn btn-outline" disabled={busy} onClick={apply}><Users /> Apply to enrolled students</button>
+      </div>
+
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>SCHEDULE PREVIEW (SAVED)</div>
+      {preview.length === 0 ? (
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enter a fee, installment count and dates, then Save to preview the schedule.</p>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Line</th><th>Amount</th><th>Due</th></tr></thead>
+              <tbody>
+                {preview.map((it, i) => (
+                  <tr key={i}><td>{it.label}</td><td style={{ whiteSpace: "nowrap" }}>{rs(it.amount)}</td><td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(it.dueDate)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 12.5, color: "#9CA3AF", marginTop: 8 }}>Total of lines: {rs(previewTotal)}</div>
+        </>
+      )}
+    </div>
   );
 }
 

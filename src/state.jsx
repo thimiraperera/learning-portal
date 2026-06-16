@@ -441,6 +441,15 @@ export function StoreProvider({ children }) {
 
   /* ---- installment payments ---- */
   const fetchStudentPlans = useCallback((id) => api(`/admin/students/${id}/plans`, { token }).then((d) => d.plans || []), [token]);
+  const fetchCoursePlan = useCallback((courseId) => api(`/admin/courses/${courseId}/plan`, { token }), [token]);
+  const saveCoursePlan = useCallback(async (courseId, fields) => {
+    try { const d = await api(`/admin/courses/${courseId}/plan`, { method: "PUT", token, body: fields }); return { ok: true, ...d }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const applyCoursePlan = useCallback(async (courseId) => {
+    try { const d = await api(`/admin/courses/${courseId}/plan/apply`, { method: "POST", token }); applyAdmin(d); return { ok: true, applied: d.applied }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
   const savePlan = useCallback(async (id, courseId, fields) => {
     try { const d = await api(`/admin/students/${id}/plans/${courseId}`, { method: "PUT", token, body: fields }); applyAdmin(d); return { ok: true, plans: d.plans }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -491,6 +500,7 @@ export function StoreProvider({ children }) {
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
     updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent,
+    fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     setCourseLock, saveReminders, sendRemindersNow,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -143,6 +143,31 @@ async function sendOverdueReminders({ force }) {
   return { students: Object.keys(byStudent).length, sent, failed };
 }
 
+/* Build a schedule (registration fee + N evenly-spaced installments) from a
+   course-level template. Installment N falls on the completion date; earlier
+   ones are spread from the start date. Used to apply a course plan to students. */
+function generateScheduleItems(t) {
+  const total = Math.max(0, Number(t.total_fee) || 0);
+  const reg = Math.max(0, Number(t.reg_fee) || 0);
+  const n = Math.max(0, Math.min(36, Math.floor(Number(t.installments) || 0)));
+  const start = String(t.start_date || ""), end = String(t.completion_date || "");
+  const items = [];
+  if (reg > 0) items.push({ label: "Registration fee", amount: reg, dueDate: start || end });
+  const balanceC = Math.round(Math.max(0, total - reg) * 100);
+  if (n > 0 && balanceC > 0) {
+    const eachC = Math.floor(balanceC / n);
+    const sMs = start ? Date.parse(start + "T00:00:00Z") : NaN; // parse + format in UTC so dates never shift a day
+    const eMs = end ? Date.parse(end + "T00:00:00Z") : NaN;
+    for (let i = 0; i < n; i++) {
+      const amtC = i === n - 1 ? balanceC - eachC * (n - 1) : eachC;
+      let due = end || start;
+      if (!isNaN(sMs) && !isNaN(eMs) && eMs >= sMs) due = new Date(n === 1 ? eMs : sMs + ((eMs - sMs) * (i + 1)) / n).toISOString().slice(0, 10);
+      items.push({ label: `Installment ${i + 1}`, amount: amtC / 100, dueDate: due });
+    }
+  }
+  return items;
+}
+
 async function certPdf(cert) {
   const brand = await dbmod.getBrand();
   return generateCertificate({
@@ -485,6 +510,26 @@ app.delete("/api/admin/payments/:paymentId", auth, adminOnly, wrap(async (req, r
   const userId = await dbmod.paymentOwnerUser(pid);
   await dbmod.deletePayment(pid);
   res.json({ plans: userId ? await dbmod.studentPlans(userId) : [], ...(await adminState()) });
+}));
+
+/* ---- course-level installment plan template ---- */
+app.get("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
+  const tpl = await dbmod.getCoursePlan(String(req.params.id));
+  res.json({ plan: tpl, preview: generateScheduleItems(tpl) });
+}));
+app.put("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
+  const tpl = await dbmod.setCoursePlan(String(req.params.id), req.body || {});
+  res.json({ plan: tpl, preview: generateScheduleItems(tpl) });
+}));
+// Write the generated schedule onto every enrolled student's plan.
+app.post("/api/admin/courses/:id/plan/apply", auth, adminOnly, wrap(async (req, res) => {
+  const cid = String(req.params.id);
+  const items = generateScheduleItems(await dbmod.getCoursePlan(cid));
+  if (!items.length) return res.status(400).json({ error: "Set up a fee and dates before applying." });
+  if (items.some((it) => !it.dueDate)) return res.status(400).json({ error: "The plan needs a start date and a completion date." });
+  const [rows] = await q("SELECT user_id FROM enrolments WHERE course_id=?", [cid]);
+  for (const r of rows) await dbmod.setPlanSchedule(r.user_id, cid, items);
+  res.json({ applied: rows.length, ...(await adminState()) });
 }));
 
 /* ---- admin: enrolment toggle ---- */

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
-  BarChart3, Award, FileQuestion, Wallet, Lock, Unlock,
+  BarChart3, Award, FileQuestion, Wallet, Lock, Unlock, Receipt,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -36,6 +36,7 @@ export default function StudentManage() {
     { k: "profile", label: "Profile", icon: SettingsIcon },
     { k: "courses", label: "Courses", icon: BookOpen, n: s.enrolled.length },
     { k: "payments", label: "Payments", icon: Wallet },
+    { k: "history", label: "Payment history", icon: Receipt },
     { k: "overview", label: "Overview", icon: BarChart3 },
   ];
 
@@ -60,6 +61,7 @@ export default function StudentManage() {
         {tab === "profile" && <ProfileTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
         {tab === "courses" && <CoursesTab id={sid} email={email} s={s} store={store} navigate={navigate} />}
         {tab === "payments" && <PaymentsTab id={sid} s={s} store={store} />}
+        {tab === "history" && <PaymentHistoryTab id={sid} store={store} />}
         {tab === "overview" && <OverviewTab id={sid} s={s} store={store} navigate={navigate} />}
       </div>
     </Layout>
@@ -336,6 +338,61 @@ function PaymentsTab({ id, s, store }) {
         enrolled.map(([cid, c]) => (
           <PlanCard key={cid} id={id} cid={cid} course={c} plan={planByCourse[cid]} store={store} onApply={apply} />
         ))
+      )}
+    </div>
+  );
+}
+
+function PaymentHistoryTab({ id, store }) {
+  const { fetchStudentPlans } = store;
+  const [plans, setPlans] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    let alive = true;
+    fetchStudentPlans(id).then((p) => { if (alive) setPlans(p); }).catch(() => { if (alive) setPlans([]); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  if (plans === null) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
+
+  const log = [];
+  for (const p of plans) for (const pay of p.payments) log.push({ ...pay, courseCode: p.courseCode, courseTitle: p.courseTitle });
+  log.sort((a, b) => Number(b.paid_at) - Number(a.paid_at)); // newest first
+  const totalPaid = log.reduce((n, x) => n + Number(x.amount), 0);
+
+  const pageCount = Math.max(1, Math.ceil(log.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = log.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  return (
+    <div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Every payment recorded for this student across all courses, newest first.</div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{log.length} payment{log.length === 1 ? "" : "s"} · {rs(totalPaid)} total</div>
+      {log.length === 0 ? (
+        <div className="empty-state"><div className="empty-icon"><Receipt /></div><p>No payments recorded yet.</p></div>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Course</th><th>Note</th><th>Amount</th></tr></thead>
+              <tbody>
+                {slice.map((pay) => (
+                  <tr key={pay.id}>
+                    <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(new Date(Number(pay.paid_at)).toISOString().slice(0, 10))}</td>
+                    <td style={{ color: "#6B7280" }}>{pay.courseCode} - {pay.courseTitle}</td>
+                    <td style={{ color: "#6B7280" }}>{pay.note || "-"}</td>
+                    <td style={{ fontWeight: 600 }}>{rs(pay.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+            pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={log.length} />
+        </>
       )}
     </div>
   );
