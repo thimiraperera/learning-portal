@@ -8,6 +8,26 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
 
+const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
+const fmtDate = (d) => {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+};
+const isPastDue = (d) => {
+  if (!d) return false;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const dt = new Date(d + "T00:00:00");
+  return !isNaN(dt) && dt < t;
+};
+/* Payment state badge for a course plan (or none). */
+function payBadge(plan) {
+  if (!plan) return { cls: "badge-muted", label: "No plan" };
+  if (plan.remaining <= 0) return { cls: "badge-accepted", label: "Paid" };
+  if (isPastDue(plan.due_date)) return { cls: "badge-rejected", label: "Overdue" };
+  return { cls: "badge-pending", label: "Partial" };
+}
+
 export default function CourseManage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -130,7 +150,9 @@ function DetailsTab({ id, c, store, navigate }) {
 }
 
 function StudentsTab({ id, store, navigate }) {
-  const { users, toggleEnrol } = store;
+  const { users, toggleEnrol, plans } = store;
+  const planByUser = {};
+  (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
   const [enrolment, setEnrolment] = useState("all"); // all | enrolled | not
@@ -183,6 +205,8 @@ function StudentsTab({ id, store, navigate }) {
         <>
           {slice.map(([email, s]) => {
             const isEnrolled = s.enrolled.includes(id);
+            const plan = planByUser[s.id];
+            const pb = isEnrolled ? payBadge(plan) : null;
             return (
               <div key={email} className="assigned-row">
                 <div className="ar-body">
@@ -190,8 +214,14 @@ function StudentsTab({ id, store, navigate }) {
                     {s.name}
                     {isEnrolled && <span className="badge badge-accepted" style={{ marginLeft: 6 }}>enrolled</span>}
                     <span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")} style={{ marginLeft: 6 }}>{s.status}</span>
+                    {pb && <span className={"badge " + pb.cls} style={{ marginLeft: 6 }}>{pb.label}</span>}
                   </div>
-                  <div className="ar-sub">{s.email}{s.phone ? ` · ${s.phone}` : ""}</div>
+                  <div className="ar-sub">
+                    {s.email}{s.phone ? ` · ${s.phone}` : ""}
+                    {isEnrolled && plan && (plan.remaining > 0
+                      ? ` · ${rs(plan.remaining)} remaining${plan.due_date ? `, due ${fmtDate(plan.due_date)}` : ""}`
+                      : "")}
+                  </div>
                 </div>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
                 {isEnrolled
