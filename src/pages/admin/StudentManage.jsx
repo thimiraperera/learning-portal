@@ -23,6 +23,13 @@ const isPastDue = (d) => {
   const dt = new Date(d + "T00:00:00");
   return !isNaN(dt) && dt < today;
 };
+/* Payment state badge for a course plan (or none). */
+function payBadge(plan) {
+  if (!plan) return { cls: "badge-muted", label: "No plan" };
+  if (plan.remaining <= 0) return { cls: "badge-accepted", label: "Paid" };
+  if (isPastDue(plan.due_date)) return { cls: "badge-rejected", label: "Overdue" };
+  return { cls: "badge-pending", label: "Partial" };
+}
 const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 function fmtDuration(a, b) {
   const ms = Number(b) - Number(a);
@@ -253,11 +260,13 @@ function OvStat({ label, value, icon: Icon, bg, color }) {
 }
 
 function CoursesTab({ id, email, s, store, navigate }) {
-  const { courses, toggleEnrol, setCourseLock } = store;
+  const { courses, toggleEnrol, setCourseLock, plans } = store;
   const [sel, setSel] = useState("");
   const enrolled = s.enrolled.map((cid) => [cid, courses[cid]]).filter(([, c]) => c);
   const available = Object.entries(courses).filter(([cid]) => !s.enrolled.includes(cid));
   const lockedSet = new Set(s.lockedCourses || []);
+  const planByCourse = {};
+  (plans || []).forEach((p) => { if (p.user_id === id) planByCourse[p.course_id] = p; });
 
   const add = async () => { if (sel) { await toggleEnrol(email, sel); setSel(""); } };
 
@@ -268,6 +277,8 @@ function CoursesTab({ id, email, s, store, navigate }) {
         <div style={{ marginBottom: 22 }}>
           {enrolled.map(([cid, c]) => {
             const locked = lockedSet.has(cid);
+            const plan = planByCourse[cid];
+            const pb = payBadge(plan);
             return (
               <div key={cid} className="assigned-row">
                 <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
@@ -276,9 +287,15 @@ function CoursesTab({ id, email, s, store, navigate }) {
                   <span>
                     <span className="ar-title" style={{ display: "block" }}>
                       {c.title}
-                      {locked && <span className="badge badge-rejected" style={{ marginLeft: 8 }}>locked</span>}
+                      <span className={"badge " + pb.cls} style={{ marginLeft: 8 }}>{pb.label}</span>
+                      {locked && <span className="badge badge-rejected" style={{ marginLeft: 6 }}>locked</span>}
                     </span>
-                    <span className="ar-sub">{c.code}</span>
+                    <span className="ar-sub">
+                      {c.code}
+                      {plan && (plan.remaining > 0
+                        ? ` · ${rs(plan.remaining)} remaining${plan.due_date ? `, due ${fmtDate(plan.due_date)}` : ""}`
+                        : " · fully paid")}
+                    </span>
                   </span>
                 </button>
                 <button className={"btn btn-sm " + (locked ? "btn-outline" : "btn-ghost")} title={locked ? "Unlock access" : "Lock access (e.g. unpaid)"}
