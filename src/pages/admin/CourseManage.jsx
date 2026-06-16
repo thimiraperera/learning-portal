@@ -231,9 +231,10 @@ function CoursePlanTab({ id, store }) {
 
   useEffect(() => {
     let alive = true;
+    const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
     fetchCoursePlan(id)
-      .then((d) => { if (alive) { setPlan(d.plan); setPreview(d.preview || []); } })
-      .catch(() => { if (alive) setPlan({ total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" }); });
+      .then((d) => { if (alive) { setPlan(d.plan || blank); setPreview(d.preview || []); } })
+      .catch(() => { if (alive) setPlan(blank); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);

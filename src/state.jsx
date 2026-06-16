@@ -25,6 +25,12 @@ async function api(path, { method = "GET", body, token } = {}) {
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
+  const ct = res.headers.get("content-type") || "";
+  if (res.ok && !ct.includes("application/json")) {
+    // A 200 that is not JSON means the SPA fallback answered an unknown API
+    // route (server older than the site). Surface it instead of hanging.
+    throw new Error("The server is running older code than the site. Restart it (STOP then START) and reload.");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status}). If this persists, restart the server so new changes load.`);
   return data;

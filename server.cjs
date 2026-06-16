@@ -1353,7 +1353,13 @@ app.use((err, _req, res, next) => {
 
 /* ---- static build + SPA fallback ---- */
 app.use(express.static(dist));
-app.get("*", (_req, res) => res.sendFile(path.join(dist, "index.html")));
+app.get("*", (req, res) => {
+  // Unknown API routes must return JSON 404, never the SPA HTML, so the client
+  // gets a clear error instead of silently parsing index.html as data (which
+  // happens when the running server is older than the deployed frontend).
+  if (req.path.startsWith("/api/")) return res.status(404).json({ error: "Unknown API route. The server may be running older code than the site; restart it (STOP then START)." });
+  res.sendFile(path.join(dist, "index.html"));
+});
 
 const port = process.env.PORT || 3000;
 dbmod.init()
