@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass,
+  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass, Wallet,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -31,6 +31,7 @@ export default function Layout({ title, children }) {
     { to: "/admin/requests", label: "Requests", icon: Inbox, count: (requests || []).length },
     { to: "/admin/exams", label: "Exams", icon: FileQuestion },
     { to: "/admin/certificates", label: "Certificates", icon: Award },
+    { to: "/admin/payments", label: "Payments", icon: Wallet },
     { to: "/admin/settings", label: "Settings", icon: Settings },
     { to: "/account", label: "My Account", icon: UserCog },
   ];

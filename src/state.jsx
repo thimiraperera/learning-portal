@@ -41,6 +41,7 @@ export function StoreProvider({ children }) {
   const [exams, setExams] = useState([]);
   const [requests, setRequests] = useState([]);
   const [overdue, setOverdue] = useState([]); // admin: students with past-due balances
+  const [plans, setPlans] = useState([]); // admin: all payment plans (Payments page)
   const [payments, setPayments] = useState([]); // student: own payment plans
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
@@ -58,6 +59,7 @@ export function StoreProvider({ children }) {
     setLocked(data.locked || []);
     setRequests(data.requests || []);
     setOverdue(data.overdue || []);
+    setPlans(data.paymentPlans || []);
     setPayments(data.payments || []);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
@@ -72,6 +74,7 @@ export function StoreProvider({ children }) {
     if (data.exams) setExams(data.exams);
     if (data.requests) setRequests(data.requests);
     if (data.overdue) setOverdue(data.overdue);
+    if (data.paymentPlans) setPlans(data.paymentPlans);
   };
 
   async function fetchBlobDownload(path, filename) {
@@ -456,7 +459,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, payments, brand, smtp, hcaptcha, regnum,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, brand, smtp, hcaptcha, regnum,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,

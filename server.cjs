@@ -151,7 +151,7 @@ function adminOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests(), overdue: await dbmod.overduePayments() };
+  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests(), overdue: await dbmod.overduePayments(), paymentPlans: await dbmod.allPlans() };
 }
 
 /* ---- public ---- */

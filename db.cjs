@@ -332,6 +332,23 @@ async function studentPlans(userId) {
     return { ...pl, total_fee: total, reg_fee: Number(pl.reg_fee), payments: list, paid, remaining: Math.max(0, total - paid) };
   });
 }
+// Every payment plan across all students, with student + course info and the
+// live paid/remaining totals. Feeds the admin Payments page.
+async function allPlans() {
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.total_fee, p.reg_fee, p.due_date, p.created_at,
+       u.name AS studentName, u.email AS studentEmail, u.status AS studentStatus, u.reg_no AS studentRegNo,
+       co.code AS courseCode, co.title AS courseTitle,
+       COALESCE((SELECT SUM(amount) FROM payments WHERE plan_id=p.id),0) AS paid
+     FROM payment_plans p
+     JOIN users u ON u.id=p.user_id
+     JOIN courses co ON co.id=p.course_id
+     ORDER BY u.name, co.title`);
+  return plans.map((p) => {
+    const total = Number(p.total_fee);
+    const paid = Number(p.paid);
+    return { ...p, total_fee: total, reg_fee: Number(p.reg_fee), paid, remaining: Math.max(0, total - paid) };
+  });
+}
 async function upsertPlan(userId, courseId, f) {
   await q(`INSERT INTO payment_plans (user_id,course_id,total_fee,reg_fee,due_date,created_at) VALUES (?,?,?,?,?,?)
      ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), due_date=VALUES(due_date)`,
@@ -829,7 +846,7 @@ module.exports = {
   addCourseItem, removeCourseItem, reorderItems,
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
-  studentPlans, upsertPlan, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
+  studentPlans, allPlans, upsertPlan, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
