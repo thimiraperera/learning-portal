@@ -114,8 +114,14 @@ export default function Settings() {
         </div>
       </div>
 
-      <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
-      <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
+      <div className="settings-grid" style={{ marginTop: 24 }}>
+        <div className="settings-col">
+          <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
+        </div>
+        <div className="settings-col">
+          <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
+        </div>
+      </div>
     </Layout>
   );
 }
