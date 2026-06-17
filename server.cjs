@@ -1134,6 +1134,15 @@ app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
   res.json(await adminState());
 }));
 
+/* Edit a content item's title (and URL for non-file items). */
+app.post("/api/admin/items/update", auth, adminOnly, wrap(async (req, res) => {
+  const { courseId, bucket, itemId, title, url } = req.body || {};
+  if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
+  if (!String(title || "").trim()) return res.status(400).json({ error: "Enter a title." });
+  await dbmod.updateCourseItem(courseId, bucket, Number(itemId), String(title).trim(), url === undefined ? undefined : String(url || ""));
+  res.json(await adminState());
+}));
+
 /* Reassign a content item to a different payment stage (installment). */
 app.post("/api/admin/items/installment", auth, adminOnly, wrap(async (req, res) => {
   const { courseId, bucket, itemId, installmentSeq } = req.body || {};

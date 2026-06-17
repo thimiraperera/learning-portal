@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet, Pencil, Check,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -363,12 +363,22 @@ function InstructorTab({ id, c, store, navigate }) {
 }
 
 function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder, installments }) {
-  const { addItem, removeItem, uploadMaterial, setItemInstallment, reorderItems } = store;
+  const { addItem, removeItem, uploadMaterial, setItemInstallment, reorderItems, updateItem } = store;
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
   const [seq, setSeq] = useState(0); // payment stage for newly added items
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [editId, setEditId] = useState(null);  // item being edited
+  const [et, setEt] = useState("");             // edited title
+  const [eu, setEu] = useState("");             // edited url
+
+  const beginEdit = (it) => { setEditId(it.id); setEt(it.t); setEu(it.u || ""); };
+  const saveEdit = async (it) => {
+    if (!et.trim()) return;
+    const r = await updateItem(id, bucket, it.id, et.trim(), it.filename ? undefined : eu.trim());
+    if (r.ok) setEditId(null);
+  };
   const dragIdRef = useRef(null);              // synchronous source of truth for the drag
   const [dragId, setDragId] = useState(null);  // mirror, only for the .dragging style
   const [overId, setOverId] = useState(null);
@@ -423,17 +433,34 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
               onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
               onDrop={() => onDrop(it.id)}>
               <div className="content-item-head">
-                <span className="drag-handle" draggable
-                  onDragStart={(e) => { startDrag(it.id); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={endDrag}><GripVertical /></span>
-                <span className="ci-icon" style={{ background: tint.bg }}><Icon style={{ width: 18, height: 18, color: tint.color }} /></span>
-                <div className="mr-body">
-                  <div className="mr-title" style={{ marginBottom: 2 }}>{it.t}</div>
-                  {it.filename
-                    ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
-                    : it.u && <div className="ci-url">{it.u}</div>}
-                </div>
-                <button className="icon-btn-plain" title="Remove" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+                {editId === it.id ? (
+                  <>
+                    <span className="ci-icon" style={{ background: tint.bg }}><Icon style={{ width: 18, height: 18, color: tint.color }} /></span>
+                    <div className="mr-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <input className="form-control" value={et} placeholder="Title"
+                        onChange={(e) => setEt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it); if (e.key === "Escape") setEditId(null); }} autoFocus />
+                      {!it.filename && <input className="form-control" value={eu} placeholder="URL (https://...)"
+                        onChange={(e) => setEu(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it); if (e.key === "Escape") setEditId(null); }} />}
+                    </div>
+                    <button className="icon-btn-soft" title="Save" onClick={() => saveEdit(it)}><Check style={{ width: 16, height: 16 }} /></button>
+                    <button className="icon-btn-plain" title="Cancel" onClick={() => setEditId(null)}><X style={{ width: 16, height: 16 }} /></button>
+                  </>
+                ) : (
+                  <>
+                    <span className="drag-handle" draggable
+                      onDragStart={(e) => { startDrag(it.id); e.dataTransfer.effectAllowed = "move"; }}
+                      onDragEnd={endDrag}><GripVertical /></span>
+                    <span className="ci-icon" style={{ background: tint.bg }}><Icon style={{ width: 18, height: 18, color: tint.color }} /></span>
+                    <div className="mr-body">
+                      <div className="mr-title" style={{ marginBottom: 2 }}>{it.t}</div>
+                      {it.filename
+                        ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
+                        : it.u && <div className="ci-url">{it.u}</div>}
+                    </div>
+                    <button className="icon-btn-soft" title="Edit" onClick={() => beginEdit(it)}><Pencil style={{ width: 15, height: 15 }} /></button>
+                    <button className="icon-btn-plain" title="Remove" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+                  </>
+                )}
               </div>
               <div className="content-item-foot">
                 <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />

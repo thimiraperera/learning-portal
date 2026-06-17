@@ -243,6 +243,10 @@ export function StoreProvider({ children }) {
     try { applyAdmin(await api("/admin/items/installment", { method: "POST", token, body: { courseId: cid, bucket, itemId, installmentSeq } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const updateItem = useCallback(async (cid, bucket, itemId, title, url) => {
+    try { applyAdmin(await api("/admin/items/update", { method: "POST", token, body: { courseId: cid, bucket, itemId, title, url } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   /* ---- course enrolment requests ---- */
   const requestCourse = useCallback(async (cid) => {
@@ -503,7 +507,7 @@ export function StoreProvider({ children }) {
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
-    addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems, setItemInstallment,
+    addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems, setItemInstallment, updateItem,
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,

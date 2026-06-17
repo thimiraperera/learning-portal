@@ -636,6 +636,15 @@ async function removeCourseItem(courseId, bucket, itemId) {
   const t = ITEM_TABLE[bucket];
   if (t) await q(`DELETE FROM ${t} WHERE id=? AND course_id=?`, [itemId, courseId]);
 }
+// Edit an item's title (and URL for non-file items). Pass url=undefined to
+// leave the URL untouched (used for uploaded-file materials).
+async function updateCourseItem(courseId, bucket, itemId, title, url) {
+  const t = ITEM_TABLE[bucket];
+  if (!t) return;
+  const ttl = String(title || "").slice(0, 255);
+  if (url === undefined) await q(`UPDATE ${t} SET title=? WHERE id=? AND course_id=?`, [ttl, itemId, courseId]);
+  else await q(`UPDATE ${t} SET title=?, url=? WHERE id=? AND course_id=?`, [ttl, String(url || "").trim(), itemId, courseId]);
+}
 async function reorderItems(courseId, bucket, orderedIds) {
   const t = ITEM_TABLE[bucket];
   if (!t || !Array.isArray(orderedIds)) return;
@@ -1072,7 +1081,7 @@ module.exports = {
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,
-  addCourseItem, removeCourseItem, reorderItems, setItemInstallment,
+  addCourseItem, removeCourseItem, updateCourseItem, reorderItems, setItemInstallment,
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches, paidInstallmentSeqs,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
