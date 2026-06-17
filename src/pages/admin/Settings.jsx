@@ -9,7 +9,7 @@ const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
   const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
-    currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
+    currentUser, fetchAdmins, addAdmin, deleteAdmin, purgeData } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
@@ -125,7 +125,48 @@ export default function Settings() {
           <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
         </div>
       </div>
+
+      <DangerZoneCard purgeData={purgeData} />
     </Layout>
+  );
+}
+
+function DangerZoneCard({ purgeData }) {
+  const PHRASE = "DELETE ALL DATA";
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const run = async () => {
+    if (text !== PHRASE) return;
+    if (!window.confirm("This permanently deletes ALL students, instructors, courses, content, payments, exams, certificates and uploaded files. Administrator accounts and settings are kept. This cannot be undone. Continue?")) return;
+    setBusy(true); setMsg(null);
+    const r = await purgeData();
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: r.msg || "Could not delete data." }); return; }
+    setText("");
+    setMsg({ ok: true, text: "All data deleted. Administrator accounts and settings were kept." });
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24, border: "1px solid #FCA5A5" }}>
+      <div className="card-title" style={{ color: "#B91C1C" }}>
+        <AlertTriangle style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "#DC2626" }} />Danger zone
+      </div>
+      <div className="card-subtitle">Permanently delete all portal data (students, instructors, courses, content, payments, exams, certificates and uploaded files). Administrator accounts and settings are kept. This cannot be undone, so back up first.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="form-group" style={{ maxWidth: 360 }}>
+        <label className="form-label">Type <strong>{PHRASE}</strong> to confirm</label>
+        <input className="form-control" value={text} placeholder={PHRASE} onChange={(e) => setText(e.target.value)} />
+      </div>
+
+      <button className="btn" style={{ background: "#DC2626", color: "#fff", border: "none", opacity: text === PHRASE && !busy ? 1 : 0.55, cursor: text === PHRASE && !busy ? "pointer" : "not-allowed" }}
+        disabled={text !== PHRASE || busy} onClick={run}>
+        <Trash2 /> {busy ? "Deleting..." : "Delete all data"}
+      </button>
+    </div>
   );
 }
 

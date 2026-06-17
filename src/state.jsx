@@ -473,6 +473,10 @@ export function StoreProvider({ children }) {
     try { const d = await api(`/admin/payments/${paymentId}`, { method: "DELETE", token }); applyAdmin(d); return { ok: true, plans: d.plans }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const purgeData = useCallback(async () => {
+    try { applyAdmin(await api("/admin/purge", { method: "POST", token })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
   const lockStudent = useCallback(async (id, locked = true) => {
     try { applyAdmin(await api(`/admin/students/${id}/lock`, { method: "POST", token, body: { locked } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -506,7 +510,7 @@ export function StoreProvider({ children }) {
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
     updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
-    fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent,
+    fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     setCourseLock, saveReminders, sendRemindersNow,
   };

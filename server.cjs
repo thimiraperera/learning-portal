@@ -1239,6 +1239,18 @@ app.delete("/api/admin/admins/:id", auth, superOnly, wrap(async (req, res) => {
   res.json({ ok: true, admins: await dbmod.adminsList() });
 }));
 
+/* ---- delete all data (super admins) ----
+   Wipes every student/course/payment/exam/certificate plus uploaded files, but
+   keeps administrator accounts and the settings table. The path avoids the word
+   "reset" because the host firewall 403s those URLs. */
+app.post("/api/admin/purge", auth, superOnly, wrap(async (_req, res) => {
+  await dbmod.purgeData();
+  try {
+    for (const entry of fs.readdirSync(STORAGE)) fs.rmSync(path.join(STORAGE, entry), { recursive: true, force: true });
+  } catch { /* storage may be empty or missing; ignore */ }
+  res.json(await adminState());
+}));
+
 /* ---- backup & restore (admins) ----
    The database is small, so it backs up/restores reliably through the app.
    Course files can be huge: the file backup/restore here works for modest

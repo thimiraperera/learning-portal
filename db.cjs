@@ -721,6 +721,30 @@ async function dumpDatabase() {
   out += "SET FOREIGN_KEY_CHECKS=1;\n";
   return out;
 }
+// Delete every piece of portal data while keeping administrator accounts
+// (super + local) and the settings table (branding/SMTP/captcha/reminders/
+// reg-number format). Used by the admin "Delete all data" action. Runs on one
+// connection with FK checks off so the order of truncations does not matter.
+async function purgeData() {
+  const tables = [
+    "exam_attempts", "exam_questions", "exams",
+    "certificates", "enrolments", "course_instructors",
+    "recordings", "links", "materials", "content_groups",
+    "courses", "instructors", "course_requests",
+    "payments", "payment_installments", "payment_plans", "course_payment_plans",
+  ];
+  const conn = await pool.getConnection();
+  try {
+    await conn.query("SET FOREIGN_KEY_CHECKS=0");
+    for (const t of tables) await conn.query(`TRUNCATE TABLE \`${t}\``);
+    // Drop sessions of everyone except admins (so the admin doing this stays logged in).
+    await conn.query("DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users WHERE role='admin')");
+    await conn.query("DELETE FROM users WHERE role<>'admin'");
+    await conn.query("SET FOREIGN_KEY_CHECKS=1");
+  } finally {
+    conn.release();
+  }
+}
 async function runScript(sql) {
   const conn = await mysql.createConnection({
     host: process.env.DB_HOST || "localhost",
@@ -1031,7 +1055,7 @@ module.exports = {
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
-  dumpDatabase, runScript,
+  dumpDatabase, runScript, purgeData,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
