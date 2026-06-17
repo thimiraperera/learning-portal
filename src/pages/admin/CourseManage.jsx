@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
@@ -433,19 +433,45 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
 }
 
 /* Full-width slider that snaps to each payment stage (registration fee +
-   installments). The handle "magnets" to a stage; the caption and the
-   highlighted tick show where the item becomes available (and onward). */
+   installments). Custom-built (not a native range) so the handle lands exactly
+   on each tick and glides smoothly to the nearest stage when released. */
 function StageSlider({ stages, value, onChange }) {
+  const trackRef = useRef(null);
+  const [dragPct, setDragPct] = useState(null); // 0..100 while dragging, else null
   let idx = stages.findIndex((s) => s.seq === (Number(value) || 0));
   if (idx < 0) idx = 0;
-  const cur = stages[idx];
+  const N = stages.length;
+  const stopPct = (i) => (N <= 1 ? 0 : (i / (N - 1)) * 100);
+  const nearest = (pct) => Math.round((pct / 100) * (N - 1));
+  const dragging = dragPct != null;
+  const shownIdx = dragging ? nearest(dragPct) : idx;          // for caption/ticks/fill
+  const thumbPct = dragging ? dragPct : stopPct(idx);          // continuous while dragging
+
+  const pctFromX = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
+  };
+  const down = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); setDragPct(pctFromX(e.clientX)); };
+  const move = (e) => { if (dragging) setDragPct(pctFromX(e.clientX)); };
+  const up = (e) => { if (!dragging) return; const ni = nearest(pctFromX(e.clientX)); setDragPct(null); if (ni !== idx) onChange(stages[ni].seq); };
+  const jump = (i) => { if (i !== idx) onChange(stages[i].seq); };
+
   return (
     <div className="stage-slider">
-      <div className="stage-caption">{installmentFromLabel(cur.seq)}</div>
-      <input type="range" className="stage-range" min={0} max={Math.max(1, stages.length - 1)} step={1} value={idx}
-        onChange={(e) => onChange(stages[Number(e.target.value)].seq)} />
-      <div className="stage-ticks">
-        {stages.map((s, i) => <span key={s.seq} className={"stage-tick" + (i === idx ? " on" : "")}>{installmentShort(s.seq)}</span>)}
+      <div className="stage-caption">{installmentFromLabel(stages[shownIdx].seq)}</div>
+      <div className="stage-inset">
+        <div ref={trackRef} className={"stage-track" + (dragging ? " dragging" : "")}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+          <div className="stage-fill" style={{ width: thumbPct + "%" }} />
+          {stages.map((s, i) => <span key={s.seq} className={"stage-stop" + (i <= shownIdx ? " filled" : "")} style={{ left: stopPct(i) + "%" }} />)}
+          <div className="stage-thumb" style={{ left: thumbPct + "%" }} />
+        </div>
+        <div className="stage-ticks">
+          {stages.map((s, i) => (
+            <button key={s.seq} type="button" className={"stage-tick" + (i === shownIdx ? " on" : "")}
+              style={{ left: stopPct(i) + "%" }} onClick={() => jump(i)}>{installmentShort(s.seq)}</button>
+          ))}
+        </div>
       </div>
     </div>
   );

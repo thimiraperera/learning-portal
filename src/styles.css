@@ -466,14 +466,24 @@ select.form-control { cursor: pointer; }
 .seq-chip:hover { border-color: var(--primary); color: var(--primary); }
 .seq-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
-/* full-width stage slider (place a content item on the installment plan) */
+/* full-width stage slider (place a content item on the installment plan).
+   Custom-built so the handle lands exactly on each tick and glides on release. */
 .stage-slider { margin-top: 10px; }
-.stage-caption { font-size: 12.5px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
-.stage-range { width: 100%; margin: 0; accent-color: var(--primary); cursor: pointer; height: 22px; }
-.stage-ticks { display: flex; justify-content: space-between; margin-top: 2px; gap: 4px; }
-.stage-tick { font-size: 11px; font-weight: 600; color: #9CA3AF; flex: 1 1 0; text-align: center; }
-.stage-tick:first-child { text-align: left; }
-.stage-tick:last-child { text-align: right; }
+.stage-caption { font-size: 12.5px; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
+.stage-inset { padding: 0 11px; }            /* room for the thumb radius at both ends */
+.stage-track { position: relative; height: 22px; cursor: pointer; touch-action: none; }
+.stage-track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 6px; border-radius: 999px; background: var(--border); }
+.stage-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 6px; border-radius: 999px; background: var(--primary); }
+.stage-stop { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--border); transform: translate(-50%, -50%); pointer-events: none; }
+.stage-stop.filled { background: var(--primary); }
+.stage-thumb { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 3px solid var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,0.25); transform: translate(-50%, -50%); pointer-events: none; }
+/* smooth glide to the snapped stop when released; instant while dragging */
+.stage-fill, .stage-thumb { transition: left .18s cubic-bezier(.2,.8,.3,1), width .18s cubic-bezier(.2,.8,.3,1); }
+.stage-track.dragging .stage-fill, .stage-track.dragging .stage-thumb { transition: none; }
+.stage-ticks { position: relative; height: 16px; margin-top: 7px; }
+.stage-tick { position: absolute; transform: translateX(-50%); white-space: nowrap; background: none; border: none; padding: 0; font-family: inherit; font-size: 11px; font-weight: 600; color: #9CA3AF; cursor: pointer; }
+.stage-tick:first-child { transform: translateX(0); }
+.stage-tick:last-child { transform: translateX(-100%); }
 .stage-tick.on { color: var(--primary); }
 
 /* assigned-rows (instructors on a course, etc.) */
@@ -663,6 +673,11 @@ select.form-control { cursor: pointer; }
 .settings-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .settings-col > .card { margin-top: 0 !important; }
 @media (max-width: 900px) { .settings-grid { grid-template-columns: 1fr; } }
+
+/* Settings cards as a balanced two-column masonry (cards pack tightly, no tall gaps). */
+.settings-masonry { column-count: 2; column-gap: 24px; }
+.settings-masonry > .card { break-inside: avoid; -webkit-column-break-inside: avoid; width: 100%; margin-top: 0 !important; margin-bottom: 24px; }
+@media (max-width: 900px) { .settings-masonry { column-count: 1; } }
 
 /* sidebar count badge (e.g. pending requests) */
 .nav-count { margin-left: auto; background: #DC2626; color: #fff; font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 1px 8px; line-height: 1.6; }

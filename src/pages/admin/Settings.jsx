@@ -47,8 +47,7 @@ export default function Settings() {
         </div>
       )}
 
-      <div className="settings-grid">
-        <div className="settings-col">
+      <div className="settings-masonry">
         {/* Branding form */}
         <div className="card">
           <div className="card-title">Branding</div>
@@ -85,11 +84,6 @@ export default function Settings() {
           <button className="btn btn-primary" onClick={save}><Save /> Save Settings</button>
         </div>
 
-        <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
-        <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
-        </div>
-
-        <div className="settings-col">
         {/* Live preview */}
         <div className="card">
           <div className="card-title">Sidebar preview</div>
@@ -110,20 +104,14 @@ export default function Settings() {
           </div>
         </div>
 
+        <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
         <CaptchaCard captcha={captcha} saveCaptcha={saveCaptcha} />
+        <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
         <LoginPageCard brand={brand} setBrand={setBrand} />
         <TwoFactor />
-        </div>
-      </div>
-
-      <div className="settings-grid" style={{ marginTop: 24 }}>
-        <div className="settings-col">
-          <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
-        </div>
-        <div className="settings-col">
-          <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
-        </div>
+        <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
+        <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
       </div>
 
       <DangerZoneCard purgeData={purgeData} />
