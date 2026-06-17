@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass, Wallet,
+  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass, Wallet, Menu,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -17,6 +17,10 @@ function initials(name) {
 export default function Layout({ title, children }) {
   const { currentUser, courses, brand, logout, requests, overdue } = useStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes (any nav link tap).
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   const role = currentUser?.role;
   const isAdmin = role === "admin";
   const isInstructor = role === "instructor";
@@ -39,7 +43,8 @@ export default function Layout({ title, children }) {
 
   return (
     <>
-      <aside className="sidebar">
+      <div className={"sidebar-overlay" + (mobileOpen ? " show" : "")} onClick={() => setMobileOpen(false)} />
+      <aside className={"sidebar" + (mobileOpen ? " open" : "")}>
         <div className="sidebar-brand">
           {brand.logo
             ? <img src={brand.logo} alt={brand.name || "Logo"} className="brand-logo-img" />
@@ -106,7 +111,12 @@ export default function Layout({ title, children }) {
 
       <div className="main">
         <div className="topbar">
-          <div className="topbar-title">{title}</div>
+          <div className="topbar-left">
+            <button className="topbar-menu" type="button" aria-label="Open menu" onClick={() => setMobileOpen(true)}>
+              <Menu />
+            </button>
+            <div className="topbar-title">{title}</div>
+          </div>
           <div className="topbar-date">{today}</div>
         </div>
         <div className="page-content">{children}</div>
