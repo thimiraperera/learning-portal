@@ -181,12 +181,14 @@ a { color: inherit; }
 
 /* Buttons (pill) */
 .btn {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 9px 20px; border-radius: var(--radius-btn);
   font-family: 'Figtree', sans-serif; font-size: 13.5px; font-weight: 600;
   border: none; cursor: pointer; text-decoration: none;
-  transition: all 0.18s; white-space: nowrap;
+  transition: all 0.18s; white-space: nowrap; box-sizing: border-box;
 }
+/* All standard buttons share one height (border-box keeps outline/ghost equal to primary). */
+.btn:not(.btn-sm) { height: 42px; }
 .btn svg { width: 15px; height: 15px; stroke-width: 2.2; }
 .btn-primary { background: var(--primary); color: white; }
 .btn-primary:hover { background: var(--primary-deep); }
@@ -557,12 +559,12 @@ textarea.form-control { min-height: 82px; resize: vertical; }
      !important overrides the inline flex/width set on individual controls. */
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar > * { width: 100% !important; max-width: 100% !important; flex: 0 0 auto !important; }
-  .toolbar .btn, .toolbar .form-control, .toolbar .search-select, .toolbar .ss-trigger, .toolbar .phone-input { width: 100% !important; }
+  .toolbar .form-control, .toolbar .search-select, .toolbar .ss-trigger, .toolbar .phone-input { width: 100% !important; }
+  /* Buttons keep their natural width and sit left-aligned (not stretched). */
+  .toolbar .btn { width: auto !important; align-self: flex-start; }
   /* Two-column form rows stack to one column (also stops the phone field from overflowing). */
   .field-row { grid-template-columns: 1fr; }
   .phone-input { width: 100%; }
-  /* Add / Save action buttons that sit directly in a card go full width. */
-  .card > .btn { width: 100%; justify-content: center; }
 }
 @media (max-width: 540px) {
   .topbar-date { display: none; }
