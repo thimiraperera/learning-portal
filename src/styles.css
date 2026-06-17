@@ -306,9 +306,11 @@ select.form-control { cursor: pointer; }
 .back-link svg { width: 15px; height: 15px; }
 
 /* tabs */
-.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; white-space: nowrap;
   background: none; border: none; cursor: pointer; font-family: inherit;
   font-size: 13.5px; font-weight: 600; color: #9CA3AF;
   padding: 11px 6px 13px; border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -506,6 +508,11 @@ select.form-control { cursor: pointer; }
   .topbar { padding: 0 16px; }
   .page-content { padding: 18px 16px; }
   .page-hero h1 { font-size: 23px; }
+  /* Action rows (enrolled courses, instructors, etc.): let the title take the
+     full first line and the Lock/Remove/chevron buttons wrap onto the next,
+     instead of crushing and overlapping the title on narrow screens. */
+  .assigned-row { flex-wrap: wrap; }
+  .assigned-row .ar-body { flex: 1 1 100%; }
 }
 @media (max-width: 540px) {
   .topbar-date { display: none; }
