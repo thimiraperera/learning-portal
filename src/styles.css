@@ -424,6 +424,8 @@ select.form-control { cursor: pointer; }
 .invite-link { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .invite-link code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: var(--mono, monospace); font-size: 12px; color: var(--primary); }
 .pagination { display: flex; align-items: center; gap: 6px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+.page-nums { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.page-ellipsis { min-width: 18px; text-align: center; color: #9CA3AF; font-weight: 700; user-select: none; }
 .page-btn {
   display: inline-flex; align-items: center; gap: 4px;
   min-width: 34px; height: 34px; padding: 0 10px;
@@ -565,6 +567,14 @@ textarea.form-control { min-height: 82px; resize: vertical; }
   /* Two-column form rows stack to one column (also stops the phone field from overflowing). */
   .field-row { grid-template-columns: 1fr; }
   .phone-input { width: 100%; }
+  .avatar-edit { flex-wrap: wrap; }
+  /* Pagination: numbers on one line up top, Prev/Next half-width below. */
+  .pagination-bar { flex-direction: column; align-items: stretch; gap: 12px; }
+  .pagination-bar .pagination { margin-left: 0; }
+  .pagination { flex-wrap: wrap; gap: 8px; }
+  .page-nums { order: 1; width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .page-prev { order: 2; flex: 1 1 0; }
+  .page-next { order: 3; flex: 1 1 0; }
 }
 @media (max-width: 540px) {
   .topbar-date { display: none; }
