@@ -867,7 +867,7 @@ async function purgeData() {
     "exam_attempts", "exam_questions", "exams",
     "certificates", "enrolments", "course_instructors",
     "recordings", "links", "materials", "content_groups",
-    "courses", "instructors", "course_requests",
+    "courses", "batches", "instructors", "course_requests",
     "payments", "payment_installments", "payment_plans", "course_payment_plans",
   ];
   const conn = await pool.getConnection();
