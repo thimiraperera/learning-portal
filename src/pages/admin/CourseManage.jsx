@@ -7,7 +7,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, installmentBuckets, installmentFromLabel, installmentShort } from "../../lib/payments.js";
+import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
 export default function CourseManage() {
   const { id } = useParams();
@@ -407,7 +407,7 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
   return (
     <div className="content-section" style={{ marginBottom: 14 }}>
       <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
-      <p className="content-empty" style={{ marginBottom: 12 }}>Slide each item along the payment plan to set when it unlocks. It stays available from that stage onward.</p>
+      <p className="content-empty" style={{ marginBottom: 12 }}>Choose the payment stage each item unlocks at. It stays available from that stage onward.</p>
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
           {items.map((it) => (
@@ -428,7 +428,7 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
                 </div>
                 <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
               </div>
-              <StageSlider stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
+              <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
             </div>
           ))}
         </div>
@@ -448,86 +448,25 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
         )}
       </div>
       <div style={{ marginTop: 12 }}>
-        <StageSlider stages={buckets} value={seq} onChange={setSeq} />
+        <StageSelect stages={buckets} value={seq} onChange={setSeq} />
       </div>
     </div>
   );
 }
 
-// Evenly spaced indices including both endpoints (used to thin slider labels
-// when they will not all fit: always first + last, plus middles that fit).
-function pickEvenIndices(n, k) {
-  if (k >= n) return Array.from({ length: n }, (_, i) => i);
-  if (k <= 2) return [0, n - 1];
-  const out = new Set([0, n - 1]);
-  for (let i = 0; i < k; i++) out.add(Math.round((i * (n - 1)) / (k - 1)));
-  return [...out].sort((a, b) => a - b);
-}
-
-/* Full-width slider that snaps to each payment stage (registration fee +
-   installments). Custom-built (not a native range) so the handle lands exactly
-   on each tick and glides smoothly to the nearest stage when released. */
-function StageSlider({ stages, value, onChange }) {
-  const trackRef = useRef(null);
-  const insetRef = useRef(null);
-  const [capacity, setCapacity] = useState(stages.length);
-  const [dragPct, setDragPct] = useState(null); // 0..100 while dragging, else null
-  // Optimistic local value: keep the thumb where the admin dropped it instead of
-  // snapping back to the old prop while the server round-trip is in flight.
+/* Dropdown to set the payment stage a content item unlocks at. Uses an
+   optimistic local value so the selection does not flicker back to the old
+   value while the save round-trips. */
+function StageSelect({ stages, value, onChange }) {
   const [localSeq, setLocalSeq] = useState(Number(value) || 0);
   useEffect(() => { setLocalSeq(Number(value) || 0); }, [value]);
-  let idx = stages.findIndex((s) => s.seq === localSeq);
-  if (idx < 0) idx = 0;
-  const N = stages.length;
-  const stopPct = (i) => (N <= 1 ? 0 : (i / (N - 1)) * 100);
-  const nearest = (pct) => Math.round((pct / 100) * (N - 1));
-  const dragging = dragPct != null;
-  const shownIdx = dragging ? nearest(dragPct) : idx;          // for caption/ticks/fill
-  const thumbPct = dragging ? dragPct : stopPct(idx);          // continuous while dragging
-
-  // Show every stage label only when they fit; otherwise thin to first, last
-  // (and as many evenly-spaced middles as there is room for).
-  useEffect(() => {
-    const el = insetRef.current;
-    if (!el) return;
-    const measure = () => setCapacity(Math.max(2, Math.floor(el.clientWidth / 56)));
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    if (ro) ro.observe(el);
-    return () => { if (ro) ro.disconnect(); };
-  }, []);
-  const labeled = new Set(N <= capacity ? stages.map((_, i) => i) : pickEvenIndices(N, capacity));
-
-  const pctFromX = (clientX) => {
-    const r = trackRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
-  };
-  // Snap to the nearest stop in real time (no continuous float) so the thumb
-  // can never sit between stages or jitter mid-drag.
-  const snapPct = (clientX) => stopPct(nearest(pctFromX(clientX)));
-  const down = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); setDragPct(snapPct(e.clientX)); };
-  const move = (e) => { if (dragging) setDragPct(snapPct(e.clientX)); };
-  const commit = (i) => { const seq = stages[i].seq; const changed = seq !== localSeq; setLocalSeq(seq); if (changed) onChange(seq); };
-  const up = (e) => { if (!dragging) return; const ni = nearest(pctFromX(e.clientX)); setDragPct(null); commit(ni); };
-  const jump = (i) => commit(i);
-
   return (
-    <div className="stage-slider">
-      <div className="stage-caption">{installmentFromLabel(stages[shownIdx].seq)}</div>
-      <div className="stage-inset" ref={insetRef}>
-        <div ref={trackRef} className={"stage-track" + (dragging ? " dragging" : "")}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-          <div className="stage-fill" style={{ width: thumbPct + "%" }} />
-          {stages.map((s, i) => <span key={s.seq} className={"stage-stop" + (i <= shownIdx ? " filled" : "")} style={{ left: stopPct(i) + "%" }} />)}
-          <div className="stage-thumb" style={{ left: thumbPct + "%" }} />
-        </div>
-        <div className="stage-ticks">
-          {stages.map((s, i) => labeled.has(i) ? (
-            <button key={s.seq} type="button" className={"stage-tick" + (i === shownIdx ? " on" : "")}
-              style={{ left: stopPct(i) + "%" }} onClick={() => jump(i)}>{installmentShort(s.seq)}</button>
-          ) : null)}
-        </div>
-      </div>
+    <div className="stage-select">
+      <span className="stage-select-label">Unlocks at</span>
+      <select className="form-control" value={localSeq}
+        onChange={(e) => { const s = Number(e.target.value); setLocalSeq(s); onChange(s); }}>
+        {stages.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
+      </select>
     </div>
   );
 }
