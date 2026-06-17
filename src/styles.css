@@ -486,9 +486,7 @@ textarea.form-control { min-height: 82px; resize: vertical; }
 .stage-stop { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--border); transform: translate(-50%, -50%); pointer-events: none; }
 .stage-stop.filled { background: var(--primary); }
 .stage-thumb { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 3px solid var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,0.25); transform: translate(-50%, -50%); pointer-events: none; }
-/* smooth glide to the snapped stop when released; instant while dragging */
-.stage-fill, .stage-thumb { transition: left .18s cubic-bezier(.2,.8,.3,1), width .18s cubic-bezier(.2,.8,.3,1); }
-.stage-track.dragging .stage-fill, .stage-track.dragging .stage-thumb { transition: none; }
+/* Thumb/fill move instantly to the snapped stop (no animation) to stay glitch-free. */
 .stage-ticks { position: relative; height: 16px; margin-top: 7px; }
 .stage-tick { position: absolute; transform: translateX(-50%); white-space: nowrap; background: none; border: none; padding: 0; font-family: inherit; font-size: 11px; font-weight: 600; color: #9CA3AF; cursor: pointer; }
 .stage-tick:first-child { transform: translateX(0); }

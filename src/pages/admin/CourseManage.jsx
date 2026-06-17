@@ -369,18 +369,21 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
   const [seq, setSeq] = useState(0); // payment stage for newly added items
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [dragId, setDragId] = useState(null);
+  const dragIdRef = useRef(null);              // synchronous source of truth for the drag
+  const [dragId, setDragId] = useState(null);  // mirror, only for the .dragging style
   const [overId, setOverId] = useState(null);
   const isMaterials = bucket === "materials";
   const buckets = installmentBuckets(installments);
 
   // Drag-and-drop to reorder items (new items are appended at the bottom by the server).
+  const startDrag = (itemId) => { dragIdRef.current = itemId; setDragId(itemId); };
+  const endDrag = () => { dragIdRef.current = null; setDragId(null); setOverId(null); };
   const onDrop = async (targetId) => {
-    setOverId(null);
-    if (dragId == null || dragId === targetId) { setDragId(null); return; }
+    const did = dragIdRef.current;
+    endDrag();
+    if (did == null || did === targetId) return;
     const ids = items.map((it) => it.id);
-    ids.splice(ids.indexOf(targetId), 0, ids.splice(ids.indexOf(dragId), 1)[0]);
-    setDragId(null);
+    ids.splice(ids.indexOf(targetId), 0, ids.splice(ids.indexOf(did), 1)[0]);
     await reorderItems(id, bucket, ids);
   };
 
@@ -410,13 +413,13 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
           {items.map((it) => (
             <div key={it.id}
               className={"content-item" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
-              onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverId(it.id); } }}
+              onDragOver={(e) => { if (dragIdRef.current != null) { e.preventDefault(); setOverId(it.id); } }}
               onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
               onDrop={() => onDrop(it.id)}>
               <div className="content-item-head">
                 <span className="drag-handle" draggable
-                  onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={() => { setDragId(null); setOverId(null); }}><GripVertical /></span>
+                  onDragStart={(e) => { startDrag(it.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={endDrag}><GripVertical /></span>
                 <div className="mr-body">
                   <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
                   {it.filename
@@ -499,8 +502,11 @@ function StageSlider({ stages, value, onChange }) {
     const r = trackRef.current.getBoundingClientRect();
     return Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
   };
-  const down = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); setDragPct(pctFromX(e.clientX)); };
-  const move = (e) => { if (dragging) setDragPct(pctFromX(e.clientX)); };
+  // Snap to the nearest stop in real time (no continuous float) so the thumb
+  // can never sit between stages or jitter mid-drag.
+  const snapPct = (clientX) => stopPct(nearest(pctFromX(clientX)));
+  const down = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); setDragPct(snapPct(e.clientX)); };
+  const move = (e) => { if (dragging) setDragPct(snapPct(e.clientX)); };
   const commit = (i) => { const seq = stages[i].seq; const changed = seq !== localSeq; setLocalSeq(seq); if (changed) onChange(seq); };
   const up = (e) => { if (!dragging) return; const ni = nearest(pctFromX(e.clientX)); setDragPct(null); commit(ni); };
   const jump = (i) => commit(i);
