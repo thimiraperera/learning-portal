@@ -425,7 +425,7 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
           </label>
         )}
       </div>
-      <div style={{ marginTop: 12, maxWidth: 460 }}>
+      <div style={{ marginTop: 12 }}>
         <StageSlider stages={buckets} value={seq} onChange={setSeq} />
       </div>
     </div>
@@ -438,7 +438,11 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
 function StageSlider({ stages, value, onChange }) {
   const trackRef = useRef(null);
   const [dragPct, setDragPct] = useState(null); // 0..100 while dragging, else null
-  let idx = stages.findIndex((s) => s.seq === (Number(value) || 0));
+  // Optimistic local value: keep the thumb where the admin dropped it instead of
+  // snapping back to the old prop while the server round-trip is in flight.
+  const [localSeq, setLocalSeq] = useState(Number(value) || 0);
+  useEffect(() => { setLocalSeq(Number(value) || 0); }, [value]);
+  let idx = stages.findIndex((s) => s.seq === localSeq);
   if (idx < 0) idx = 0;
   const N = stages.length;
   const stopPct = (i) => (N <= 1 ? 0 : (i / (N - 1)) * 100);
@@ -453,8 +457,9 @@ function StageSlider({ stages, value, onChange }) {
   };
   const down = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); setDragPct(pctFromX(e.clientX)); };
   const move = (e) => { if (dragging) setDragPct(pctFromX(e.clientX)); };
-  const up = (e) => { if (!dragging) return; const ni = nearest(pctFromX(e.clientX)); setDragPct(null); if (ni !== idx) onChange(stages[ni].seq); };
-  const jump = (i) => { if (i !== idx) onChange(stages[i].seq); };
+  const commit = (i) => { const seq = stages[i].seq; const changed = seq !== localSeq; setLocalSeq(seq); if (changed) onChange(seq); };
+  const up = (e) => { if (!dragging) return; const ni = nearest(pctFromX(e.clientX)); setDragPct(null); commit(ni); };
+  const jump = (i) => commit(i);
 
   return (
     <div className="stage-slider">
