@@ -363,14 +363,26 @@ function InstructorTab({ id, c, store, navigate }) {
 }
 
 function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder, installments }) {
-  const { addItem, removeItem, uploadMaterial, setItemInstallment } = store;
+  const { addItem, removeItem, uploadMaterial, setItemInstallment, reorderItems } = store;
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
   const [seq, setSeq] = useState(0); // payment stage for newly added items
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
   const isMaterials = bucket === "materials";
   const buckets = installmentBuckets(installments);
+
+  // Drag-and-drop to reorder items (new items are appended at the bottom by the server).
+  const onDrop = async (targetId) => {
+    setOverId(null);
+    if (dragId == null || dragId === targetId) { setDragId(null); return; }
+    const ids = items.map((it) => it.id);
+    ids.splice(ids.indexOf(targetId), 0, ids.splice(ids.indexOf(dragId), 1)[0]);
+    setDragId(null);
+    await reorderItems(id, bucket, ids);
+  };
 
   const add = async () => {
     if (!value.trim()) { setErr("Enter a title."); return; }
@@ -396,8 +408,15 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
           {items.map((it) => (
-            <div key={it.id} className="content-item">
+            <div key={it.id}
+              className={"content-item" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
+              onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverId(it.id); } }}
+              onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
+              onDrop={() => onDrop(it.id)}>
               <div className="content-item-head">
+                <span className="drag-handle" draggable
+                  onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => { setDragId(null); setOverId(null); }}><GripVertical /></span>
                 <div className="mr-body">
                   <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
                   {it.filename
@@ -432,11 +451,23 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
   );
 }
 
+// Evenly spaced indices including both endpoints (used to thin slider labels
+// when they will not all fit: always first + last, plus middles that fit).
+function pickEvenIndices(n, k) {
+  if (k >= n) return Array.from({ length: n }, (_, i) => i);
+  if (k <= 2) return [0, n - 1];
+  const out = new Set([0, n - 1]);
+  for (let i = 0; i < k; i++) out.add(Math.round((i * (n - 1)) / (k - 1)));
+  return [...out].sort((a, b) => a - b);
+}
+
 /* Full-width slider that snaps to each payment stage (registration fee +
    installments). Custom-built (not a native range) so the handle lands exactly
    on each tick and glides smoothly to the nearest stage when released. */
 function StageSlider({ stages, value, onChange }) {
   const trackRef = useRef(null);
+  const insetRef = useRef(null);
+  const [capacity, setCapacity] = useState(stages.length);
   const [dragPct, setDragPct] = useState(null); // 0..100 while dragging, else null
   // Optimistic local value: keep the thumb where the admin dropped it instead of
   // snapping back to the old prop while the server round-trip is in flight.
@@ -451,6 +482,19 @@ function StageSlider({ stages, value, onChange }) {
   const shownIdx = dragging ? nearest(dragPct) : idx;          // for caption/ticks/fill
   const thumbPct = dragging ? dragPct : stopPct(idx);          // continuous while dragging
 
+  // Show every stage label only when they fit; otherwise thin to first, last
+  // (and as many evenly-spaced middles as there is room for).
+  useEffect(() => {
+    const el = insetRef.current;
+    if (!el) return;
+    const measure = () => setCapacity(Math.max(2, Math.floor(el.clientWidth / 56)));
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(el);
+    return () => { if (ro) ro.disconnect(); };
+  }, []);
+  const labeled = new Set(N <= capacity ? stages.map((_, i) => i) : pickEvenIndices(N, capacity));
+
   const pctFromX = (clientX) => {
     const r = trackRef.current.getBoundingClientRect();
     return Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
@@ -464,7 +508,7 @@ function StageSlider({ stages, value, onChange }) {
   return (
     <div className="stage-slider">
       <div className="stage-caption">{installmentFromLabel(stages[shownIdx].seq)}</div>
-      <div className="stage-inset">
+      <div className="stage-inset" ref={insetRef}>
         <div ref={trackRef} className={"stage-track" + (dragging ? " dragging" : "")}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
           <div className="stage-fill" style={{ width: thumbPct + "%" }} />
@@ -472,10 +516,10 @@ function StageSlider({ stages, value, onChange }) {
           <div className="stage-thumb" style={{ left: thumbPct + "%" }} />
         </div>
         <div className="stage-ticks">
-          {stages.map((s, i) => (
+          {stages.map((s, i) => labeled.has(i) ? (
             <button key={s.seq} type="button" className={"stage-tick" + (i === shownIdx ? " on" : "")}
               style={{ left: stopPct(i) + "%" }} onClick={() => jump(i)}>{installmentShort(s.seq)}</button>
-          ))}
+          ) : null)}
         </div>
       </div>
     </div>
