@@ -87,7 +87,7 @@ run `npm run build` before committing UI changes.
 - Payments: per-course installment plans, recorded payments, balance and due dates,
   a payments list with search and paid/unpaid/overdue filters, per-course access
   lock, and overdue reminder emails (manual or daily scheduled)
-- Settings: white-label branding, SMTP, hCaptcha, registration-number format,
+- Settings: white-label branding, SMTP, captcha (hCaptcha or Google reCAPTCHA), registration-number format,
   overdue-reminder schedule, administrator management, and database/file backup and restore
 
 ## Data & auth
@@ -114,7 +114,7 @@ src/
   state.jsx           API-backed store (React context)
   styles.css          design system
   lib/image.js        client-side avatar/logo resize
-  components/         Layout, Pagination, SearchSelect, PhoneInput, HCaptcha, TwoFactor
+  components/         Layout, Pagination, SearchSelect, PhoneInput, Captcha, TwoFactor
   pages/              Login, Register, Setup, Forgot, Reset, Account
   pages/student/      Dashboard, MyCourses, CourseDetail, Browse, ExamTake
   pages/instructor/   Dashboard, CourseView

@@ -7,7 +7,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, sendTestMail, hcaptcha, saveHcaptcha, regnum, saveRegnum, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -85,6 +85,7 @@ export default function Settings() {
         </div>
 
         <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
+        <TwoFactor />
         </div>
 
         <div className="settings-col">
@@ -108,10 +109,9 @@ export default function Settings() {
           </div>
         </div>
 
-        <HcaptchaCard hcaptcha={hcaptcha} saveHcaptcha={saveHcaptcha} />
+        <CaptchaCard captcha={captcha} saveCaptcha={saveCaptcha} />
         <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
-        <TwoFactor />
         </div>
       </div>
 
@@ -282,22 +282,43 @@ function RestoreButton({ label, scope, accept, busy, onPick }) {
   );
 }
 
-function HcaptchaCard({ hcaptcha, saveHcaptcha }) {
-  const h = hcaptcha || {};
-  const [enabled, setEnabled] = useState(!!h.enabled);
-  const [siteKey, setSiteKey] = useState(h.siteKey || "");
+const CAPTCHA_INFO = {
+  none: { label: "Off", site: "", secret: "", help: "Captcha is disabled. Login and registration are open." },
+  hcaptcha: {
+    label: "hCaptcha",
+    site: "10000000-ffff-ffff-ffff-000000000001",
+    secret: "0x0000000000000000000000000000000000000000",
+    help: "Get keys from your hCaptcha dashboard (dashboard.hcaptcha.com).",
+  },
+  recaptcha: {
+    label: "Google reCAPTCHA",
+    site: "6Lxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    secret: "6Lxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    help: "Use a reCAPTCHA v2 (\"I'm not a robot\" checkbox) site from google.com/recaptcha/admin.",
+  },
+};
+
+function CaptchaCard({ captcha, saveCaptcha }) {
+  const c = captcha || {};
+  const [provider, setProvider] = useState(c.provider || "none");
+  const [siteKey, setSiteKey] = useState(c.siteKey || "");
   const [secretKey, setSecretKey] = useState("");
   const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const info = CAPTCHA_INFO[provider] || CAPTCHA_INFO.none;
 
   const save = async () => {
-    setMsg(await saveHcaptcha({ enabled, siteKey: siteKey.trim(), secretKey }));
+    setBusy(true); setMsg(null);
+    setMsg(await saveCaptcha({ provider, siteKey: siteKey.trim(), secretKey }));
     setSecretKey("");
+    setBusy(false);
   };
 
   return (
     <div className="card" style={{ marginTop: 24 }}>
-      <div className="card-title"><ShieldCheck style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />hCaptcha</div>
-      <div className="card-subtitle">Protect the sign-in and registration pages from bots. Get keys from your hCaptcha dashboard.</div>
+      <div className="card-title"><ShieldCheck style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Captcha</div>
+      <div className="card-subtitle">Protect the sign-in and registration pages from bots. Choose hCaptcha or Google reCAPTCHA.</div>
 
       {msg && (
         <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>
@@ -305,22 +326,32 @@ function HcaptchaCard({ hcaptcha, saveHcaptcha }) {
         </div>
       )}
 
-      <label className="check-row" style={{ marginBottom: 16 }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable hCaptcha on login and registration
-      </label>
-
-      <div className="field-row">
-        <div className="form-group">
-          <label className="form-label">Site key</label>
-          <input className="form-control" value={siteKey} placeholder="10000000-ffff-ffff-ffff-000000000001" onChange={(e) => setSiteKey(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Secret key {h.hasSecretKey && <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(leave blank to keep current)</span>}</label>
-          <input className="form-control" type="password" value={secretKey} placeholder={h.hasSecretKey ? "********" : ""} onChange={(e) => setSecretKey(e.target.value)} />
-        </div>
+      <div className="form-group">
+        <label className="form-label">Provider</label>
+        <select className="form-control" value={provider} onChange={(e) => setProvider(e.target.value)}>
+          <option value="none">Off (no captcha)</option>
+          <option value="hcaptcha">hCaptcha</option>
+          <option value="recaptcha">Google reCAPTCHA (v2)</option>
+        </select>
       </div>
 
-      <button className="btn btn-primary" onClick={save}><Save /> Save hCaptcha settings</button>
+      {provider !== "none" && (
+        <>
+          <div className="field-row">
+            <div className="form-group">
+              <label className="form-label">Site key</label>
+              <input className="form-control" value={siteKey} placeholder={info.site} onChange={(e) => setSiteKey(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Secret key {c.hasSecretKey && <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(leave blank to keep current)</span>}</label>
+              <input className="form-control" type="password" value={secretKey} placeholder={c.hasSecretKey ? "********" : info.secret} onChange={(e) => setSecretKey(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>{info.help}</div>
+        </>
+      )}
+
+      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save captcha settings"}</button>
     </div>
   );
 }

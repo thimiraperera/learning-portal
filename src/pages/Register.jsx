@@ -2,13 +2,13 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
-import HCaptcha from "../components/HCaptcha.jsx";
+import Captcha from "../components/Captcha.jsx";
 
 /* Public registration page reached from the invite email link
    (/register?token=...). Email and username are locked; the user confirms
    their details (all required) and sets a password. */
 export default function Register() {
-  const { brand, register, hcaptcha } = useStore();
+  const { brand, register, captcha: captchaCfg } = useStore();
   const navigate = useNavigate();
   const token = new URLSearchParams(window.location.search).get("token");
 
@@ -53,7 +53,7 @@ export default function Register() {
     if (!gender) { setError("Select your gender."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (password !== confirm) { setError("Passwords do not match."); return; }
-    if (hcaptcha.enabled && !captcha) { setError("Please complete the captcha."); return; }
+    if (captchaCfg.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
     const r = await register(token, { firstName: firstName.trim(), lastName: lastName.trim(), name: name.trim(), phone: phone.trim(), gender, password, captcha });
     setBusy(false);
@@ -132,8 +132,8 @@ export default function Register() {
               <label>Confirm password <span className="req">*</span></label>
               <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" autoComplete="new-password" />
 
-              {hcaptcha.enabled && hcaptcha.siteKey && (
-                <div style={{ marginTop: 14 }}><HCaptcha siteKey={hcaptcha.siteKey} onChange={setCaptcha} /></div>
+              {captchaCfg.enabled && captchaCfg.siteKey && (
+                <div style={{ marginTop: 14 }}><Captcha provider={captchaCfg.provider} siteKey={captchaCfg.siteKey} onChange={setCaptcha} /></div>
               )}
 
               <button type="submit" className="reg-btn" disabled={busy}>{busy ? "Creating account..." : "Create account"}</button>

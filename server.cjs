@@ -26,15 +26,21 @@ async function emailHtml(title, subtitle, body) {
   return mailer.wrap({ brandName: brand.name, title, subtitle, body });
 }
 
-/* Verify an hCaptcha token against the configured secret. Returns true when
-   hCaptcha is disabled (nothing to check). */
+/* Verify a captcha token against the configured provider's secret. Returns true
+   when captcha is disabled (nothing to check). Supports hCaptcha and Google
+   reCAPTCHA v2, which share the same verify request/response shape. */
+const CAPTCHA_VERIFY_URL = {
+  hcaptcha: "https://hcaptcha.com/siteverify",
+  recaptcha: "https://www.google.com/recaptcha/api/siteverify",
+};
 async function checkCaptcha(token) {
-  const cfg = await dbmod.getHcaptcha();
-  if (!cfg.enabled || !cfg.siteKey || !cfg.secretKey) return true;
+  const cfg = await dbmod.getCaptcha();
+  const url = CAPTCHA_VERIFY_URL[cfg.provider];
+  if (!url || !cfg.siteKey || !cfg.secretKey) return true; // disabled / not configured
   if (!token) return false;
   try {
     const body = new URLSearchParams({ secret: cfg.secretKey, response: String(token) });
-    const r = await fetch("https://hcaptcha.com/siteverify", {
+    const r = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -226,7 +232,7 @@ async function adminState() {
 
 /* ---- public ---- */
 app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrand())));
-app.get("/api/auth-config", wrap(async (_req, res) => res.json({ hcaptcha: await dbmod.getHcaptchaForClient() })));
+app.get("/api/auth-config", wrap(async (_req, res) => res.json({ captcha: await dbmod.getCaptchaForClient() })));
 
 /* ---- first-admin setup (only works while no admin exists) ---- */
 app.get("/api/setup/needed", wrap(async (_req, res) => res.json({ needed: !(await dbmod.hasAdmin()) })));
@@ -342,7 +348,7 @@ app.post("/api/reset/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), hcaptcha: await dbmod.getHcaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig(), ...(await adminState()) });
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), captcha: await dbmod.getCaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig(), ...(await adminState()) });
   } else if (u.role === "instructor") {
     const ins = await dbmod.instructorByUserId(u.id);
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
@@ -454,10 +460,13 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
   res.json(await adminState());
 }));
 
-/* ---- admin: lock a student (manual, never automatic) ---- */
+/* ---- admin: lock/unlock a student account (manual, never automatic) ---- */
+// Locking sets the account inactive (cannot sign in); unlocking restores active.
+// Invited accounts are never touched (they have no password yet).
 app.post("/api/admin/students/:id/lock", auth, adminOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
-  await q("UPDATE users SET status='inactive' WHERE id=? AND role='student' AND status<>'invited'", [id]);
+  const status = req.body?.locked === false ? "active" : "inactive";
+  await q("UPDATE users SET status=? WHERE id=? AND role='student' AND status<>'invited'", [status, id]);
   res.json(await adminState());
 }));
 
@@ -1282,11 +1291,11 @@ app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"),
   res.json({ ok: true, msg: "Database and files restored." });
 }));
 
-/* ---- hCaptcha settings (admins) ---- */
-app.put("/api/admin/hcaptcha", auth, adminOnly, wrap(async (req, res) => {
+/* ---- captcha settings (admins): hCaptcha or Google reCAPTCHA ---- */
+app.put("/api/admin/captcha", auth, adminOnly, wrap(async (req, res) => {
   const b = req.body || {};
-  res.json(await dbmod.setHcaptcha({
-    enabled: !!b.enabled,
+  res.json(await dbmod.setCaptcha({
+    provider: String(b.provider || "none"),
     siteKey: String(b.siteKey || ""),
     secretKey: b.secretKey === undefined ? "" : String(b.secretKey),
   }));

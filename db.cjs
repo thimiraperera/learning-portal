@@ -932,21 +932,43 @@ async function setBrandValue(brand) {
   return brand;
 }
 
-const HCAPTCHA_DEFAULT = { enabled: false, siteKey: "", secretKey: "" };
-async function getHcaptcha() {
-  const [[row]] = await q("SELECT v FROM settings WHERE k='hcaptcha'");
-  return row ? { ...HCAPTCHA_DEFAULT, ...JSON.parse(row.v) } : { ...HCAPTCHA_DEFAULT };
+// Captcha (bot protection on login + registration). One provider at a time:
+// "none", "hcaptcha" or "recaptcha" (Google reCAPTCHA v2). Stored under the
+// "captcha" settings key; reads fall back to the legacy "hcaptcha" key so
+// sites configured before reCAPTCHA support keep working.
+const CAPTCHA_DEFAULT = { provider: "none", siteKey: "", secretKey: "" };
+const CAPTCHA_PROVIDERS = ["none", "hcaptcha", "recaptcha"];
+async function getCaptcha() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='captcha'");
+  if (row) return { ...CAPTCHA_DEFAULT, ...JSON.parse(row.v) };
+  const [[legacy]] = await q("SELECT v FROM settings WHERE k='hcaptcha'");
+  if (legacy) {
+    try {
+      const h = JSON.parse(legacy.v);
+      return {
+        provider: h.enabled && h.siteKey ? "hcaptcha" : "none",
+        siteKey: h.siteKey || "",
+        secretKey: h.secretKey || "",
+      };
+    } catch { /* fall through to default */ }
+  }
+  return { ...CAPTCHA_DEFAULT };
 }
-async function getHcaptchaForClient() {
-  const { enabled, siteKey, secretKey } = await getHcaptcha();
-  return { enabled: !!enabled && !!siteKey, siteKey, hasSecretKey: !!secretKey };
+async function getCaptchaForClient() {
+  const { provider, siteKey, secretKey } = await getCaptcha();
+  return { provider, siteKey, hasSecretKey: !!secretKey, enabled: provider !== "none" && !!siteKey };
 }
-async function setHcaptcha(next) {
-  const cur = await getHcaptcha();
-  const merged = { ...cur, ...next };
-  if (next.secretKey === undefined || next.secretKey === "") merged.secretKey = cur.secretKey;
-  await q("INSERT INTO settings (k,v) VALUES ('hcaptcha',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
-  return getHcaptchaForClient();
+async function setCaptcha(next) {
+  const cur = await getCaptcha();
+  const provider = CAPTCHA_PROVIDERS.includes(next.provider) ? next.provider : "none";
+  const merged = {
+    provider,
+    siteKey: next.siteKey === undefined ? cur.siteKey : String(next.siteKey),
+    secretKey: cur.secretKey,
+  };
+  if (next.secretKey !== undefined && next.secretKey !== "") merged.secretKey = String(next.secretKey);
+  await q("INSERT INTO settings (k,v) VALUES ('captcha',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
+  return getCaptchaForClient();
 }
 
 const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", useTls: true, useSsl: false };
@@ -986,7 +1008,7 @@ module.exports = {
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
-  getHcaptcha, getHcaptchaForClient, setHcaptcha,
+  getCaptcha, getCaptchaForClient, setCaptcha,
   hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser,
   findLoginUser, setResetToken, getResetUser, applyReset,
 };

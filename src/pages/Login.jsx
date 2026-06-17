@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
-import HCaptcha from "../components/HCaptcha.jsx";
+import Captcha from "../components/Captcha.jsx";
 
 const HOME = { admin: "/admin", instructor: "/instructor", student: "/" };
 
 /* Split-screen login. Username + password for both students and admins.
    Styles are scoped here via a <style> tag so they don't leak into the app. */
 export default function Login() {
-  const { login, brand, hcaptcha } = useStore();
+  const { login, brand, captcha: captchaCfg } = useStore();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +27,7 @@ export default function Login() {
   const submit = async (e) => {
     e?.preventDefault?.();
     if (busy) return;
-    if (hcaptcha.enabled && !captcha) { setError("Please complete the captcha."); return; }
+    if (captchaCfg.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
     const r = await login(username, password, { code: twoFactor ? code : undefined, captcha, remember });
     setBusy(false);
@@ -114,8 +114,8 @@ export default function Login() {
               </label>
               <Link to="/forgot" className="login-forgot">Forgot password?</Link>
             </div>
-            {hcaptcha.enabled && hcaptcha.siteKey && (
-              <div className="form-group"><HCaptcha siteKey={hcaptcha.siteKey} onChange={setCaptcha} /></div>
+            {captchaCfg.enabled && captchaCfg.siteKey && (
+              <div className="form-group"><Captcha provider={captchaCfg.provider} siteKey={captchaCfg.siteKey} onChange={setCaptcha} /></div>
             )}
             <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : (twoFactor ? "Verify & sign in" : "Sign In")}</button>
           </form>

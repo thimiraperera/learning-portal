@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Wallet, Search, X, Eye } from "lucide-react";
+import { Wallet, Search, X, Eye, Lock, Unlock } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -8,8 +8,20 @@ import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge } from "../../lib/payments.js";
 
 export default function Payments() {
-  const { plans, courses } = useStore();
+  const { plans, courses, lockStudent } = useStore();
   const navigate = useNavigate();
+
+  const [busyId, setBusyId] = useState(null);
+  const toggleLock = async (p) => {
+    const lock = p.studentStatus !== "inactive";
+    const msg = lock
+      ? `Lock ${p.studentName}'s account? They will not be able to sign in until you unlock it.`
+      : `Unlock ${p.studentName}'s account? They will be able to sign in again.`;
+    if (!window.confirm(msg)) return;
+    setBusyId(p.user_id);
+    await lockStudent(p.user_id, lock);
+    setBusyId(null);
+  };
 
   const [qy, setQy] = useState("");
   const [course, setCourse] = useState("all");
@@ -95,6 +107,7 @@ export default function Payments() {
                             {p.studentName}
                           </button>
                           <div style={{ fontSize: 12, color: "#9CA3AF" }}>{p.studentRegNo || p.studentEmail}</div>
+                          {p.studentStatus === "inactive" && <span className="badge badge-rejected" style={{ marginTop: 4, display: "inline-block" }}>Account locked</span>}
                         </td>
                         <td style={{ color: "#6B7280" }}>{p.courseCode} - {p.courseTitle}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{rs(p.total)}</td>
@@ -106,6 +119,13 @@ export default function Payments() {
                           {p.missedCount > 0 && <span className="badge badge-rejected" style={{ marginLeft: 4 }}>{p.missedCount} missed</span>}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          {p.studentStatus !== "invited" && (
+                            p.studentStatus === "inactive"
+                              ? <button className="btn btn-outline btn-sm" style={{ marginRight: 6 }} disabled={busyId === p.user_id}
+                                  title="Unlock account" onClick={() => toggleLock(p)}><Unlock /> Unlock</button>
+                              : <button className="btn btn-ghost btn-sm" style={{ marginRight: 6 }} disabled={busyId === p.user_id}
+                                  title="Lock account (e.g. unpaid)" onClick={() => toggleLock(p)}><Lock /> Lock</button>
+                          )}
                           <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${p.user_id}`)}><Eye /> View</button>
                         </td>
                       </tr>

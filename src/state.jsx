@@ -53,7 +53,7 @@ export function StoreProvider({ children }) {
   const [reminders, setRemindersLocal] = useState({ enabled: false, key: "" }); // admin
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
-  const [hcaptcha, setHcaptchaLocal] = useState({ enabled: false, siteKey: "", hasSecretKey: false });
+  const [captcha, setCaptchaLocal] = useState({ provider: "none", siteKey: "", hasSecretKey: false, enabled: false });
   const [regnum, setRegnumLocal] = useState({ prefix: "", width: 4 });
   const [ready, setReady] = useState(false);
 
@@ -73,7 +73,7 @@ export function StoreProvider({ children }) {
     if (data.reminders) setRemindersLocal(data.reminders);
     if (data.brand) setBrandLocal({ ...DEFAULT_BRAND, ...data.brand });
     if (data.smtp) setSmtpLocal(data.smtp);
-    if (data.hcaptcha) setHcaptchaLocal(data.hcaptcha);
+    if (data.captcha) setCaptchaLocal(data.captcha);
     if (data.regnum) setRegnumLocal(data.regnum);
   };
   const applyAdmin = (data) => {
@@ -115,7 +115,7 @@ export function StoreProvider({ children }) {
     let alive = true;
     (async () => {
       try { const b = await api("/brand"); if (alive) setBrandLocal({ ...DEFAULT_BRAND, ...b }); } catch { /* ignore */ }
-      try { const cfg = await api("/auth-config"); if (alive && cfg.hcaptcha) setHcaptchaLocal(cfg.hcaptcha); } catch { /* ignore */ }
+      try { const cfg = await api("/auth-config"); if (alive && cfg.captcha) setCaptchaLocal(cfg.captcha); } catch { /* ignore */ }
       if (token) {
         try {
           const data = await api("/bootstrap", { token });
@@ -413,8 +413,8 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
-  const saveHcaptcha = useCallback(async (fields) => {
-    try { const saved = await api("/admin/hcaptcha", { method: "PUT", token, body: fields }); setHcaptchaLocal(saved); return { ok: true, msg: "hCaptcha settings saved." }; }
+  const saveCaptcha = useCallback(async (fields) => {
+    try { const saved = await api("/admin/captcha", { method: "PUT", token, body: fields }); setCaptchaLocal(saved); return { ok: true, msg: "Captcha settings saved." }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
@@ -472,8 +472,8 @@ export function StoreProvider({ children }) {
     try { const d = await api(`/admin/payments/${paymentId}`, { method: "DELETE", token }); applyAdmin(d); return { ok: true, plans: d.plans }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const lockStudent = useCallback(async (id) => {
-    try { applyAdmin(await api(`/admin/students/${id}/lock`, { method: "POST", token })); return { ok: true }; }
+  const lockStudent = useCallback(async (id, locked = true) => {
+    try { applyAdmin(await api(`/admin/students/${id}/lock`, { method: "POST", token, body: { locked } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const setCourseLock = useCallback(async (id, courseId, locked) => {
@@ -490,9 +490,9 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, hcaptcha, regnum,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, regnum,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
-    setup2fa, enable2fa, disable2fa, saveHcaptcha, inviteInstructorLogin,
+    setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
