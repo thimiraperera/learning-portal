@@ -222,6 +222,9 @@ async function init() {
   await ensureColumn("users", "reg_no", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("enrolments", "locked", "TINYINT DEFAULT 0");
   await ensureColumn("payment_plans", "last_reminded", "BIGINT");
+  // Content items can be gated behind a payment stage: 0 = everyone, 1 = reg fee,
+  // 2 = Installment 1, 3 = Installment 2... (matches the schedule line seq).
+  for (const t of ["recordings", "links", "materials"]) await ensureColumn(t, "installment_seq", "INT DEFAULT 0");
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
   // loses access on upgrade; new local admins default to 0.
@@ -295,9 +298,10 @@ async function courseFull(id) {
   if (!c) return null;
   const [instructors] = await q(
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
-  const [recordings] = await q("SELECT id, group_id, title AS t, url AS u FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
-  const [links] = await q("SELECT id, group_id, title AS t, url AS u FROM links WHERE course_id=? ORDER BY position, id", [id]);
-  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename, url AS u FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [recordings] = await q("SELECT id, group_id, title AS t, url AS u, installment_seq AS seq FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
+  const [links] = await q("SELECT id, group_id, title AS t, url AS u, installment_seq AS seq FROM links WHERE course_id=? ORDER BY position, id", [id]);
+  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename, url AS u, installment_seq AS seq FROM materials WHERE course_id=? ORDER BY position, id", [id]);
+  const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE course_id=?", [id]);
   const [groupRows] = await q("SELECT id, title FROM content_groups WHERE course_id=? ORDER BY position, id", [id]);
   const groups = groupRows.map((g) => ({
     id: g.id, title: g.title,
@@ -310,6 +314,7 @@ async function courseFull(id) {
     certTemplate: c.cert_template || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials, groups,
+    planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
   };
 }
 async function coursesMap(ids) {
@@ -610,15 +615,22 @@ async function deleteCourse(id) {
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
-async function addCourseItem(courseId, groupId, bucket, title, url) {
+async function addCourseItem(courseId, groupId, bucket, title, url, seq) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
   const gid = Number(groupId) || 0;
   const u = String(url || "").trim();
+  const s = Math.max(0, Number(seq) || 0);
   const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND group_id=?`, [courseId, gid]);
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position) VALUES (?,?,?,?, '','', ?)", [courseId, gid, title, u, p]);
-  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position) VALUES (?,?,?,?, ?)", [courseId, gid, title, u, p]);
-  else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position) VALUES (?,?,?,?, '','LINK', ?)", [courseId, gid, title, u, p]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq) VALUES (?,?,?,?, '','', ?,?)", [courseId, gid, title, u, p, s]);
+  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position,installment_seq) VALUES (?,?,?,?, ?,?)", [courseId, gid, title, u, p, s]);
+  else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position,installment_seq) VALUES (?,?,?,?, '','LINK', ?,?)", [courseId, gid, title, u, p, s]);
+}
+// Move an existing content item to a different payment stage (installment seq).
+async function setItemInstallment(courseId, bucket, itemId, seq) {
+  const t = ITEM_TABLE[bucket];
+  if (!t) return;
+  await q(`UPDATE ${t} SET installment_seq=? WHERE id=? AND course_id=?`, [Math.max(0, Number(seq) || 0), itemId, courseId]);
 }
 async function removeCourseItem(courseId, bucket, itemId) {
   const t = ITEM_TABLE[bucket];
@@ -631,13 +643,25 @@ async function reorderItems(courseId, bucket, orderedIds) {
 }
 async function addMaterialFile(courseId, groupId, f) {
   const gid = Number(groupId) || 0;
+  const s = Math.max(0, Number(f.seq) || 0);
   const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=? AND group_id=?", [courseId, gid]);
-  await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position) VALUES (?,?,?,?,?,?,?)",
-    [courseId, gid, f.title, f.size, f.ext, f.filename, p]);
+  await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position,installment_seq) VALUES (?,?,?,?,?,?,?,?)",
+    [courseId, gid, f.title, f.size, f.ext, f.filename, p, s]);
 }
 async function getMaterial(id) {
-  const [[r]] = await q("SELECT id, course_id, group_id, title, size, ext, filename FROM materials WHERE id=?", [id]);
+  const [[r]] = await q("SELECT id, course_id, group_id, title, size, ext, filename, installment_seq FROM materials WHERE id=?", [id]);
   return r || null;
+}
+// The installment seqs a student has fully paid for one course (drives content
+// unlocking). seq 0 items are always available, so they are not listed here.
+async function paidInstallmentSeqs(userId, courseId) {
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
+       co.code AS courseCode, co.title AS courseTitle
+     FROM payment_plans p JOIN courses co ON co.id=p.course_id
+     WHERE p.user_id=? AND p.course_id=?`, [userId, courseId]);
+  if (!plans.length) return [];
+  const [enriched] = await enrichPlans(plans);
+  return (enriched.installments || []).filter((i) => i.status === "paid").map((i) => i.seq);
 }
 async function courseMaterialFiles(courseId, groupId) {
   const params = groupId == null ? [courseId] : [courseId, Number(groupId)];
@@ -670,6 +694,7 @@ async function reorderGroups(courseId, orderedIds) {
   for (let i = 0; i < orderedIds.length; i++) await q("UPDATE content_groups SET position=? WHERE id=? AND course_id=?", [i, orderedIds[i], courseId]);
 }
 async function groupExists(courseId, gid) {
+  if (!Number(gid)) return true; // 0 = the default ungrouped bucket (grouping is no longer used in the UI)
   const [[r]] = await q("SELECT id FROM content_groups WHERE id=? AND course_id=?", [gid, courseId]);
   return !!r;
 }
@@ -1047,8 +1072,8 @@ module.exports = {
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,
-  addCourseItem, removeCourseItem, reorderItems,
-  addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches,
+  addCourseItem, removeCourseItem, reorderItems, setItemInstallment,
+  addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches, paidInstallmentSeqs,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
   getCoursePlan, setCoursePlan,

@@ -235,8 +235,12 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addItem = useCallback(async (cid, groupId, bucket, title, url) => {
-    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, title, url } })); return { ok: true }; }
+  const addItem = useCallback(async (cid, groupId, bucket, title, url, installmentSeq = 0) => {
+    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, title, url, installmentSeq } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const setItemInstallment = useCallback(async (cid, bucket, itemId, installmentSeq) => {
+    try { applyAdmin(await api("/admin/items/installment", { method: "POST", token, body: { courseId: cid, bucket, itemId, installmentSeq } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
@@ -260,11 +264,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
   }, [token]);
 
-  const uploadMaterial = useCallback(async (cid, groupId, file) => {
+  const uploadMaterial = useCallback(async (cid, groupId, file, installmentSeq = 0) => {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(`/api/admin/items/upload?courseId=${encodeURIComponent(cid)}&groupId=${groupId}`, {
+      const res = await fetch(`/api/admin/items/upload?courseId=${encodeURIComponent(cid)}&groupId=${groupId}&seq=${Number(installmentSeq) || 0}`, {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: fd,
       });
       const data = await res.json().catch(() => ({}));
@@ -499,7 +503,7 @@ export function StoreProvider({ children }) {
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
-    addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems,
+    addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems, setItemInstallment,
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,

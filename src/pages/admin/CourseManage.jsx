@@ -7,7 +7,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge } from "../../lib/payments.js";
+import { rs, fmtDate, planBadge, installmentBuckets, installmentLabel } from "../../lib/payments.js";
 
 export default function CourseManage() {
   const { id } = useParams();
@@ -15,7 +15,7 @@ export default function CourseManage() {
   const store = useStore();
   const { courses, users } = store;
   const c = courses[id];
-  const [tab, setTab] = useState("recordings"); // open on the first content tab
+  const [tab, setTab] = useState("details"); // open on Course details (first tab)
 
   if (!c) return <Navigate to="/admin/courses" replace />;
 
@@ -23,12 +23,12 @@ export default function CourseManage() {
 
   const tabs = [
     { k: "details", label: "Course details", icon: SettingsIcon },
+    { k: "plan", label: "Payment plan", icon: Wallet },
+    { k: "students", label: "Enrolled students", icon: Users, n: enrolledCount },
+    { k: "instructor", label: "Instructors", icon: Presentation, n: c.instructors.length },
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
-    { k: "students", label: "Enrolled students", icon: Users, n: enrolledCount },
-    { k: "plan", label: "Payment plan", icon: Wallet },
-    { k: "instructor", label: "Instructors", icon: Presentation, n: c.instructors.length },
   ];
 
   return (
@@ -58,9 +58,9 @@ export default function CourseManage() {
         </div>
 
         {tab === "details" && <DetailsTab id={id} c={c} store={store} navigate={navigate} />}
-        {tab === "recordings" && <ContentSection id={id} groupId={0} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title" />}
-        {tab === "links" && <ContentSection id={id} groupId={0} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title" />}
-        {tab === "materials" && <ContentSection id={id} groupId={0} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title" />}
+        {tab === "recordings" && <ContentSection id={id} groupId={0} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title" installments={c.planInstallments} />}
+        {tab === "links" && <ContentSection id={id} groupId={0} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title" installments={c.planInstallments} />}
+        {tab === "materials" && <ContentSection id={id} groupId={0} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title" installments={c.planInstallments} />}
         {tab === "students" && <StudentsTab id={id} store={store} navigate={navigate} />}
         {tab === "plan" && <CoursePlanTab id={id} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} c={c} store={store} navigate={navigate} />}
@@ -362,20 +362,20 @@ function InstructorTab({ id, c, store, navigate }) {
   );
 }
 
-function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder }) {
-  const { addItem, removeItem, reorderItems, uploadMaterial } = store;
+function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder, installments }) {
+  const { addItem, removeItem, uploadMaterial, setItemInstallment } = store;
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
-  const [dragId, setDragId] = useState(null);
-  const [overId, setOverId] = useState(null);
+  const [seq, setSeq] = useState(0); // payment stage for newly added items
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const isMaterials = bucket === "materials";
+  const buckets = installmentBuckets(installments);
 
   const add = async () => {
     if (!value.trim()) { setErr("Enter a title."); return; }
     setErr(null);
-    const r = await addItem(id, groupId, bucket, value.trim(), url.trim());
+    const r = await addItem(id, groupId, bucket, value.trim(), url.trim(), seq);
     if (r.ok) { setValue(""); setUrl(""); } else setErr(r.msg);
   };
 
@@ -384,55 +384,52 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
     e.target.value = "";
     if (!file) return;
     setBusy(true); setErr(null);
-    const r = await uploadMaterial(id, groupId, file);
+    const r = await uploadMaterial(id, groupId, file, seq);
     setBusy(false);
     if (!r.ok) setErr(r.msg);
   };
 
-  const onDrop = async (e, targetId) => {
-    e.stopPropagation();
-    setOverId(null);
-    if (dragId == null || dragId === targetId) { setDragId(null); return; }
-    const ids = items.map((it) => it.id);
-    const from = ids.indexOf(dragId);
-    const to = ids.indexOf(targetId);
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
-    setDragId(null);
-    await reorderItems(id, bucket, ids);
-  };
+  // Items grouped under their payment stage, in bucket order.
+  const groupsWithItems = buckets
+    .map((b) => ({ ...b, items: items.filter((it) => (Number(it.seq) || 0) === b.seq) }))
+    .filter((b) => b.items.length > 0);
 
   return (
     <div className="content-section" style={{ marginBottom: 14 }}>
       <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
-          {items.map((it) => (
-            <div key={it.id}
-              className={"media-row drag-row" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
-              draggable
-              onDragStart={(e) => { e.stopPropagation(); setDragId(it.id); }}
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOverId(it.id); }}
-              onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
-              onDrop={(e) => onDrop(e, it.id)}
-              onDragEnd={() => { setDragId(null); setOverId(null); }}>
-              <span className="drag-handle"><GripVertical /></span>
-              <div className="mr-body">
-                <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
-                {it.filename
-                  ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
-                  : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
-              </div>
-              <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+          {groupsWithItems.map((g) => (
+            <div key={g.seq} style={{ marginBottom: 14 }}>
+              <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 6px" }}>{g.label}</div>
+              {g.items.map((it) => (
+                <div key={it.id} className="media-row">
+                  <div className="mr-body">
+                    <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
+                    {it.filename
+                      ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
+                      : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
+                  </div>
+                  <select className="form-control" style={{ flex: "0 0 auto", width: "auto", height: 34, padding: "0 8px", fontSize: 12.5 }}
+                    value={Number(it.seq) || 0} onChange={(e) => setItemInstallment(id, bucket, it.id, Number(e.target.value))}>
+                    {buckets.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
+                  </select>
+                  <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+                </div>
+              ))}
             </div>
           ))}
         </div>
       )}
       {err && <div className="field-error" style={{ marginTop: 8 }}>{err}</div>}
       <div className="toolbar" style={{ marginTop: 10, marginBottom: 0, alignItems: "flex-start" }}>
-        <input className="form-control" style={{ flex: "1 1 160px" }} placeholder={placeholder} value={value}
+        <input className="form-control" style={{ flex: "1 1 150px" }} placeholder={placeholder} value={value}
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
-        <input className="form-control" style={{ flex: "1 1 200px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
+        <input className="form-control" style={{ flex: "1 1 180px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
           onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <select className="form-control" style={{ flex: "0 0 180px" }} value={seq} onChange={(e) => setSeq(Number(e.target.value))} title="Available from">
+          {buckets.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
+        </select>
         <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
         {isMaterials && (
           <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>

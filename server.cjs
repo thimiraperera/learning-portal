@@ -94,6 +94,15 @@ async function userCanAccessCourse(user, courseId) {
   return true;
 }
 
+// Label for a content item's payment stage. Mirrors installmentLabel in
+// src/lib/payments.js: 0 = everyone, 1 = registration fee, 2 = Installment 1...
+function installmentLabel(seq) {
+  const n = Number(seq) || 0;
+  if (n <= 0) return "Available to everyone";
+  if (n === 1) return "Registration fee";
+  return `Installment ${n - 1}`;
+}
+
 /* Send mail via the stored SMTP settings. Returns {sent, reason}. */
 async function sendMail(to, subject, html, attachments) {
   const s = await dbmod.getSmtp();
@@ -368,11 +377,28 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     const ids = await dbmod.enrolledIds(u.id);
     const courses = await dbmod.coursesMap(ids);
     const paymentLocked = await dbmod.lockedCourseIds(u.id);
+    const plans = await dbmod.studentPlans(u.id);
+    // Which installment seqs the student has paid, per course (for content gating).
+    const paidByCourse = {};
+    for (const p of plans) paidByCourse[p.course_id] = new Set((p.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq)));
     // Locked courses stay visible but their content is withheld until unlocked.
     for (const cid of paymentLocked) {
       if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [] });
     }
-    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: await dbmod.studentPlans(u.id), brand: await dbmod.getBrand() });
+    // Installment-gated items stay visible but locked (no URL/file) until paid.
+    for (const cid of Object.keys(courses)) {
+      if (paymentLocked.includes(cid)) continue;
+      const paid = paidByCourse[cid] || new Set();
+      for (const bucket of ["recordings", "links", "materials"]) {
+        courses[cid][bucket] = (courses[cid][bucket] || []).map((it) => {
+          const seq = Number(it.seq) || 0;
+          if (seq <= 0 || paid.has(seq)) return { ...it, locked: false };
+          const { u: _url, filename: _f, ...rest } = it;
+          return { ...rest, locked: true, lockLabel: installmentLabel(seq) };
+        });
+      }
+    }
+    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrand() });
   }
 }));
 
@@ -1100,11 +1126,19 @@ async function removeFiles(relPaths) {
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, groupId, bucket, title, url } = req.body || {};
+  const { courseId, groupId, bucket, title, url, installmentSeq } = req.body || {};
   const t = String(title || "").trim();
   if (!BUCKET[bucket] || !t) return res.status(400).json({ error: "Enter a title." });
   if (!(await dbmod.groupExists(courseId, Number(groupId)))) return res.status(400).json({ error: "Pick a group first." });
-  await dbmod.addCourseItem(courseId, Number(groupId), bucket, t, String(url || "").trim());
+  await dbmod.addCourseItem(courseId, Number(groupId), bucket, t, String(url || "").trim(), Number(installmentSeq) || 0);
+  res.json(await adminState());
+}));
+
+/* Reassign a content item to a different payment stage (installment). */
+app.post("/api/admin/items/installment", auth, adminOnly, wrap(async (req, res) => {
+  const { courseId, bucket, itemId, installmentSeq } = req.body || {};
+  if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
+  await dbmod.setItemInstallment(courseId, bucket, Number(itemId), Number(installmentSeq) || 0);
   res.json(await adminState());
 }));
 
@@ -1121,6 +1155,7 @@ app.post("/api/admin/items/upload", auth, adminOnly, uploadMaterial.single("file
   const ext = (path.extname(req.file.originalname).slice(1) || "FILE").toUpperCase().slice(0, 8);
   await dbmod.addMaterialFile(courseId, groupId, {
     title: req.file.originalname, size: humanSize(req.file.size), ext, filename: rel,
+    seq: Number(req.query.seq) || 0,
   });
   res.json(await adminState());
 }));
@@ -1141,6 +1176,12 @@ app.get("/api/materials/:id/file", auth, wrap(async (req, res) => {
   const m = await dbmod.getMaterial(Number(req.params.id));
   if (!m || !m.filename) return res.status(404).json({ error: "File not found." });
   if (!(await userCanAccessCourse(req.user, m.course_id))) return res.status(403).json({ error: "Not allowed." });
+  // Students must have paid the installment this material is tied to.
+  const seq = Number(m.installment_seq) || 0;
+  if (req.user.role === "student" && seq > 0) {
+    const paid = await dbmod.paidInstallmentSeqs(req.user.id, m.course_id);
+    if (!paid.includes(seq)) return res.status(403).json({ error: `This material unlocks when you pay ${installmentLabel(seq)}.` });
+  }
   const abs = path.join(STORAGE, m.filename);
   if (!abs.startsWith(STORAGE) || !fs.existsSync(abs)) return res.status(404).json({ error: "File not found." });
   res.download(abs, m.title || path.basename(abs));

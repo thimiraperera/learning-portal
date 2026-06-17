@@ -37,3 +37,21 @@ const INST_BADGE = {
   upcoming: { cls: "badge-info", label: "Upcoming" },
 };
 export const instBadge = (status) => INST_BADGE[status] || INST_BADGE.upcoming;
+
+// Content can be tied to a payment stage (an installment "seq"): 0 = available
+// to everyone, 1 = the registration fee, 2 = Installment 1, 3 = Installment 2...
+// (seq 1 is the first schedule line, which is always the registration fee).
+export function installmentLabel(seq) {
+  const n = Number(seq) || 0;
+  if (n <= 0) return "Available to everyone";
+  if (n === 1) return "Registration fee";
+  return `Installment ${n - 1}`;
+}
+
+// The buckets an admin can assign content to, derived from a course's plan
+// (its number of installments). Always offers "everyone" + registration fee.
+export function installmentBuckets(installments) {
+  const out = [{ seq: 0, label: "Available to everyone" }, { seq: 1, label: "Registration fee" }];
+  for (let i = 1; i <= (Number(installments) || 0); i++) out.push({ seq: i + 1, label: `Installment ${i}` });
+  return out;
+}

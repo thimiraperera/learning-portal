@@ -65,7 +65,7 @@ export default function CourseDetail() {
           c.recordings.length === 0
             ? <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No recordings have been published yet.</p></div>
             : c.recordings.map((r) => (
-                <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t}
+                <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
                   action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
               ))
         )}
@@ -74,7 +74,7 @@ export default function CourseDetail() {
           c.links.length === 0
             ? <div className="empty-state"><div className="empty-icon"><Link2 /></div><p>No course links have been added yet.</p></div>
             : c.links.map((r) => (
-                <MediaRow key={`l${r.id}`} icon={Link2} title={r.t}
+                <MediaRow key={`l${r.id}`} icon={Link2} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
                   action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
               ))
         )}
@@ -83,7 +83,7 @@ export default function CourseDetail() {
           c.materials.length === 0
             ? <div className="empty-state"><div className="empty-icon"><FileDown /></div><p>No materials have been added yet.</p></div>
             : c.materials.map((r) => (
-                <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t}
+                <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
                   action={r.filename ? "Download" : (r.u ? "Open" : null)}
                   onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)}
                   meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null} />
@@ -119,15 +119,19 @@ export default function CourseDetail() {
   );
 }
 
-function MediaRow({ icon: Icon, title, meta, action, onAction }) {
+function MediaRow({ icon: Icon, title, meta, action, onAction, locked, lockLabel }) {
   return (
     <div className="media-row">
       <div className="mr-icon"><Icon /></div>
       <div className="mr-body">
         <div className="mr-title">{title}</div>
-        {meta && <div className="mr-meta">{meta}</div>}
+        {locked
+          ? <div className="mr-meta" style={{ display: "flex", alignItems: "center", gap: 6, color: "#9CA3AF" }}><Lock style={{ width: 13, height: 13 }} /> Unlocks after {lockLabel}</div>
+          : (meta && <div className="mr-meta">{meta}</div>)}
       </div>
-      {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
+      {locked
+        ? <span className="badge badge-muted">Locked</span>
+        : (action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>)}
     </div>
   );
 }
