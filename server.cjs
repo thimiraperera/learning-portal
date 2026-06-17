@@ -186,8 +186,10 @@ function generateScheduleItems(t) {
 // Give a student the course's payment plan (if the course has a valid one), so
 // every enrolled student automatically follows the course-assigned schedule.
 async function applyCoursePlanToStudent(userId, courseId) {
-  const items = generateScheduleItems(await dbmod.getCoursePlan(courseId));
-  if (items.length && !items.some((it) => !it.dueDate)) await dbmod.setPlanSchedule(userId, courseId, items);
+  const [[e]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [userId, courseId]);
+  const bid = e ? e.batch_id : await dbmod.currentBatchId(courseId);
+  const items = generateScheduleItems(await dbmod.getCoursePlan(bid));
+  if (items.length && !items.some((it) => !it.dueDate)) await dbmod.setPlanSchedule(userId, courseId, items, bid);
 }
 
 async function certPdf(cert) {
@@ -375,7 +377,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    const courses = await dbmod.coursesMap(ids);
+    const courses = await dbmod.coursesMap(ids, await dbmod.enrolledBatches(u.id));
     const paymentLocked = await dbmod.lockedCourseIds(u.id);
     const plans = await dbmod.studentPlans(u.id);
     // Which installment seqs the student has paid, per course (for content gating).
@@ -417,7 +419,8 @@ app.post("/api/courses/:id/request", auth, wrap(async (req, res) => {
 app.post("/api/admin/requests/:id/approve", auth, adminOnly, wrap(async (req, res) => {
   const r = await dbmod.getRequest(Number(req.params.id));
   if (!r) return res.status(404).json({ error: "Request not found." });
-  await q("INSERT IGNORE INTO enrolments (user_id,course_id) VALUES (?,?)", [r.user_id, r.course_id]);
+  const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(r.course_id);
+  await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE batch_id=VALUES(batch_id)", [r.user_id, r.course_id, bid]);
   await applyCoursePlanToStudent(r.user_id, r.course_id);
   await dbmod.deleteRequest(r.id);
   res.json(await adminState());
@@ -569,21 +572,26 @@ app.delete("/api/admin/payments/:paymentId", auth, adminOnly, wrap(async (req, r
 
 /* ---- course-level installment plan template ---- */
 app.get("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
-  const tpl = await dbmod.getCoursePlan(String(req.params.id));
-  res.json({ plan: tpl, preview: generateScheduleItems(tpl) });
+  const cid = String(req.params.id);
+  const bid = Number(req.query.batchId) || await dbmod.currentBatchId(cid);
+  const tpl = await dbmod.getCoursePlan(bid);
+  res.json({ plan: tpl, preview: generateScheduleItems(tpl), batchId: bid });
 }));
 app.put("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
-  const tpl = await dbmod.setCoursePlan(String(req.params.id), req.body || {});
-  res.json({ plan: tpl, preview: generateScheduleItems(tpl) });
+  const cid = String(req.params.id);
+  const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
+  const tpl = await dbmod.setCoursePlan(cid, bid, req.body || {});
+  res.json({ plan: tpl, preview: generateScheduleItems(tpl), batchId: bid });
 }));
-// Write the generated schedule onto every enrolled student's plan.
+// Write the generated schedule onto every enrolled student in this batch.
 app.post("/api/admin/courses/:id/plan/apply", auth, adminOnly, wrap(async (req, res) => {
   const cid = String(req.params.id);
-  const items = generateScheduleItems(await dbmod.getCoursePlan(cid));
+  const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
+  const items = generateScheduleItems(await dbmod.getCoursePlan(bid));
   if (!items.length) return res.status(400).json({ error: "Set up a fee and dates before applying." });
   if (items.some((it) => !it.dueDate)) return res.status(400).json({ error: "The plan needs a start date and a completion date." });
-  const [rows] = await q("SELECT user_id FROM enrolments WHERE course_id=?", [cid]);
-  for (const r of rows) await dbmod.setPlanSchedule(r.user_id, cid, items);
+  const [rows] = await q("SELECT user_id FROM enrolments WHERE course_id=? AND batch_id=?", [cid, bid]);
+  for (const r of rows) await dbmod.setPlanSchedule(r.user_id, cid, items, bid);
   res.json({ applied: rows.length, ...(await adminState()) });
 }));
 
@@ -594,9 +602,10 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
   const [[u]] = await q("SELECT id FROM users WHERE lower(email)=?", [e]);
   const [[course]] = await q("SELECT id FROM courses WHERE id=?", [cid]);
   if (u && course) {
+    const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
     const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
     if (has) await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
-    else { await q("INSERT INTO enrolments (user_id,course_id) VALUES (?,?)", [u.id, cid]); await applyCoursePlanToStudent(u.id, cid); }
+    else { await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?)", [u.id, cid, bid]); await applyCoursePlanToStudent(u.id, cid); }
     await dbmod.clearRequest(u.id, cid); // resolve any pending request for this pair
   }
   res.json(await adminState());
@@ -617,7 +626,8 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
   await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, ?)", [id, code, title, blurb, sessions, certTemplate]);
-  for (const iid of instructorIds) await dbmod.addCourseInstructor(id, iid);
+  const [br] = await q("INSERT INTO batches (course_id,number,status,created_at) VALUES (?,1,'ongoing',?)", [id, Date.now()]);
+  for (const iid of instructorIds) await dbmod.addCourseInstructor(id, br.insertId, iid);
   res.json({ ok: true, courseId: id, ...(await adminState()) });
 }));
 
@@ -648,12 +658,41 @@ app.delete("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
 }));
 
 app.post("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (req, res) => {
-  if (req.body?.instructorId) await dbmod.addCourseInstructor(req.params.id, req.body.instructorId);
+  if (req.body?.instructorId) {
+    const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(req.params.id);
+    await dbmod.addCourseInstructor(req.params.id, bid, req.body.instructorId);
+  }
   res.json(await adminState());
 }));
 
 app.delete("/api/admin/courses/:id/instructors", auth, adminOnly, wrap(async (req, res) => {
-  if (req.body?.instructorId) await dbmod.removeCourseInstructor(req.params.id, req.body.instructorId);
+  if (req.body?.instructorId) {
+    const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(req.params.id);
+    await dbmod.removeCourseInstructor(req.params.id, bid, req.body.instructorId);
+  }
+  res.json(await adminState());
+}));
+
+/* ---- batches (course cohorts) ---- */
+// Full content/instructors/plan for one batch (Manage Course batch switch).
+app.get("/api/admin/courses/:id/batch/:batchId", auth, adminOnly, wrap(async (req, res) => {
+  const full = await dbmod.courseFull(req.params.id, Number(req.params.batchId));
+  if (!full) return res.status(404).json({ error: "Course not found." });
+  res.json({ course: full });
+}));
+// Start a new batch (ends the current one; copies instructors + content + plan).
+app.post("/api/admin/courses/:id/batches", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.startNewBatch(String(req.params.id), { startDate: req.body?.startDate, endDate: req.body?.endDate });
+  res.json(await adminState());
+}));
+// Mark a batch ended.
+app.post("/api/admin/courses/:id/batches/:batchId/end", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.endBatch(Number(req.params.batchId));
+  res.json(await adminState());
+}));
+// Edit a batch's start/end dates.
+app.put("/api/admin/courses/:id/batches/:batchId", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.setBatchDates(Number(req.params.batchId), req.body?.startDate, req.body?.endDate);
   res.json(await adminState());
 }));
 
@@ -1126,11 +1165,11 @@ async function removeFiles(relPaths) {
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, groupId, bucket, title, url, installmentSeq } = req.body || {};
+  const { courseId, batchId, bucket, title, url, installmentSeq } = req.body || {};
   const t = String(title || "").trim();
   if (!BUCKET[bucket] || !t) return res.status(400).json({ error: "Enter a title." });
-  if (!(await dbmod.groupExists(courseId, Number(groupId)))) return res.status(400).json({ error: "Pick a group first." });
-  await dbmod.addCourseItem(courseId, Number(groupId), bucket, t, String(url || "").trim(), Number(installmentSeq) || 0);
+  const bid = Number(batchId) || await dbmod.currentBatchId(courseId);
+  await dbmod.addCourseItem(courseId, bid, bucket, t, String(url || "").trim(), Number(installmentSeq) || 0);
   res.json(await adminState());
 }));
 
@@ -1154,15 +1193,11 @@ app.post("/api/admin/items/installment", auth, adminOnly, wrap(async (req, res) 
 /* Upload a real file as a material (stored under storage/<course-code>/). */
 app.post("/api/admin/items/upload", auth, adminOnly, uploadMaterial.single("file"), wrap(async (req, res) => {
   const courseId = String(req.query.courseId || "");
-  const groupId = Number(req.query.groupId || 0);
   if (!req.file) return res.status(400).json({ error: "No file was uploaded." });
-  if (!(await dbmod.groupExists(courseId, groupId))) {
-    await removeFiles([path.relative(STORAGE, req.file.path)]);
-    return res.status(400).json({ error: "Pick a group first." });
-  }
+  const bid = Number(req.query.batchId) || await dbmod.currentBatchId(courseId);
   const rel = path.relative(STORAGE, req.file.path).split(path.sep).join("/");
   const ext = (path.extname(req.file.originalname).slice(1) || "FILE").toUpperCase().slice(0, 8);
-  await dbmod.addMaterialFile(courseId, groupId, {
+  await dbmod.addMaterialFile(courseId, bid, {
     title: req.file.originalname, size: humanSize(req.file.size), ext, filename: rel,
     seq: Number(req.query.seq) || 0,
   });

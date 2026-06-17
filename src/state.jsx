@@ -179,8 +179,8 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   /* ---- admin mutations (each returns the fresh admin state) ---- */
-  const toggleEnrol = useCallback(async (email, cid) => {
-    applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid } }));
+  const toggleEnrol = useCallback(async (email, cid, batchId) => {
+    applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid, batchId } }));
   }, [token]);
 
   const addStudent = useCallback(async (name, email, username) => {
@@ -216,11 +216,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/courses/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addCourseInstructor = useCallback(async (courseId, instructorId) => {
-    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "POST", token, body: { instructorId } }));
+  const addCourseInstructor = useCallback(async (courseId, batchId, instructorId) => {
+    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "POST", token, body: { instructorId, batchId } }));
   }, [token]);
-  const removeCourseInstructor = useCallback(async (courseId, instructorId) => {
-    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "DELETE", token, body: { instructorId } }));
+  const removeCourseInstructor = useCallback(async (courseId, batchId, instructorId) => {
+    applyAdmin(await api(`/admin/courses/${courseId}/instructors`, { method: "DELETE", token, body: { instructorId, batchId } }));
   }, [token]);
 
   const addInstructor = useCallback(async (fields) => {
@@ -235,8 +235,8 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addItem = useCallback(async (cid, groupId, bucket, title, url, installmentSeq = 0) => {
-    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, groupId, bucket, title, url, installmentSeq } })); return { ok: true }; }
+  const addItem = useCallback(async (cid, batchId, bucket, title, url, installmentSeq = 0) => {
+    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, batchId, bucket, title, url, installmentSeq } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const setItemInstallment = useCallback(async (cid, bucket, itemId, installmentSeq) => {
@@ -253,8 +253,8 @@ export function StoreProvider({ children }) {
     try { const d = await api(`/courses/${cid}/request`, { method: "POST", token }); setRequests(d.requests || []); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const approveRequest = useCallback(async (id) => {
-    applyAdmin(await api(`/admin/requests/${id}/approve`, { method: "POST", token }));
+  const approveRequest = useCallback(async (id, batchId) => {
+    applyAdmin(await api(`/admin/requests/${id}/approve`, { method: "POST", token, body: { batchId } }));
   }, [token]);
   const declineRequest = useCallback(async (id) => {
     applyAdmin(await api(`/admin/requests/${id}/decline`, { method: "POST", token }));
@@ -268,11 +268,11 @@ export function StoreProvider({ children }) {
     applyAdmin(await api("/admin/items/reorder", { method: "POST", token, body: { courseId: cid, bucket, orderedIds } }));
   }, [token]);
 
-  const uploadMaterial = useCallback(async (cid, groupId, file, installmentSeq = 0) => {
+  const uploadMaterial = useCallback(async (cid, batchId, file, installmentSeq = 0) => {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(`/api/admin/items/upload?courseId=${encodeURIComponent(cid)}&groupId=${groupId}&seq=${Number(installmentSeq) || 0}`, {
+      const res = await fetch(`/api/admin/items/upload?courseId=${encodeURIComponent(cid)}&batchId=${Number(batchId) || ""}&seq=${Number(installmentSeq) || 0}`, {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: fd,
       });
       const data = await res.json().catch(() => ({}));
@@ -456,13 +456,30 @@ export function StoreProvider({ children }) {
 
   /* ---- installment payments ---- */
   const fetchStudentPlans = useCallback((id) => api(`/admin/students/${id}/plans`, { token }).then((d) => d.plans || []), [token]);
-  const fetchCoursePlan = useCallback((courseId) => api(`/admin/courses/${courseId}/plan`, { token }), [token]);
-  const saveCoursePlan = useCallback(async (courseId, fields) => {
-    try { const d = await api(`/admin/courses/${courseId}/plan`, { method: "PUT", token, body: fields }); return { ok: true, ...d }; }
+  const fetchCoursePlan = useCallback((courseId, batchId) => api(`/admin/courses/${courseId}/plan?batchId=${Number(batchId) || ""}`, { token }), [token]);
+  const saveCoursePlan = useCallback(async (courseId, batchId, fields) => {
+    try { const d = await api(`/admin/courses/${courseId}/plan`, { method: "PUT", token, body: { ...fields, batchId } }); return { ok: true, ...d }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const applyCoursePlan = useCallback(async (courseId) => {
-    try { const d = await api(`/admin/courses/${courseId}/plan/apply`, { method: "POST", token }); applyAdmin(d); return { ok: true, applied: d.applied }; }
+  const applyCoursePlan = useCallback(async (courseId, batchId) => {
+    try { const d = await api(`/admin/courses/${courseId}/plan/apply`, { method: "POST", token, body: { batchId } }); applyAdmin(d); return { ok: true, applied: d.applied }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  /* ---- batches ---- */
+  const fetchCourseBatch = useCallback(async (courseId, batchId) => {
+    const d = await api(`/admin/courses/${courseId}/batch/${batchId}`, { token });
+    return d.course;
+  }, [token]);
+  const startNewBatch = useCallback(async (courseId, dates) => {
+    try { applyAdmin(await api(`/admin/courses/${courseId}/batches`, { method: "POST", token, body: dates || {} })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const endBatch = useCallback(async (courseId, batchId) => {
+    try { applyAdmin(await api(`/admin/courses/${courseId}/batches/${batchId}/end`, { method: "POST", token })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  const setBatchDates = useCallback(async (courseId, batchId, dates) => {
+    try { applyAdmin(await api(`/admin/courses/${courseId}/batches/${batchId}`, { method: "PUT", token, body: dates || {} })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const savePlan = useCallback(async (id, courseId, fields) => {
@@ -520,6 +537,7 @@ export function StoreProvider({ children }) {
     updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
+    fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
     setCourseLock, saveReminders, sendRemindersNow,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

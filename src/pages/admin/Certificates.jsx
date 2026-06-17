@@ -12,6 +12,7 @@ export default function Certificates() {
 
   const [courseF, setCourseF] = useState("all");
   const [statusF, setStatusF] = useState("all");
+  const [batchF, setBatchF] = useState("all");
   const [qy, setQy] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [msg, setMsg] = useState(null);
@@ -26,18 +27,21 @@ export default function Certificates() {
     for (const cid of u.enrolled) {
       if (!courses[cid]) continue;
       const cert = certificates.find((c) => c.student_id === u.id && c.course_id === cid) || null;
-      rows.push({ key: `${u.id}-${cid}`, studentId: u.id, name: u.name, email: u.email, courseId: cid, code: courses[cid].code, title: courses[cid].title, cert });
+      const batchNumber = (cert && cert.batchNumber != null) ? cert.batchNumber : (u.enrolledBatch ? u.enrolledBatch[cid] : null);
+      rows.push({ key: `${u.id}-${cid}`, studentId: u.id, name: u.name, email: u.email, courseId: cid, code: courses[cid].code, title: courses[cid].title, batchNumber, cert });
       seen.add(`${u.id}-${cid}`);
     }
   }
   for (const c of certificates) {
     const k = `${c.student_id}-${c.course_id}`;
-    if (!seen.has(k)) rows.push({ key: k, studentId: c.student_id, name: c.studentName, email: c.studentEmail, courseId: c.course_id, code: c.courseCode, title: c.courseTitle, cert: c });
+    if (!seen.has(k)) rows.push({ key: k, studentId: c.student_id, name: c.studentName, email: c.studentEmail, courseId: c.course_id, code: c.courseCode, title: c.courseTitle, batchNumber: c.batchNumber, cert: c });
   }
+  const batchNumbers = [...new Set(rows.map((r) => r.batchNumber).filter((n) => n != null))].sort((a, b) => a - b);
 
   const ql = qy.trim().toLowerCase();
   const filtered = rows
     .filter((r) => courseF === "all" || r.courseId === courseF)
+    .filter((r) => batchF === "all" || String(r.batchNumber) === String(batchF))
     .filter((r) => statusF === "all" || (statusF === "issued" ? r.cert : !r.cert))
     .filter((r) => !ql || r.name.toLowerCase().includes(ql) || r.title.toLowerCase().includes(ql) || r.code.toLowerCase().includes(ql));
 
@@ -75,7 +79,7 @@ export default function Certificates() {
   };
 
   const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
-  const activeFilters = (courseF !== "all") + (statusF !== "all") + (ql ? 1 : 0);
+  const activeFilters = (courseF !== "all") + (statusF !== "all") + (batchF !== "all") + (ql ? 1 : 0);
 
   return (
     <Layout title="Certificates">
@@ -95,11 +99,17 @@ export default function Certificates() {
             <option value="issued">Issued</option>
             <option value="notissued">Not issued</option>
           </select>
+          {batchNumbers.length > 0 && (
+            <select className="form-control" style={{ flex: "0 0 130px" }} value={batchF} onChange={(e) => { setBatchF(e.target.value); reset(); }}>
+              <option value="all">All batches</option>
+              {batchNumbers.map((n) => <option key={n} value={n}>Batch {n}</option>)}
+            </select>
+          )}
           <div style={{ position: "relative", flex: "1 1 200px" }}>
             <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
             <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student or course" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
           </div>
-          {activeFilters > 0 && <button className="btn btn-ghost btn-sm" onClick={() => { setCourseF("all"); setStatusF("all"); setQy(""); reset(); }}><X /> Clear</button>}
+          {activeFilters > 0 && <button className="btn btn-ghost btn-sm" onClick={() => { setCourseF("all"); setStatusF("all"); setBatchF("all"); setQy(""); reset(); }}><X /> Clear</button>}
           <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
             <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
           </button>
@@ -118,7 +128,7 @@ export default function Certificates() {
                       <input type="checkbox" checked={allChecked} disabled={selectableKeys.length === 0} onChange={toggleAll}
                         style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: selectableKeys.length ? "pointer" : "default" }} />
                     </th>
-                    <th>Student</th><th>Course</th><th>Status</th><th></th>
+                    <th>Student</th><th>Course</th><th>Batch</th><th>Status</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -131,6 +141,7 @@ export default function Certificates() {
                       </td>
                       <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
                       <td><span className="cc-code">{r.code}</span> <span style={{ color: "#6B7280", fontSize: 13 }}>{r.title}</span></td>
+                      <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
                       <td>{statusBadge(r.cert)}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmt(r.cert.issued_at)}</div>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {r.cert && <>

@@ -50,6 +50,7 @@ export default function Students() {
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
   const [course, setCourse] = useState("all");
+  const [batch, setBatch] = useState("all");
   const [gender, setGender] = useState("all");
   const [pay, setPay] = useState("all");
   const [page, setPage] = useState(1);
@@ -79,9 +80,15 @@ export default function Students() {
 
   const ql = qy.trim().toLowerCase();
   const all = Object.entries(users).filter(([, u]) => u.role === "student");
+  const batchOptions = course !== "all"
+    ? ((courses[course] && courses[course].batches) || []).map((b) => b.number)
+    : [...new Set(all.flatMap(([, s]) => Object.values(s.enrolledBatch || {})))].sort((a, b) => a - b);
   const filtered = all
     .filter(([, s]) => status === "all" || s.status === status)
     .filter(([, s]) => course === "all" || s.enrolled.includes(course))
+    .filter(([, s]) => batch === "all" || (course !== "all"
+      ? s.enrolledBatch && s.enrolledBatch[course] === Number(batch)
+      : Object.values(s.enrolledBatch || {}).includes(Number(batch))))
     .filter(([, s]) => gender === "all" || s.gender === gender)
     .filter(([, s]) => pay === "all" || (payStatusByUser[s.id] || "none") === pay)
     .filter(([e, s]) => !ql || s.name.toLowerCase().includes(ql) || e.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
@@ -90,7 +97,7 @@ export default function Students() {
   const safePage = Math.min(page, pageCount);
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
-  const activeFilters = (status !== "all") + (course !== "all") + (gender !== "all") + (pay !== "all") + (ql ? 1 : 0);
+  const activeFilters = (status !== "all") + (course !== "all") + (batch !== "all") + (gender !== "all") + (pay !== "all") + (ql ? 1 : 0);
 
   return (
     <Layout title="Students">
@@ -151,7 +158,13 @@ export default function Students() {
           </select>
           <SearchSelect style={{ flex: "1 1 220px" }} value={course} placeholder="All courses" allLabel="All courses"
             options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
-            onChange={(v) => { setCourse(v); resetPage(); }} />
+            onChange={(v) => { setCourse(v); setBatch("all"); resetPage(); }} />
+          {batchOptions.length > 0 && (
+            <select className="form-control" style={{ flex: "0 0 130px" }} value={batch} onChange={(e) => { setBatch(e.target.value); resetPage(); }}>
+              <option value="all">All batches</option>
+              {batchOptions.map((n) => <option key={n} value={n}>Batch {n}</option>)}
+            </select>
+          )}
           <select className="form-control" style={{ flex: "0 0 150px" }} value={gender} onChange={(e) => { setGender(e.target.value); resetPage(); }}>
             <option value="all">Any gender</option>
             <option value="Male">Male</option>
@@ -165,7 +178,7 @@ export default function Students() {
             <option value="none">No plan</option>
           </select>
           {activeFilters > 0 && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setCourse("all"); setGender("all"); setPay("all"); resetPage(); }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setCourse("all"); setBatch("all"); setGender("all"); setPay("all"); resetPage(); }}>
               <X /> Clear
             </button>
           )}

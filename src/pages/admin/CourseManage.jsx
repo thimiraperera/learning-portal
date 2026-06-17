@@ -1,9 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet, Pencil, Check,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet, Pencil, Check, Layers,
 } from "lucide-react";
+
+// "Batch 2 · ongoing" style label for the batch dropdown / cards.
+function batchLabel(b) {
+  if (!b) return "";
+  const dates = [b.start_date, b.end_date].filter(Boolean).join(" to ");
+  return `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${dates ? " · " + dates : ""}`;
+}
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
@@ -13,23 +20,49 @@ export default function CourseManage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const store = useStore();
-  const { courses, users } = store;
+  const { courses, users, fetchCourseBatch, startNewBatch } = store;
   const c = courses[id];
   const [tab, setTab] = useState("details"); // open on Course details (first tab)
+  const [viewBatchId, setViewBatchId] = useState(null); // null = current
+  const [bc, setBc] = useState(null);                   // viewed batch's content/instructors
+  const [batchBusy, setBatchBusy] = useState(false);
+
+  const batches = c ? (c.batches || []) : [];
+  const activeBatchId = viewBatchId || (c && c.batchId);
+  const viewedBatch = batches.find((b) => b.id === activeBatchId) || null;
+
+  // Load the viewed batch's content/instructors/plan; refreshed after mutations.
+  const reload = useCallback(async () => {
+    if (!c || !activeBatchId) return;
+    try { setBc(await fetchCourseBatch(id, activeBatchId)); } catch { /* keep last */ }
+  }, [id, activeBatchId, c, fetchCourseBatch]);
+  useEffect(() => { reload(); }, [reload]);
 
   if (!c) return <Navigate to="/admin/courses" replace />;
 
-  const enrolledCount = Object.values(users).filter((u) => u.enrolled.includes(id)).length;
+  // Data for the viewed batch (falls back to the store's current-batch course until fetched).
+  const data = bc && bc.batchId === activeBatchId ? bc : c;
+  const viewedNum = viewedBatch ? viewedBatch.number : null;
+  const inBatch = (u) => u.enrolled.includes(id) && (u.enrolledBatch ? u.enrolledBatch[id] === viewedNum : true);
+  const enrolledCount = Object.values(users).filter(inBatch).length;
 
   const tabs = [
     { k: "details", label: "Course details", icon: SettingsIcon },
     { k: "plan", label: "Payment plan", icon: Wallet },
     { k: "students", label: "Enrolled students", icon: Users, n: enrolledCount },
-    { k: "instructor", label: "Instructors", icon: Presentation, n: c.instructors.length },
-    { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
-    { k: "links", label: "Course links", icon: Link2, n: c.links.length },
-    { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
+    { k: "instructor", label: "Instructors", icon: Presentation, n: data.instructors.length },
+    { k: "recordings", label: "Recordings", icon: PlayCircle, n: data.recordings.length },
+    { k: "links", label: "Course links", icon: Link2, n: data.links.length },
+    { k: "materials", label: "Materials", icon: FileDown, n: data.materials.length },
   ];
+
+  const onStartNewBatch = async () => {
+    if (!window.confirm("Start a new batch? The current batch is marked ended, and its instructors, content, and payment plan are copied into a fresh batch (students are not copied).")) return;
+    setBatchBusy(true);
+    const r = await startNewBatch(id, {});
+    setBatchBusy(false);
+    if (r.ok) setViewBatchId(null); // jump to the new ongoing batch
+  };
 
   return (
     <Layout title="Manage course">
@@ -38,14 +71,24 @@ export default function CourseManage() {
       <div className="page-hero">
         <div className="ph-code">{c.code}</div>
         <h1>{c.title}</h1>
-        <p>{c.instructor ? `Instructor: ${c.instructor}` : "No instructor assigned"}</p>
+        <p>{data.instructor ? `Instructor: ${data.instructor}` : "No instructor assigned"}</p>
+        <div className="batch-bar">
+          <Layers style={{ width: 16, height: 16, color: "var(--primary)" }} />
+          <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600 }}>Batch</span>
+          <select className="form-control" style={{ flex: "0 0 auto", width: "auto", maxWidth: 280 }}
+            value={activeBatchId || ""} onChange={(e) => setViewBatchId(Number(e.target.value))}>
+            {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b)}</option>)}
+          </select>
+          <button className="btn btn-outline btn-sm" disabled={batchBusy} onClick={onStartNewBatch}><Plus /> {batchBusy ? "Starting..." : "Start new batch"}</button>
+        </div>
       </div>
 
       <div className="stats-grid">
+        <Stat label="Batches" value={batches.length} icon={Layers} bg="#F5F3FF" color="#7C3AED" />
         <Stat label="Enrolled" value={enrolledCount} icon={Users} bg="#EBF2FF" color="#1E509B" />
-        <Stat label="Recordings" value={c.recordings.length} icon={PlayCircle} bg="#EFF6FF" color="#2563EB" />
-        <Stat label="Links" value={c.links.length} icon={Link2} bg="#F0FDF4" color="#16A34A" />
-        <Stat label="Materials" value={c.materials.length} icon={FileDown} bg="#FFFBEB" color="#D97706" />
+        <Stat label="Recordings" value={data.recordings.length} icon={PlayCircle} bg="#EFF6FF" color="#2563EB" />
+        <Stat label="Links" value={data.links.length} icon={Link2} bg="#F0FDF4" color="#16A34A" />
+        <Stat label="Materials" value={data.materials.length} icon={FileDown} bg="#FFFBEB" color="#D97706" />
       </div>
 
       <div className="card">
@@ -58,12 +101,12 @@ export default function CourseManage() {
         </div>
 
         {tab === "details" && <DetailsTab id={id} c={c} store={store} navigate={navigate} />}
-        {tab === "recordings" && <ContentSection id={id} groupId={0} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={c.recordings} placeholder="Recording title" installments={c.planInstallments} />}
-        {tab === "links" && <ContentSection id={id} groupId={0} store={store} bucket="links" title="Course links" Icon={Link2} items={c.links} placeholder="Link title" installments={c.planInstallments} />}
-        {tab === "materials" && <ContentSection id={id} groupId={0} store={store} bucket="materials" title="Materials" Icon={FileDown} items={c.materials} placeholder="Material title" installments={c.planInstallments} />}
-        {tab === "students" && <StudentsTab id={id} store={store} navigate={navigate} />}
-        {tab === "plan" && <CoursePlanTab id={id} store={store} />}
-        {tab === "instructor" && <InstructorTab id={id} c={c} store={store} navigate={navigate} />}
+        {tab === "recordings" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="recordings" title="Recordings" Icon={PlayCircle} items={data.recordings} placeholder="Recording title" installments={data.planInstallments} />}
+        {tab === "links" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="links" title="Course links" Icon={Link2} items={data.links} placeholder="Link title" installments={data.planInstallments} />}
+        {tab === "materials" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="materials" title="Materials" Icon={FileDown} items={data.materials} placeholder="Material title" installments={data.planInstallments} />}
+        {tab === "students" && <StudentsTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} navigate={navigate} />}
+        {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} store={store} />}
+        {tab === "instructor" && <InstructorTab id={id} batchId={activeBatchId} c={data} reload={reload} store={store} navigate={navigate} />}
       </div>
     </Layout>
   );
@@ -102,6 +145,7 @@ function DetailsTab({ id, c, store, navigate }) {
 
   return (
     <div style={{ maxWidth: 620 }}>
+      <div className="alert alert-info" style={{ marginBottom: 18 }}><Layers /> These details (code, title, description, certificate template) are shared across <strong>all batches</strong> of this course. Per-batch setup lives in the other tabs.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
       <div className="form-group"><label className="form-label">Code</label>
         <input className="form-control" value={code} onChange={(e) => setCode(e.target.value)} /></div>
@@ -127,23 +171,25 @@ function DetailsTab({ id, c, store, navigate }) {
   );
 }
 
-function StudentsTab({ id, store, navigate }) {
+function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   const { users, toggleEnrol, plans } = store;
   const planByUser = {};
   (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
-  const [enrolment, setEnrolment] = useState("enrolled"); // all | enrolled | not; default shows this course's students
+  const [enrolment, setEnrolment] = useState("enrolled"); // all | enrolled | not; default shows this batch's students
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const inThisBatch = (s) => s.enrolled.includes(id) && (s.enrolledBatch ? s.enrolledBatch[id] === batchNum : true);
+  const inCourse = (s) => s.enrolled.includes(id);
   const ql = qy.trim().toLowerCase();
   const all = Object.entries(users).filter(([, u]) => u.role === "student");
-  const enrolledCount = all.filter(([, s]) => s.enrolled.includes(id)).length;
+  const enrolledCount = all.filter(([, s]) => inThisBatch(s)).length;
 
   const filtered = all
     .filter(([, s]) => status === "all" || s.status === status)
-    .filter(([, s]) => enrolment === "all" || (enrolment === "enrolled" ? s.enrolled.includes(id) : !s.enrolled.includes(id)))
+    .filter(([, s]) => enrolment === "all" ? (inThisBatch(s) || !inCourse(s)) : (enrolment === "enrolled" ? inThisBatch(s) : !inCourse(s)))
     .filter(([email, s]) => !ql || s.name.toLowerCase().includes(ql) || email.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -175,14 +221,14 @@ function StudentsTab({ id, store, navigate }) {
           <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setEnrolment("enrolled"); resetPage(); }}><X /> Clear</button>
         )}
       </div>
-      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{enrolledCount} enrolled in this course · {filtered.length} of {all.length} students shown</div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{enrolledCount} enrolled in Batch {batchNum} · {filtered.length} of {all.length} students shown</div>
 
       {filtered.length === 0 ? (
         <p style={{ color: "#9CA3AF", fontSize: 13 }}>No students match.</p>
       ) : (
         <>
           {slice.map(([email, s]) => {
-            const isEnrolled = s.enrolled.includes(id);
+            const isEnrolled = inThisBatch(s);
             const plan = planByUser[s.id];
             const pb = isEnrolled ? planBadge(plan ? plan.status : "empty") : null;
             return (
@@ -204,8 +250,8 @@ function StudentsTab({ id, store, navigate }) {
                 </div>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
                 {isEnrolled
-                  ? <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id)}><UserMinus /> Remove</button>
-                  : <button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id)}><UserPlus /> Add</button>}
+                  ? <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserMinus /> Remove</button>
+                  : <button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserPlus /> Add to Batch {batchNum}</button>}
               </div>
             );
           })}
@@ -217,7 +263,7 @@ function StudentsTab({ id, store, navigate }) {
   );
 }
 
-function CoursePlanTab({ id, store }) {
+function CoursePlanTab({ id, batchId, store }) {
   const { fetchCoursePlan, saveCoursePlan, applyCoursePlan } = store;
   const [plan, setPlan] = useState(null);
   const [preview, setPreview] = useState([]);
@@ -227,12 +273,13 @@ function CoursePlanTab({ id, store }) {
   useEffect(() => {
     let alive = true;
     const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
-    fetchCoursePlan(id)
+    setPlan(null);
+    fetchCoursePlan(id, batchId)
       .then((d) => { if (alive) { setPlan(d.plan || blank); setPreview(d.preview || []); } })
       .catch(() => { if (alive) setPlan(blank); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, batchId]);
 
   if (!plan) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
 
@@ -241,10 +288,10 @@ function CoursePlanTab({ id, store }) {
   // each student follows the course plan with no per-student setup.
   const saveAndApply = async () => {
     setBusy(true); setMsg(null);
-    const r = await saveCoursePlan(id, plan);
+    const r = await saveCoursePlan(id, batchId, plan);
     if (!r.ok) { setBusy(false); setMsg({ ok: false, text: r.msg }); return; }
     setPlan(r.plan); setPreview(r.preview || []);
-    const a = await applyCoursePlan(id);
+    const a = await applyCoursePlan(id, batchId);
     setBusy(false);
     setMsg(a.ok
       ? { ok: true, text: `Saved and applied to ${a.applied} enrolled student${a.applied === 1 ? "" : "s"}. New enrolments get it automatically.` }
@@ -299,8 +346,10 @@ function CoursePlanTab({ id, store }) {
   );
 }
 
-function InstructorTab({ id, c, store, navigate }) {
+function InstructorTab({ id, batchId, c, reload, store, navigate }) {
   const { instructors, addCourseInstructor, removeCourseInstructor } = store;
+  const add = async (iid) => { await addCourseInstructor(id, batchId, iid); await reload(); };
+  const remove = async (iid) => { await removeCourseInstructor(id, batchId, iid); await reload(); };
   const [qy, setQy] = useState("");
   const assignedIds = c.instructors.map((i) => i.id);
   const ql = qy.trim().toLowerCase();
@@ -324,7 +373,7 @@ function InstructorTab({ id, c, store, navigate }) {
                 </span>
               </button>
               <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/instructors/${i.id}`)}><Eye /> View</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, i.id)}><UserMinus /> Remove</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => remove(i.id)}><UserMinus /> Remove</button>
             </div>
           ))}
         </div>
@@ -347,7 +396,7 @@ function InstructorTab({ id, c, store, navigate }) {
                   <div className="ar-title">{i.name}</div>
                   {i.title && <div className="ar-sub">{i.title}</div>}
                 </div>
-                <button className="btn btn-outline btn-sm" onClick={() => addCourseInstructor(id, i.id)}><UserPlus /> Add</button>
+                <button className="btn btn-outline btn-sm" onClick={() => add(i.id)}><UserPlus /> Add</button>
               </div>
             ))
           )}
@@ -357,7 +406,7 @@ function InstructorTab({ id, c, store, navigate }) {
   );
 }
 
-function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeholder, installments }) {
+function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items, placeholder, installments }) {
   const { addItem, removeItem, uploadMaterial, setItemInstallment, reorderItems, updateItem } = store;
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
@@ -368,11 +417,14 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
   const [et, setEt] = useState("");             // edited title
   const [eu, setEu] = useState("");             // edited url
 
+  // The store refresh only carries the current batch, so re-fetch the viewed batch after each change.
+  const removeItemB = async (b, itemId) => { await removeItem(id, b, itemId); await reload(); };
+  const setItemInstallmentB = async (b, itemId, s) => { await setItemInstallment(id, b, itemId, s); await reload(); };
   const beginEdit = (it) => { setEditId(it.id); setEt(it.t); setEu(it.u || ""); };
   const saveEdit = async (it) => {
     if (!et.trim()) return;
     const r = await updateItem(id, bucket, it.id, et.trim(), it.filename ? undefined : eu.trim());
-    if (r.ok) setEditId(null);
+    if (r.ok) { setEditId(null); await reload(); }
   };
   const dragIdRef = useRef(null);              // synchronous source of truth for the drag
   const [dragId, setDragId] = useState(null);  // mirror, only for the .dragging style
@@ -396,13 +448,14 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
     const ids = items.map((it) => it.id);
     ids.splice(ids.indexOf(targetId), 0, ids.splice(ids.indexOf(did), 1)[0]);
     await reorderItems(id, bucket, ids);
+    await reload();
   };
 
   const add = async () => {
     if (!value.trim()) { setErr("Enter a title."); return; }
     setErr(null);
-    const r = await addItem(id, groupId, bucket, value.trim(), url.trim(), seq);
-    if (r.ok) { setValue(""); setUrl(""); } else setErr(r.msg);
+    const r = await addItem(id, batchId, bucket, value.trim(), url.trim(), seq);
+    if (r.ok) { setValue(""); setUrl(""); await reload(); } else setErr(r.msg);
   };
 
   const onFile = async (e) => {
@@ -410,9 +463,9 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
     e.target.value = "";
     if (!file) return;
     setBusy(true); setErr(null);
-    const r = await uploadMaterial(id, groupId, file, seq);
+    const r = await uploadMaterial(id, batchId, file, seq);
     setBusy(false);
-    if (!r.ok) setErr(r.msg);
+    if (!r.ok) setErr(r.msg); else await reload();
   };
 
   return (
@@ -453,12 +506,12 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
                         : it.u && <div className="ci-url">{it.u}</div>}
                     </div>
                     <button className="icon-btn-soft" title="Edit" onClick={() => beginEdit(it)}><Pencil style={{ width: 15, height: 15 }} /></button>
-                    <button className="icon-btn-plain" title="Remove" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+                    <button className="icon-btn-plain" title="Remove" onClick={() => removeItemB(bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
                   </>
                 )}
               </div>
               <div className="content-item-foot">
-                <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
+                <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallmentB(bucket, it.id, s)} />
               </div>
             </div>
           ))}

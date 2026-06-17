@@ -10,6 +10,7 @@ export default function Requests() {
   const { requests, courses, approveRequest, declineRequest } = useStore();
   const [qy, setQy] = useState("");
   const [course, setCourse] = useState("all");
+  const [batchSel, setBatchSel] = useState({}); // requestId -> chosen batch id
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const resetPage = () => setPage(1);
@@ -65,7 +66,11 @@ export default function Requests() {
                   <tr><th>Student</th><th>Course</th><th>Requested</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {slice.map((r) => (
+                  {slice.map((r) => {
+                    const cb = courses[r.course_id];
+                    const batches = (cb && cb.batches) || [];
+                    const sel = batchSel[r.id] || (cb && cb.batchId);
+                    return (
                     <tr key={r.id}>
                       <td>
                         <div style={{ fontWeight: 700 }}>{r.studentName}</div>
@@ -76,11 +81,18 @@ export default function Requests() {
                         {new Date(Number(r.created_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                       </td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn btn-primary btn-sm" style={{ marginRight: 8 }} onClick={() => approveRequest(r.id)}><Check /> Approve</button>
+                        {batches.length > 0 && (
+                          <select className="form-control" style={{ display: "inline-block", width: "auto", height: 34, padding: "0 8px", fontSize: 12.5, marginRight: 8 }}
+                            value={sel || ""} onChange={(e) => setBatchSel((s) => ({ ...s, [r.id]: Number(e.target.value) }))}>
+                            {batches.map((b) => <option key={b.id} value={b.id}>Batch {b.number}{b.status === "ended" ? " (ended)" : ""}</option>)}
+                          </select>
+                        )}
+                        <button className="btn btn-primary btn-sm" style={{ marginRight: 8 }} onClick={() => approveRequest(r.id, sel)}><Check /> Approve</button>
                         <button className="btn btn-ghost btn-sm" onClick={() => declineRequest(r.id)}><X /> Decline</button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

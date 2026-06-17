@@ -26,13 +26,16 @@ export default function Payments() {
   const [qy, setQy] = useState("");
   const [course, setCourse] = useState("all");
   const [status, setStatus] = useState("all");
+  const [batch, setBatch] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const resetPage = () => setPage(1);
 
+  const batchNumbers = [...new Set(plans.map((p) => p.batchNumber).filter((n) => n != null))].sort((a, b) => a - b);
   const ql = qy.trim().toLowerCase();
   const filtered = plans
     .filter((p) => course === "all" || String(p.course_id) === String(course))
+    .filter((p) => batch === "all" || String(p.batchNumber) === String(batch))
     .filter((p) => {
       if (status === "all") return true;
       if (status === "paid") return p.status === "paid";
@@ -50,7 +53,7 @@ export default function Payments() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const activeFilters = (course !== "all") + (status !== "all") + (ql ? 1 : 0);
+  const activeFilters = (course !== "all") + (status !== "all") + (batch !== "all") + (ql ? 1 : 0);
 
   const totalRemaining = filtered.reduce((n, p) => n + Number(p.remaining || 0), 0);
 
@@ -77,8 +80,14 @@ export default function Payments() {
             <option value="unpaid">Has balance</option>
             <option value="overdue">Overdue</option>
           </select>
+          {batchNumbers.length > 0 && (
+            <select className="form-control" style={{ flex: "0 0 130px" }} value={batch} onChange={(e) => { setBatch(e.target.value); resetPage(); }}>
+              <option value="all">All batches</option>
+              {batchNumbers.map((n) => <option key={n} value={n}>Batch {n}</option>)}
+            </select>
+          )}
           {activeFilters > 0 && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setCourse("all"); setStatus("all"); resetPage(); }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setCourse("all"); setStatus("all"); setBatch("all"); resetPage(); }}>
               <X /> Clear
             </button>
           )}
@@ -94,7 +103,7 @@ export default function Payments() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Student</th><th>Course</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Next due</th><th>Status</th><th></th></tr>
+                  <tr><th>Student</th><th>Course</th><th>Batch</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Next due</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
                   {slice.map((p) => {
@@ -110,6 +119,7 @@ export default function Payments() {
                           {p.studentStatus === "inactive" && <span className="badge badge-rejected" style={{ marginTop: 4, display: "inline-block" }}>Account locked</span>}
                         </td>
                         <td style={{ color: "#6B7280" }}>{p.courseCode} - {p.courseTitle}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>{p.batchNumber != null ? `Batch ${p.batchNumber}` : "-"}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{rs(p.total)}</td>
                         <td style={{ whiteSpace: "nowrap", color: "#16A34A" }}>{rs(p.paid)}</td>
                         <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{rs(p.remaining)}</td>

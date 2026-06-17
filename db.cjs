@@ -50,6 +50,12 @@ const TABLES = [
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
      instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS batches (
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL,
+     number INT NOT NULL, status VARCHAR(12) DEFAULT 'ongoing',
+     start_date VARCHAR(20) DEFAULT '', end_date VARCHAR(20) DEFAULT '', created_at BIGINT,
+     UNIQUE KEY uniq_batch (course_id, number)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS instructors (
      id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL,
      email VARCHAR(190), phone VARCHAR(60), title VARCHAR(190), bio TEXT,
@@ -151,6 +157,33 @@ async function ensureColumn(table, col, decl) {
   if (rows[0].n === 0) { await q(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); return true; }
   return false;
 }
+async function hasIndex(table, index) {
+  const [[r]] = await q("SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=?", [table, index]);
+  return r.n > 0;
+}
+
+/* One-time migration to batch-scoped courses. Adds a Batch 1 to every existing
+   course and stamps all existing course-scoped rows with it, so old data keeps
+   working. Idempotent: safe to run on every boot. */
+const BATCH_TABLES = ["enrolments", "recordings", "links", "materials", "course_instructors", "course_payment_plans", "payment_plans", "certificates", "course_requests"];
+async function migrateBatches() {
+  for (const t of BATCH_TABLES) await ensureColumn(t, "batch_id", "INT");
+  // Create Batch 1 for any course that has none yet.
+  await q(`INSERT INTO batches (course_id, number, status, created_at)
+     SELECT c.id, 1, 'ongoing', ? FROM courses c
+     WHERE NOT EXISTS (SELECT 1 FROM batches b WHERE b.course_id=c.id)`, [Date.now()]);
+  // Stamp existing rows (batch_id still NULL) with their course's Batch 1.
+  for (const t of BATCH_TABLES) {
+    await q(`UPDATE ${t} x JOIN batches b ON b.course_id=x.course_id AND b.number=1
+       SET x.batch_id=b.id WHERE x.batch_id IS NULL`);
+  }
+  // course_payment_plans was keyed by course_id; re-key per batch.
+  if (await hasIndex("course_payment_plans", "PRIMARY")) { try { await q("ALTER TABLE course_payment_plans DROP PRIMARY KEY"); } catch { /* already dropped */ } }
+  if (!(await hasIndex("course_payment_plans", "uniq_cpp_batch"))) { try { await q("ALTER TABLE course_payment_plans ADD UNIQUE KEY uniq_cpp_batch (batch_id)"); } catch { /* dup or exists */ } }
+  // course_instructors was keyed by (course_id, instructor_id); re-key per batch.
+  if (await hasIndex("course_instructors", "PRIMARY")) { try { await q("ALTER TABLE course_instructors DROP PRIMARY KEY"); } catch { /* already dropped */ } }
+  if (!(await hasIndex("course_instructors", "uniq_ci_batch"))) { try { await q("ALTER TABLE course_instructors ADD UNIQUE KEY uniq_ci_batch (batch_id, instructor_id)"); } catch { /* dup or exists */ } }
+}
 
 function displayName(u) {
   const full = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
@@ -225,6 +258,7 @@ async function init() {
   // Content items can be gated behind a payment stage: 0 = everyone, 1 = reg fee,
   // 2 = Installment 1, 3 = Installment 2... (matches the schedule line seq).
   for (const t of ["recordings", "links", "materials"]) await ensureColumn(t, "installment_seq", "INT DEFAULT 0");
+  await migrateBatches();
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
   // loses access on upgrade; new local admins default to 0.
@@ -293,39 +327,90 @@ async function init() {
 }
 
 /* ---- read helpers (assemble the shapes the frontend expects) ---- */
-async function courseFull(id) {
+// Course content is per-batch. `batchId` selects which batch's content to load;
+// when omitted it falls back to the current (ongoing) batch. The returned object
+// also carries the full `batches` list and the resolved `batchId`.
+async function courseFull(id, batchId) {
   const [[c]] = await q("SELECT * FROM courses WHERE id=?", [id]);
   if (!c) return null;
+  const batches = await listBatches(id);
+  let bid = batchId != null ? Number(batchId) : null;
+  if (bid == null || !batches.some((b) => b.id === bid)) {
+    const cur = batches.find((b) => b.status === "ongoing") || batches[batches.length - 1];
+    bid = cur ? cur.id : null;
+  }
   const [instructors] = await q(
-    "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? ORDER BY i.name", [id]);
-  const [recordings] = await q("SELECT id, group_id, title AS t, url AS u, installment_seq AS seq FROM recordings WHERE course_id=? ORDER BY position, id", [id]);
-  const [links] = await q("SELECT id, group_id, title AS t, url AS u, installment_seq AS seq FROM links WHERE course_id=? ORDER BY position, id", [id]);
-  const [materials] = await q("SELECT id, group_id, title AS t, size, ext, filename, url AS u, installment_seq AS seq FROM materials WHERE course_id=? ORDER BY position, id", [id]);
-  const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE course_id=?", [id]);
-  const [groupRows] = await q("SELECT id, title FROM content_groups WHERE course_id=? ORDER BY position, id", [id]);
-  const groups = groupRows.map((g) => ({
-    id: g.id, title: g.title,
-    recordings: recordings.filter((r) => r.group_id === g.id),
-    links: links.filter((r) => r.group_id === g.id),
-    materials: materials.filter((r) => r.group_id === g.id),
-  }));
+    "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? AND ci.batch_id=? ORDER BY i.name", [id, bid]);
+  const [recordings] = await q("SELECT id, title AS t, url AS u, installment_seq AS seq FROM recordings WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
+  const [links] = await q("SELECT id, title AS t, url AS u, installment_seq AS seq FROM links WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
+  const [materials] = await q("SELECT id, title AS t, size, ext, filename, url AS u, installment_seq AS seq FROM materials WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
+  const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE batch_id=?", [bid]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
     certTemplate: c.cert_template || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
-    recordings, links, materials, groups,
+    recordings, links, materials, groups: [],
     planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
+    batches, batchId: bid,
   };
 }
-async function coursesMap(ids) {
+// batchByCourse (optional): courseId -> batchId to load (e.g. a student's enrolled
+// batch). Falls back to the current batch per course when not provided.
+async function coursesMap(ids, batchByCourse) {
   const [rows] = await q("SELECT id FROM courses ORDER BY id DESC"); // newest first
   const map = {};
-  for (const { id } of rows) if (!ids || ids.includes(id)) map[id] = await courseFull(id);
+  for (const { id } of rows) if (!ids || ids.includes(id)) map[id] = await courseFull(id, batchByCourse ? batchByCourse[id] : undefined);
   return map;
 }
 async function enrolledIds(userId) {
   const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=?", [userId]);
   return rows.map((r) => r.course_id);
+}
+// courseId -> batch_id for one student's enrolments (their batch per course).
+async function enrolledBatches(userId) {
+  const [rows] = await q("SELECT course_id, batch_id FROM enrolments WHERE user_id=?", [userId]);
+  const m = {}; for (const r of rows) m[r.course_id] = r.batch_id; return m;
+}
+
+/* ---- batches (course cohorts) ---- */
+async function listBatches(courseId) {
+  const [rows] = await q("SELECT id, number, status, start_date, end_date FROM batches WHERE course_id=? ORDER BY number", [courseId]);
+  return rows;
+}
+// The batch an admin/student works in by default: the ongoing one (highest number), else the highest.
+async function currentBatch(courseId) {
+  const [[r]] = await q("SELECT id, number, status, start_date, end_date FROM batches WHERE course_id=? ORDER BY (status='ongoing') DESC, number DESC LIMIT 1", [courseId]);
+  return r || null;
+}
+async function currentBatchId(courseId) {
+  const b = await currentBatch(courseId);
+  return b ? b.id : null;
+}
+async function batchById(batchId) {
+  const [[r]] = await q("SELECT id, course_id, number, status, start_date, end_date FROM batches WHERE id=?", [batchId]);
+  return r || null;
+}
+async function setBatchDates(batchId, startDate, endDate) {
+  await q("UPDATE batches SET start_date=?, end_date=? WHERE id=?", [String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), batchId]);
+}
+async function endBatch(batchId) { await q("UPDATE batches SET status='ended' WHERE id=?", [batchId]); }
+// Start a new batch: end the current ongoing one, create the next number, and
+// copy instructors + content + the payment-plan template (NOT students/payments).
+async function startNewBatch(courseId, { startDate = "", endDate = "" } = {}) {
+  const [[prev]] = await q("SELECT id, number FROM batches WHERE course_id=? ORDER BY number DESC LIMIT 1", [courseId]);
+  const nextNum = prev ? prev.number + 1 : 1;
+  await q("UPDATE batches SET status='ended' WHERE course_id=? AND status='ongoing'", [courseId]);
+  const [r] = await q("INSERT INTO batches (course_id, number, status, start_date, end_date, created_at) VALUES (?,?, 'ongoing', ?,?,?)",
+    [courseId, nextNum, String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), Date.now()]);
+  const newId = r.insertId;
+  if (prev) {
+    await q("INSERT INTO course_instructors (course_id, instructor_id, batch_id) SELECT course_id, instructor_id, ? FROM course_instructors WHERE batch_id=?", [newId, prev.id]);
+    await q("INSERT INTO recordings (course_id, group_id, title, url, date, length, position, installment_seq, batch_id) SELECT course_id, group_id, title, url, date, length, position, installment_seq, ? FROM recordings WHERE batch_id=?", [newId, prev.id]);
+    await q("INSERT INTO links (course_id, group_id, title, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, url, position, installment_seq, ? FROM links WHERE batch_id=?", [newId, prev.id]);
+    await q("INSERT INTO materials (course_id, group_id, title, size, ext, filename, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, size, ext, filename, url, position, installment_seq, ? FROM materials WHERE batch_id=?", [newId, prev.id]);
+    await q("INSERT INTO course_payment_plans (course_id, total_fee, reg_fee, installments, start_date, completion_date, batch_id) SELECT course_id, total_fee, reg_fee, installments, start_date, completion_date, ? FROM course_payment_plans WHERE batch_id=?", [newId, prev.id]);
+  }
+  return newId;
 }
 
 /* ---- per-student course access lock ---- */
@@ -400,7 +485,7 @@ function buildPlan(p, insts, pays, today) {
       : missedCount > 0 ? "overdue"
         : totalPaidC > 0 ? "partial" : "pending";
   return {
-    id: p.id, user_id: p.user_id, course_id: p.course_id,
+    id: p.id, user_id: p.user_id, course_id: p.course_id, batchNumber: p.batchNumber ?? null,
     courseCode: p.courseCode, courseTitle: p.courseTitle,
     studentName: p.studentName, studentEmail: p.studentEmail, studentStatus: p.studentStatus, studentRegNo: p.studentRegNo,
     last_reminded: p.last_reminded,
@@ -425,27 +510,34 @@ async function enrichPlans(planRows) {
   return planRows.map((p) => buildPlan(p, byI[p.id] || [], byP[p.id] || [], today));
 }
 async function studentPlans(userId) {
-  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded, bt.number AS batchNumber,
        co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p JOIN courses co ON co.id=p.course_id
+     LEFT JOIN batches bt ON bt.id=p.batch_id
      WHERE p.user_id=? ORDER BY co.title`, [userId]);
   return enrichPlans(plans);
 }
 async function allPlans() {
-  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded, bt.number AS batchNumber,
        u.name AS studentName, u.email AS studentEmail, u.status AS studentStatus, u.reg_no AS studentRegNo,
        co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
+     LEFT JOIN batches bt ON bt.id=p.batch_id
      ORDER BY p.created_at DESC, p.id DESC`); // newest first
   return enrichPlans(plans);
 }
 // Replace a plan's whole schedule. items: [{label, amount, dueDate}] in order
 // (the first is the registration fee). Creates the plan row if it is new.
-async function setPlanSchedule(userId, courseId, items) {
-  await q(`INSERT INTO payment_plans (user_id,course_id,created_at) VALUES (?,?,?)
-     ON DUPLICATE KEY UPDATE course_id=VALUES(course_id)`, [userId, courseId, Date.now()]);
+async function setPlanSchedule(userId, courseId, items, batchId) {
+  let bid = batchId;
+  if (bid == null) {
+    const [[e]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [userId, courseId]);
+    bid = e ? e.batch_id : await currentBatchId(courseId);
+  }
+  await q(`INSERT INTO payment_plans (user_id,course_id,batch_id,created_at) VALUES (?,?,?,?)
+     ON DUPLICATE KEY UPDATE batch_id=VALUES(batch_id)`, [userId, courseId, bid, Date.now()]);
   const [[plan]] = await q("SELECT id FROM payment_plans WHERE user_id=? AND course_id=?", [userId, courseId]);
   await q("DELETE FROM payment_installments WHERE plan_id=?", [plan.id]);
   let seq = 1;
@@ -478,12 +570,13 @@ async function deletePayment(paymentId) { await q("DELETE FROM payments WHERE id
 // Active, still-enrolled students with at least one missed installment.
 // Feeds the admin Payments badge and the overdue reminder emails.
 async function overduePayments() {
-  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded,
+  const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded, bt.number AS batchNumber,
        u.name AS studentName, u.email AS studentEmail, u.status AS studentStatus, u.reg_no AS studentRegNo,
        co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
+     LEFT JOIN batches bt ON bt.id=p.batch_id
      WHERE u.role='student' AND u.status='active'
        AND EXISTS (SELECT 1 FROM enrolments e WHERE e.user_id=p.user_id AND e.course_id=p.course_id)`);
   return (await enrichPlans(plans)).filter((p) => p.missedCount > 0);
@@ -493,19 +586,19 @@ async function overduePayments() {
 // A reusable default schedule for a course (registration fee + N installments,
 // spread between a start and a completion date). The admin applies it to all
 // enrolled students, which writes each student's own schedule.
-async function getCoursePlan(courseId) {
-  const [[row]] = await q("SELECT * FROM course_payment_plans WHERE course_id=?", [courseId]);
+async function getCoursePlan(batchId) {
+  const [[row]] = await q("SELECT * FROM course_payment_plans WHERE batch_id=?", [batchId]);
   if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
   return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "" };
 }
-async function setCoursePlan(courseId, f) {
+async function setCoursePlan(courseId, batchId, f) {
   const total = Math.max(0, Number(f.total_fee) || 0);
   const reg = Math.max(0, Number(f.reg_fee) || 0);
   const inst = Math.max(0, Math.min(36, Math.floor(Number(f.installments) || 0)));
-  await q(`INSERT INTO course_payment_plans (course_id,total_fee,reg_fee,installments,start_date,completion_date) VALUES (?,?,?,?,?,?)
+  await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date) VALUES (?,?,?,?,?,?,?)
      ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date)`,
-    [courseId, total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20)]);
-  return getCoursePlan(courseId);
+    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20)]);
+  return getCoursePlan(batchId);
 }
 
 async function usersMap() {
@@ -517,10 +610,15 @@ async function usersMap() {
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
       gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
       nic: u.nic || "", reg_no: u.reg_no || "",
-      role: u.role, status: u.status, enrolled: await enrolledIds(u.id), lockedCourses: await lockedCourseIds(u.id),
+      role: u.role, status: u.status, enrolled: await enrolledIds(u.id), enrolledBatch: await enrolledBatchNumbers(u.id), lockedCourses: await lockedCourseIds(u.id),
     };
   }
   return map;
+}
+// courseId -> batch NUMBER for one student (for the Students batch filter).
+async function enrolledBatchNumbers(userId) {
+  const [rows] = await q("SELECT e.course_id, b.number FROM enrolments e LEFT JOIN batches b ON b.id=e.batch_id WHERE e.user_id=?", [userId]);
+  const m = {}; for (const r of rows) m[r.course_id] = r.number; return m;
 }
 async function inviteStudent({ name, email, username, token }) {
   const parts = name.trim().split(/\s+/);
@@ -594,11 +692,11 @@ async function deleteInstructor(id) {
     await q("DELETE FROM users WHERE id=? AND role='instructor'", [ins.user_id]);
   }
 }
-async function addCourseInstructor(courseId, instructorId) {
-  await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id) VALUES (?,?)", [courseId, Number(instructorId)]);
+async function addCourseInstructor(courseId, batchId, instructorId) {
+  await q("INSERT IGNORE INTO course_instructors (course_id,instructor_id,batch_id) VALUES (?,?,?)", [courseId, Number(instructorId), Number(batchId)]);
 }
-async function removeCourseInstructor(courseId, instructorId) {
-  await q("DELETE FROM course_instructors WHERE course_id=? AND instructor_id=?", [courseId, Number(instructorId)]);
+async function removeCourseInstructor(courseId, batchId, instructorId) {
+  await q("DELETE FROM course_instructors WHERE course_id=? AND instructor_id=? AND batch_id=?", [courseId, Number(instructorId), Number(batchId)]);
 }
 async function deleteCourse(id) {
   await q("DELETE FROM recordings WHERE course_id=?", [id]);
@@ -612,21 +710,21 @@ async function deleteCourse(id) {
   await q("DELETE FROM payment_installments WHERE plan_id IN (SELECT id FROM payment_plans WHERE course_id=?)", [id]);
   await q("DELETE FROM payment_plans WHERE course_id=?", [id]);
   await q("DELETE FROM course_payment_plans WHERE course_id=?", [id]);
+  await q("DELETE FROM batches WHERE course_id=?", [id]);
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
-async function addCourseItem(courseId, groupId, bucket, title, url, seq) {
+async function addCourseItem(courseId, batchId, bucket, title, url, seq) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
-  const gid = Number(groupId) || 0;
+  const bid = Number(batchId);
   const u = String(url || "").trim();
   const s = Math.max(0, Number(seq) || 0);
-  // Position runs across the whole course bucket (the list ignores groups), so a
-  // new item always lands at the very bottom.
-  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=?`, [courseId]);
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq) VALUES (?,?,?,?, '','', ?,?)", [courseId, gid, title, u, p, s]);
-  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position,installment_seq) VALUES (?,?,?,?, ?,?)", [courseId, gid, title, u, p, s]);
-  else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position,installment_seq) VALUES (?,?,?,?, '','LINK', ?,?)", [courseId, gid, title, u, p, s]);
+  // Position runs across the batch's bucket, so a new item lands at the bottom.
+  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND batch_id=?`, [courseId, bid]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq,batch_id) VALUES (?,0,?,?, '','', ?,?,?)", [courseId, title, u, p, s, bid]);
+  else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position,installment_seq,batch_id) VALUES (?,0,?,?, ?,?,?)", [courseId, title, u, p, s, bid]);
+  else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position,installment_seq,batch_id) VALUES (?,0,?,?, '','LINK', ?,?,?)", [courseId, title, u, p, s, bid]);
 }
 // Move an existing content item to a different payment stage (installment seq).
 async function setItemInstallment(courseId, bucket, itemId, seq) {
@@ -652,12 +750,12 @@ async function reorderItems(courseId, bucket, orderedIds) {
   if (!t || !Array.isArray(orderedIds)) return;
   for (let i = 0; i < orderedIds.length; i++) await q(`UPDATE ${t} SET position=? WHERE id=? AND course_id=?`, [i, orderedIds[i], courseId]);
 }
-async function addMaterialFile(courseId, groupId, f) {
-  const gid = Number(groupId) || 0;
+async function addMaterialFile(courseId, batchId, f) {
+  const bid = Number(batchId);
   const s = Math.max(0, Number(f.seq) || 0);
-  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=?", [courseId]);
-  await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position,installment_seq) VALUES (?,?,?,?,?,?,?,?)",
-    [courseId, gid, f.title, f.size, f.ext, f.filename, p, s]);
+  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=? AND batch_id=?", [courseId, bid]);
+  await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position,installment_seq,batch_id) VALUES (?,0,?,?,?,?,?,?,?)",
+    [courseId, f.title, f.size, f.ext, f.filename, p, s, bid]);
 }
 async function getMaterial(id) {
   const [[r]] = await q("SELECT id, course_id, group_id, title, size, ext, filename, installment_seq FROM materials WHERE id=?", [id]);
@@ -715,12 +813,15 @@ async function certExists(studentId, courseId) {
   return !!r;
 }
 async function issueCertificate(studentId, courseId, certNo, when) {
-  await q("INSERT INTO certificates (cert_no,student_id,course_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,0,0)", [certNo, studentId, courseId, when]);
+  const [[e]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [studentId, courseId]);
+  const bid = e ? e.batch_id : await currentBatchId(courseId);
+  await q("INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,?,0,0)", [certNo, studentId, courseId, bid, when]);
 }
 async function listCertificates() {
-  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.student_id, c.course_id,
+  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.student_id, c.course_id, bt.number AS batchNumber,
       u.name AS studentName, u.email AS studentEmail, co.title AS courseTitle, co.code AS courseCode
     FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
+    LEFT JOIN batches bt ON bt.id=c.batch_id
     ORDER BY c.issued_at DESC`);
   return rows;
 }
@@ -1078,7 +1179,8 @@ async function setSmtp(next) {
 }
 
 module.exports = {
-  pool, q, init, displayName, courseFull, coursesMap, enrolledIds, lockedCourses, usersMap,
+  pool, q, init, displayName, courseFull, coursesMap, enrolledIds, enrolledBatches, lockedCourses, usersMap,
+  listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch,
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,

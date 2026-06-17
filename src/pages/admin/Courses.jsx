@@ -153,11 +153,13 @@ export default function Courses() {
         ) : (
           <>
             <div className="course-grid">
-              {slice.map(([id, c]) => (
+              {slice.map(([id, c]) => {
+                const cur = (c.batches || []).find((b) => b.id === c.batchId);
+                return (
                 <button key={id} className="course-card" onClick={() => navigate(`/admin/courses/${id}`)}>
                   <div className="cc-top">
                     <span className="cc-code">{c.code}</span>
-                    <span className="cc-sessions">{c.sessions} sessions</span>
+                    <span className="cc-sessions">Batch {cur ? cur.number : 1}{cur && cur.status === "ended" ? " (ended)" : ""}</span>
                   </div>
                   <h3>{c.title}</h3>
                   <div className="cc-blurb">{c.blurb}</div>
@@ -169,7 +171,8 @@ export default function Courses() {
                     <span className="cc-enter">Manage <ChevronRight /></span>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
             <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
               pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={entries.length} />
