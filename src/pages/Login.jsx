@@ -206,7 +206,7 @@ const LOGIN_CSS = `
 .error-box { background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:14px; color:#991B1B; font-weight:500; }
 .login-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 18px; flex-wrap:wrap; }
 .login-remember { display:inline-flex; align-items:center; gap:8px; font-size:13px; line-height:1; color:#3D3D3D; font-weight:500; cursor:pointer; margin:0; }
-.login-remember input { width:16px; height:16px; margin:0; flex-shrink:0; accent-color:#1E509B; cursor:pointer; }
+.login-remember input { width:16px; height:16px; margin:0px 6px 0px 0px; flex-shrink:0; accent-color:#1E509B; cursor:pointer; }
 .login-remember span { line-height:1; }
 .login-forgot { font-size:13px; color:#1E509B; font-weight:700; text-decoration:none; }
 .login-forgot:hover { text-decoration:underline; }
