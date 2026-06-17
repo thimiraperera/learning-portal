@@ -8,7 +8,7 @@ const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
 const TOKEN_KEY = "lms_token";
-const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "" };
+const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "", loginIntro: "" };
 
 /* "Remember me" stores the token in localStorage (survives browser restarts);
    otherwise sessionStorage (cleared when the browser/tab closes). */
@@ -54,6 +54,7 @@ export function StoreProvider({ children }) {
   const [brand, setBrandLocal] = useState(DEFAULT_BRAND);
   const [smtp, setSmtpLocal] = useState(null);
   const [captcha, setCaptchaLocal] = useState({ provider: "none", siteKey: "", hasSecretKey: false, enabled: false });
+  const [showcase, setShowcaseLocal] = useState(null); // login-page floating cards
   const [regnum, setRegnumLocal] = useState({ prefix: "", width: 4 });
   const [ready, setReady] = useState(false);
 
@@ -115,7 +116,7 @@ export function StoreProvider({ children }) {
     let alive = true;
     (async () => {
       try { const b = await api("/brand"); if (alive) setBrandLocal({ ...DEFAULT_BRAND, ...b }); } catch { /* ignore */ }
-      try { const cfg = await api("/auth-config"); if (alive && cfg.captcha) setCaptchaLocal(cfg.captcha); } catch { /* ignore */ }
+      try { const cfg = await api("/auth-config"); if (alive) { if (cfg.captcha) setCaptchaLocal(cfg.captcha); setShowcaseLocal(cfg.showcase || null); } } catch { /* ignore */ }
       if (token) {
         try {
           const data = await api("/bootstrap", { token });
@@ -490,7 +491,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, regnum,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,

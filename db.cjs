@@ -923,9 +923,22 @@ async function markReminded(planIds, when) {
   await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
 }
 
+const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", loginIntro: "" };
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
-  return row ? JSON.parse(row.v) : { company: "", name: "Learning Portal", logo: "" };
+  return row ? { ...BRAND_DEFAULT, ...JSON.parse(row.v) } : { ...BRAND_DEFAULT };
+}
+// Public showcase for the login page's two floating cards: the newest course
+// (title + session count + code) and the total number of recordings. Returns
+// null when there are no courses yet, so the login page keeps its defaults.
+async function loginShowcase() {
+  const [[c]] = await q("SELECT code, title, sessions FROM courses ORDER BY id DESC LIMIT 1");
+  if (!c) return null;
+  const [[{ recordings }]] = await q("SELECT COUNT(*) AS recordings FROM recordings");
+  return {
+    course: { code: c.code, title: c.title, sessions: Number(c.sessions) || 0 },
+    recordings: Number(recordings) || 0,
+  };
 }
 async function setBrandValue(brand) {
   await q("INSERT INTO settings (k,v) VALUES ('brand',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(brand)]);
@@ -1006,7 +1019,7 @@ module.exports = {
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
-  getBrand, setBrandValue, getSmtp, getSmtpForClient, setSmtp,
+  getBrand, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getCaptcha, getCaptchaForClient, setCaptcha,
   hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser,

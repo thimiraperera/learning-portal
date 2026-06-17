@@ -232,7 +232,7 @@ async function adminState() {
 
 /* ---- public ---- */
 app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrand())));
-app.get("/api/auth-config", wrap(async (_req, res) => res.json({ captcha: await dbmod.getCaptchaForClient() })));
+app.get("/api/auth-config", wrap(async (_req, res) => res.json({ captcha: await dbmod.getCaptchaForClient(), showcase: await dbmod.loginShowcase() })));
 
 /* ---- first-admin setup (only works while no admin exists) ---- */
 app.get("/api/setup/needed", wrap(async (_req, res) => res.json({ needed: !(await dbmod.hasAdmin()) })));
@@ -1326,12 +1326,28 @@ app.post("/api/admin/smtp/test", auth, adminOnly, wrap(async (req, res) => {
   res.json({ ok: true, to });
 }));
 
+/* Strip the dangerous bits out of admin-entered rich text before it is stored
+   and later rendered on the public login page: <script>/<style> blocks, inline
+   on* event handlers, and javascript: URLs. Admins are trusted, but this keeps
+   a stray paste from turning into stored XSS. */
+function sanitizeHtml(html) {
+  return String(html || "")
+    .replace(/<\s*(script|style|iframe|object|embed)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
+    .replace(/<\s*(script|style|iframe|object|embed)\b[^>]*\/?>/gi, "")
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/(href|src)\s*=\s*("\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, "$1=\"#\"")
+    .slice(0, 5000);
+}
+
 /* ---- branding ---- */
 app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
+  const cur = await dbmod.getBrand();
+  const b = req.body || {};
   const brand = {
-    company: String(req.body?.company || ""),
-    name: String(req.body?.name || ""),
-    logo: String(req.body?.logo || ""),
+    company: b.company === undefined ? cur.company : String(b.company),
+    name: b.name === undefined ? cur.name : String(b.name),
+    logo: b.logo === undefined ? cur.logo : String(b.logo),
+    loginIntro: b.loginIntro === undefined ? (cur.loginIntro || "") : sanitizeHtml(b.loginIntro),
   };
   res.json(await dbmod.setBrandValue(brand));
 }));

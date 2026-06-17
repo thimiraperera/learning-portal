@@ -439,6 +439,16 @@ select.form-control { cursor: pointer; }
 .check-row input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 .locked-input { background: var(--surface); color: #9CA3AF; cursor: not-allowed; }
 
+/* lightweight rich-text editor (login-page description) */
+.rte { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.rte-toolbar { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px; background: #F8FAFD; border-bottom: 1px solid var(--border); }
+.rte-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: #6B7280; }
+.rte-btn:hover { background: #E8EFFA; color: var(--primary); }
+.rte-btn svg { width: 16px; height: 16px; }
+.rte-area { min-height: 104px; padding: 12px 14px; outline: none; font-size: 14px; line-height: 1.6; color: var(--text); }
+.rte-area:empty:before { content: attr(data-placeholder); color: #9CA3AF; }
+.rte-area ul, .rte-area ol { margin: 6px 0; padding-left: 22px; }
+
 /* assigned-rows (instructors on a course, etc.) */
 .assigned-row {
   display: flex; align-items: center; gap: 12px; padding: 11px 14px;

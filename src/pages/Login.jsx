@@ -8,7 +8,7 @@ const HOME = { admin: "/admin", instructor: "/instructor", student: "/" };
 /* Split-screen login. Username + password for both students and admins.
    Styles are scoped here via a <style> tag so they don't leak into the app. */
 export default function Login() {
-  const { login, brand, captcha: captchaCfg } = useStore();
+  const { login, brand, captcha: captchaCfg, showcase } = useStore();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -50,12 +50,16 @@ export default function Login() {
 
         <div className="float-card float-card-1">
           <div className="fc-label">Course</div>
-          <div className="fc-val">Equity Markets</div>
-          <div className="fc-sub">8 sessions · EQ-101</div>
+          <div className="fc-val">{showcase?.course?.title || "Equity Markets"}</div>
+          <div className="fc-sub">
+            {showcase
+              ? [showcase.course.sessions > 0 ? `${showcase.course.sessions} sessions` : null, showcase.course.code].filter(Boolean).join(" · ")
+              : "8 sessions · EQ-101"}
+          </div>
         </div>
         <div className="float-card float-card-2">
           <div className="fc-label">Progress</div>
-          <div className="fc-val">4 recordings</div>
+          <div className="fc-val">{showcase ? `${showcase.recordings} recording${showcase.recordings === 1 ? "" : "s"}` : "4 recordings"}</div>
           <div className="fc-sub">Available now</div>
         </div>
 
@@ -69,9 +73,9 @@ export default function Login() {
               </>
             )}
           <div className="brand-divider" />
-          <div className="brand-sub">
-            Your courses, session recordings and materials in one place. All your learning, in one secure portal.
-          </div>
+          {brand.loginIntro
+            ? <div className="brand-sub brand-intro" dangerouslySetInnerHTML={{ __html: brand.loginIntro }} />
+            : <div className="brand-sub">Your courses, session recordings and materials in one place. All your learning, in one secure portal.</div>}
           <div className="brand-features">
             <div className="brand-feature"><div className="feature-dot" /> Role-based access for students &amp; administrators</div>
             <div className="brand-feature"><div className="feature-dot" /> Recordings, links and downloadable materials</div>
@@ -110,7 +114,7 @@ export default function Login() {
             <div className="login-row">
               <label className="login-remember">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                Remember me for 30 days
+                <span>Remember me for 30 days</span>
               </label>
               <Link to="/forgot" className="login-forgot">Forgot password?</Link>
             </div>
@@ -173,6 +177,11 @@ const LOGIN_CSS = `
 .login-logo { max-height:72px; max-width:280px; object-fit:contain; display:block; margin-bottom:8px; }
 .brand-divider { width:48px; height:4px; border-radius:2px; background:linear-gradient(90deg,rgba(255,255,255,0.6),rgba(255,255,255,0.1)); margin:20px 0 22px; }
 .brand-sub { font-size:15px; color:rgba(255,255,255,0.6); font-weight:400; line-height:1.7; max-width:360px; }
+.brand-intro p { margin:0 0 8px; }
+.brand-intro p:last-child { margin-bottom:0; }
+.brand-intro ul, .brand-intro ol { margin:8px 0; padding-left:20px; }
+.brand-intro a { color:#fff; text-decoration:underline; }
+.brand-intro strong, .brand-intro b { color:rgba(255,255,255,0.9); font-weight:700; }
 .brand-features { display:flex; flex-direction:column; gap:10px; margin-top:28px; }
 .brand-feature { display:flex; align-items:center; gap:10px; color:rgba(255,255,255,0.7); font-size:13.5px; font-weight:500; }
 .feature-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.5); flex-shrink:0; }
@@ -196,8 +205,9 @@ const LOGIN_CSS = `
 .btn-login:hover { opacity:0.92; transform:translateY(-1px); }
 .error-box { background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:14px; color:#991B1B; font-weight:500; }
 .login-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 18px; flex-wrap:wrap; }
-.login-remember { display:flex; align-items:center; gap:8px; font-size:13px; color:#3D3D3D; font-weight:500; cursor:pointer; margin:0; }
-.login-remember input { width:15px; height:15px; accent-color:#1E509B; cursor:pointer; }
+.login-remember { display:inline-flex; align-items:center; gap:8px; font-size:13px; line-height:1; color:#3D3D3D; font-weight:500; cursor:pointer; margin:0; }
+.login-remember input { width:16px; height:16px; margin:0; flex-shrink:0; accent-color:#1E509B; cursor:pointer; }
+.login-remember span { line-height:1; }
 .login-forgot { font-size:13px; color:#1E509B; font-weight:700; text-decoration:none; }
 .login-forgot:hover { text-decoration:underline; }
 .login-footer { margin-top:28px; text-align:center; font-size:12px; color:#aaa; }

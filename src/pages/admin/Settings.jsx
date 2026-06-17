@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
+import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -85,7 +86,7 @@ export default function Settings() {
         </div>
 
         <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
-        <TwoFactor />
+        <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         </div>
 
         <div className="settings-col">
@@ -110,8 +111,9 @@ export default function Settings() {
         </div>
 
         <CaptchaCard captcha={captcha} saveCaptcha={saveCaptcha} />
-        <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
+        <LoginPageCard brand={brand} setBrand={setBrand} />
+        <TwoFactor />
         </div>
       </div>
 
@@ -124,6 +126,41 @@ export default function Settings() {
         </div>
       </div>
     </Layout>
+  );
+}
+
+function LoginPageCard({ brand, setBrand }) {
+  const [intro, setIntro] = useState(brand.loginIntro || "");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { setIntro(brand.loginIntro || ""); }, [brand.loginIntro]);
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      await setBrand({ loginIntro: intro });
+      setMsg({ ok: true, text: "Login page description saved." });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || "Could not save the description." });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><LogIn style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Login page</div>
+      <div className="card-subtitle">The description shown beside the sign-in form. Leave it empty to use the default text.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="form-group">
+        <label className="form-label">Description</label>
+        <RichTextEditor value={intro} onChange={setIntro} placeholder="Describe your portal for visitors on the sign-in screen..." />
+      </div>
+
+      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save description"}</button>
+    </div>
   );
 }
 
