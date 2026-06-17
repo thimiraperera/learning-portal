@@ -462,21 +462,21 @@ textarea.form-control { min-height: 82px; resize: vertical; }
 .rte-area ul, .rte-area ol { margin: 6px 0; padding-left: 22px; }
 
 /* content item with stage chips (assign a recording/link/material to a payment stage) */
-.content-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
-.content-item-head { display: flex; align-items: center; gap: 10px; }
+/* Content item card (recording / course link / material) */
+.content-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.content-item:hover { border-color: #D8E2F0; box-shadow: 0 2px 8px rgba(16,24,40,0.05); }
+.content-item-head { display: flex; align-items: center; gap: 12px; }
 .content-item-head .mr-body { flex: 1; min-width: 0; }
+.ci-icon { width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.ci-url { font-size: 12px; color: #9CA3AF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.content-item-foot { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--border); }
 .content-item .drag-handle { display: flex; align-items: center; color: #C0C8D4; cursor: grab; flex-shrink: 0; }
 .content-item .drag-handle svg { width: 16px; height: 16px; }
 .content-item.dragging { opacity: 0.5; }
 .content-item.drag-over { border-color: var(--primary); box-shadow: 0 -2px 0 0 var(--primary) inset; }
-.seq-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.content-item .seq-chips { margin-top: 9px; }
-.seq-chip { font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: #6B7280; cursor: pointer; font-family: inherit; }
-.seq-chip:hover { border-color: var(--primary); color: var(--primary); }
-.seq-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 /* Stage dropdown: set which payment stage a content item unlocks at. */
-.stage-select { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.stage-select { display: flex; align-items: center; gap: 8px; }
 .stage-select-label { font-size: 12.5px; font-weight: 600; color: #9CA3AF; flex-shrink: 0; }
 .stage-select select { flex: 1 1 auto; max-width: 300px; }
 

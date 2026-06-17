@@ -374,6 +374,12 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
   const [overId, setOverId] = useState(null);
   const isMaterials = bucket === "materials";
   const buckets = installmentBuckets(installments);
+  const TINTS = {
+    recordings: { bg: "#EFF6FF", color: "#2563EB" },
+    links: { bg: "#F0FDF4", color: "#16A34A" },
+    materials: { bg: "#FFFBEB", color: "#D97706" },
+  };
+  const tint = TINTS[bucket] || TINTS.recordings;
 
   // Drag-and-drop to reorder items (new items are appended at the bottom by the server).
   const startDrag = (itemId) => { dragIdRef.current = itemId; setDragId(itemId); };
@@ -420,15 +426,18 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
                 <span className="drag-handle" draggable
                   onDragStart={(e) => { startDrag(it.id); e.dataTransfer.effectAllowed = "move"; }}
                   onDragEnd={endDrag}><GripVertical /></span>
+                <span className="ci-icon" style={{ background: tint.bg }}><Icon style={{ width: 18, height: 18, color: tint.color }} /></span>
                 <div className="mr-body">
-                  <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
+                  <div className="mr-title" style={{ marginBottom: 2 }}>{it.t}</div>
                   {it.filename
                     ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
-                    : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
+                    : it.u && <div className="ci-url">{it.u}</div>}
                 </div>
-                <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+                <button className="icon-btn-plain" title="Remove" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
               </div>
-              <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
+              <div className="content-item-foot">
+                <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
+              </div>
             </div>
           ))}
         </div>
