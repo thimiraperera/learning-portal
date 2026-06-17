@@ -203,6 +203,7 @@ async function publicUser(u) {
     firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "", gender: u.gender || "",
     avatar: u.avatar || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
+    superAdmin: !!u.super_admin,
     twoFactor: !!u.totp_enabled,
     regNo: u.reg_no || "",
     enrolled: await dbmod.enrolledIds(u.id),
@@ -224,6 +225,13 @@ const auth = wrap(async (req, res, next) => {
 });
 function adminOnly(req, res, next) {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  next();
+}
+/* Super admins only (everything under admin Settings: branding, SMTP, captcha,
+   reg numbers, reminders, backups, and managing other administrators). Local
+   admins can do everything else but never reach these. */
+function superOnly(req, res, next) {
+  if (req.user.role !== "admin" || !req.user.super_admin) return res.status(403).json({ error: "Super administrators only" });
   next();
 }
 async function adminState() {
@@ -348,7 +356,11 @@ app.post("/api/reset/:token", wrap(async (req, res) => {
 app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   const u = req.user;
   if (u.role === "admin") {
-    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), smtp: await dbmod.getSmtpForClient(), captcha: await dbmod.getCaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig(), ...(await adminState()) });
+    // Settings config (and the reminder secret key) only go to super admins.
+    const settings = u.super_admin
+      ? { smtp: await dbmod.getSmtpForClient(), captcha: await dbmod.getCaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig() }
+      : {};
+    res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), ...settings, ...(await adminState()) });
   } else if (u.role === "instructor") {
     const ins = await dbmod.instructorByUserId(u.id);
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
@@ -1199,9 +1211,9 @@ app.post("/api/account/2fa/disable", auth, wrap(async (req, res) => {
 }));
 
 /* ---- administrator users (admins manage each other) ---- */
-app.get("/api/admin/admins", auth, adminOnly, wrap(async (_req, res) => res.json({ admins: await dbmod.adminsList() })));
+app.get("/api/admin/admins", auth, superOnly, wrap(async (_req, res) => res.json({ admins: await dbmod.adminsList() })));
 
-app.post("/api/admin/admins", auth, adminOnly, wrap(async (req, res) => {
+app.post("/api/admin/admins", auth, superOnly, wrap(async (req, res) => {
   const name = String(req.body?.name || "").trim();
   const username = String(req.body?.username || "").trim().toLowerCase();
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -1212,16 +1224,17 @@ app.post("/api/admin/admins", auth, adminOnly, wrap(async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [username, email]);
   if (clash) return res.status(409).json({ error: "That username or email is already in use." });
-  await dbmod.createAdmin({ name, username, email, password });
+  await dbmod.createAdmin({ name, username, email, password, superAdmin: !!req.body?.superAdmin });
   res.json({ ok: true, admins: await dbmod.adminsList() });
 }));
 
-app.delete("/api/admin/admins/:id", auth, adminOnly, wrap(async (req, res) => {
+app.delete("/api/admin/admins/:id", auth, superOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account." });
   if ((await dbmod.countAdmins()) <= 1) return res.status(400).json({ error: "At least one administrator must remain." });
-  const [[u]] = await q("SELECT id FROM users WHERE id=? AND role='admin'", [id]);
-  if (!u) return res.status(404).json({ error: "Administrator not found." });
+  const target = await dbmod.adminById(id);
+  if (!target) return res.status(404).json({ error: "Administrator not found." });
+  if (target.super_admin && (await dbmod.countSuperAdmins()) <= 1) return res.status(400).json({ error: "At least one super administrator must remain." });
   await dbmod.deleteAdminUser(id);
   res.json({ ok: true, admins: await dbmod.adminsList() });
 }));
@@ -1232,14 +1245,14 @@ app.delete("/api/admin/admins/:id", auth, adminOnly, wrap(async (req, res) => {
    libraries, but for large storage use FTP directly against the storage/ folder. */
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
 
-app.get("/api/admin/backup/db", auth, adminOnly, wrap(async (_req, res) => {
+app.get("/api/admin/backup/db", auth, superOnly, wrap(async (_req, res) => {
   const sql = await dbmod.dumpDatabase();
   res.setHeader("Content-Type", "application/sql");
   res.setHeader("Content-Disposition", `attachment; filename="lms-database-${stamp()}.sql"`);
   res.send(sql);
 }));
 
-app.get("/api/admin/backup/files", auth, adminOnly, wrap(async (_req, res) => {
+app.get("/api/admin/backup/files", auth, superOnly, wrap(async (_req, res) => {
   const zip = new AdmZip();
   zip.addLocalFolder(STORAGE);
   res.setHeader("Content-Type", "application/zip");
@@ -1247,7 +1260,7 @@ app.get("/api/admin/backup/files", auth, adminOnly, wrap(async (_req, res) => {
   res.send(zip.toBuffer());
 }));
 
-app.get("/api/admin/backup/all", auth, adminOnly, wrap(async (_req, res) => {
+app.get("/api/admin/backup/all", auth, superOnly, wrap(async (_req, res) => {
   const zip = new AdmZip();
   zip.addFile("database.sql", Buffer.from(await dbmod.dumpDatabase(), "utf8"));
   zip.addLocalFolder(STORAGE, "storage");
@@ -1269,19 +1282,19 @@ function extractStorage(zip, prefix) {
   }
 }
 
-app.post("/api/admin/restore/db", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+app.post("/api/admin/restore/db", auth, superOnly, uploadBackup.single("file"), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Choose a .sql backup file." });
   await dbmod.runScript(req.file.buffer.toString("utf8"));
   res.json({ ok: true, msg: "Database restored." });
 }));
 
-app.post("/api/admin/restore/files", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+app.post("/api/admin/restore/files", auth, superOnly, uploadBackup.single("file"), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Choose a .zip file backup." });
   extractStorage(new AdmZip(req.file.buffer), "");
   res.json({ ok: true, msg: "Files restored." });
 }));
 
-app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"), wrap(async (req, res) => {
+app.post("/api/admin/restore/all", auth, superOnly, uploadBackup.single("file"), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Choose a full backup .zip file." });
   const zip = new AdmZip(req.file.buffer);
   const dbEntry = zip.getEntry("database.sql");
@@ -1292,7 +1305,7 @@ app.post("/api/admin/restore/all", auth, adminOnly, uploadBackup.single("file"),
 }));
 
 /* ---- captcha settings (admins): hCaptcha or Google reCAPTCHA ---- */
-app.put("/api/admin/captcha", auth, adminOnly, wrap(async (req, res) => {
+app.put("/api/admin/captcha", auth, superOnly, wrap(async (req, res) => {
   const b = req.body || {};
   res.json(await dbmod.setCaptcha({
     provider: String(b.provider || "none"),
@@ -1302,7 +1315,7 @@ app.put("/api/admin/captcha", auth, adminOnly, wrap(async (req, res) => {
 }));
 
 /* ---- SMTP settings (admins) ---- */
-app.put("/api/admin/smtp", auth, adminOnly, wrap(async (req, res) => {
+app.put("/api/admin/smtp", auth, superOnly, wrap(async (req, res) => {
   const b = req.body || {};
   res.json(await dbmod.setSmtp({
     host: String(b.host || ""), port: String(b.port || ""),
@@ -1314,7 +1327,7 @@ app.put("/api/admin/smtp", auth, adminOnly, wrap(async (req, res) => {
 
 /* Send a test email (to the signed-in admin, or a given address) so the admin
    can confirm the saved SMTP settings actually deliver. */
-app.post("/api/admin/smtp/test", auth, adminOnly, wrap(async (req, res) => {
+app.post("/api/admin/smtp/test", auth, superOnly, wrap(async (req, res) => {
   const to = String(req.body?.to || req.user.email || "").trim();
   if (!to || !to.includes("@")) return res.status(400).json({ error: "No valid destination email. Add an email to your account or enter one." });
   const html = await emailHtml("SMTP test email", "Checking your outgoing mail",
@@ -1340,7 +1353,7 @@ function sanitizeHtml(html) {
 }
 
 /* ---- branding ---- */
-app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
+app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
   const cur = await dbmod.getBrand();
   const b = req.body || {};
   const brand = {
@@ -1353,18 +1366,18 @@ app.put("/api/brand", auth, adminOnly, wrap(async (req, res) => {
 }));
 
 /* ---- student registration number format ---- */
-app.get("/api/admin/regnum", auth, adminOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
-app.put("/api/admin/regnum", auth, adminOnly, wrap(async (req, res) => {
+app.get("/api/admin/regnum", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
+app.put("/api/admin/regnum", auth, superOnly, wrap(async (req, res) => {
   res.json(await dbmod.setRegConfig({ prefix: req.body?.prefix, width: req.body?.width }));
 }));
 
 /* ---- overdue payment reminders ---- */
-app.get("/api/admin/reminders", auth, adminOnly, wrap(async (_req, res) => res.json(await dbmod.getRemindersConfig())));
-app.put("/api/admin/reminders", auth, adminOnly, wrap(async (req, res) => {
+app.get("/api/admin/reminders", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getRemindersConfig())));
+app.put("/api/admin/reminders", auth, superOnly, wrap(async (req, res) => {
   res.json(await dbmod.setRemindersConfig({ enabled: !!req.body?.enabled }));
 }));
 // Admin "Send now": email every overdue student immediately.
-app.post("/api/admin/reminders/send", auth, adminOnly, wrap(async (_req, res) => {
+app.post("/api/admin/reminders/send", auth, superOnly, wrap(async (_req, res) => {
   res.json(await sendOverdueReminders({ force: true }));
 }));
 // Daily cron target. Public but key-protected (no logged-in admin needed).

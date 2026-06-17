@@ -20,7 +20,8 @@ export default function Layout({ title, children }) {
   const role = currentUser?.role;
   const isAdmin = role === "admin";
   const isInstructor = role === "instructor";
-  const roleLabel = isAdmin ? "Administrator" : isInstructor ? "Instructor" : "Student";
+  const isSuper = isAdmin && currentUser?.superAdmin;
+  const roleLabel = isAdmin ? (isSuper ? "Super Administrator" : "Administrator") : isInstructor ? "Instructor" : "Student";
 
   const onLogout = () => { logout(); navigate("/login"); };
 
@@ -32,7 +33,7 @@ export default function Layout({ title, children }) {
     { to: "/admin/exams", label: "Exams", icon: FileQuestion },
     { to: "/admin/certificates", label: "Certificates", icon: Award },
     { to: "/admin/payments", label: "Payments", icon: Wallet, count: (overdue || []).length },
-    { to: "/admin/settings", label: "Settings", icon: Settings },
+    ...(isSuper ? [{ to: "/admin/settings", label: "Settings", icon: Settings }] : []),
     { to: "/account", label: "My Account", icon: UserCog },
   ];
 

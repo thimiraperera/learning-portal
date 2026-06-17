@@ -166,7 +166,7 @@ function LoginPageCard({ brand, setBrand }) {
 
 function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
   const [admins, setAdmins] = useState(null);
-  const [form, setForm] = useState({ name: "", username: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", username: "", email: "", password: "", role: "local" });
   const [fieldErr, setFieldErr] = useState({});
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -189,10 +189,10 @@ function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
     setFieldErr(er); setMsg(null);
     if (Object.keys(er).length) return;
     setBusy(true);
-    const r = await addAdmin(form);
+    const r = await addAdmin({ name: form.name, username: form.username, email: form.email, password: form.password, superAdmin: form.role === "super" });
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
-    setAdmins(r.admins); setForm({ name: "", username: "", email: "", password: "" });
+    setAdmins(r.admins); setForm({ name: "", username: "", email: "", password: "", role: "local" });
     setMsg({ ok: true, text: "Administrator added." });
   };
 
@@ -208,19 +208,25 @@ function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
   return (
     <div className="card" style={{ marginTop: 24 }}>
       <div className="card-title"><UserCog style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Administrators</div>
-      <div className="card-subtitle">Add or remove portal administrators. You cannot delete your own account, and at least one admin must remain.</div>
+      <div className="card-subtitle">Add or remove portal administrators. Super admins have full access (including this Settings page); local admins can do everything else but cannot open Settings. You cannot delete your own account, and at least one super admin must remain.</div>
 
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
 
       {admins === null ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p> : (
         <div className="table-wrap" style={{ marginBottom: 18 }}>
           <table>
-            <thead><tr><th>Administrator</th><th>Username</th><th></th></tr></thead>
+            <thead><tr><th>Administrator</th><th>Username</th><th>Role</th><th></th></tr></thead>
             <tbody>
               {admins.map((a) => (
                 <tr key={a.id}>
                   <td><div style={{ fontWeight: 700 }}>{a.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{a.email}</div></td>
                   <td style={{ color: "#6B7280" }}>{a.username}{a.username === currentUser?.username && <span style={{ color: "#9CA3AF" }}> (you)</span>}</td>
+                  <td>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap",
+                      background: a.super_admin ? "#E8EFFA" : "#F3F4F6", color: a.super_admin ? "var(--primary)" : "#6B7280" }}>
+                      {a.super_admin ? "Super admin" : "Local admin"}
+                    </span>
+                  </td>
                   <td style={{ textAlign: "right" }}>
                     {a.username !== currentUser?.username && (
                       <button className="icon-btn-plain" title="Remove" onClick={() => remove(a)}><Trash2 style={{ width: 16, height: 16 }} /></button>
@@ -249,6 +255,13 @@ function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
         <div className="form-group"><label className="form-label">Password <span className="req">*</span></label>
           <input className={"form-control" + (fieldErr.password ? " is-invalid" : "")} type="password" value={form.password} onChange={set("password")} />
           {fieldErr.password && <div className="field-error">{fieldErr.password}</div>}</div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Role <span className="req">*</span></label>
+        <select className="form-control" value={form.role} onChange={set("role")}>
+          <option value="local">Local admin (everything except Settings)</option>
+          <option value="super">Super admin (full access, including Settings)</option>
+        </select>
       </div>
       <button className="btn btn-primary" disabled={busy} onClick={add}><Plus /> {busy ? "Adding..." : "Add administrator"}</button>
     </div>

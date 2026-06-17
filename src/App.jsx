@@ -38,6 +38,17 @@ function RequireRole({ role, children }) {
   return children;
 }
 
+/* Super administrators only (admin Settings). Local admins are sent to their
+   default admin page. */
+function RequireSuper({ children }) {
+  const { currentUser } = useStore();
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== "admin" || !currentUser.superAdmin) {
+    return <Navigate to={HOME_FOR[currentUser.role] || "/"} replace />;
+  }
+  return children;
+}
+
 /* Any signed-in user (used by the shared account page). */
 function RequireAuth({ children }) {
   const { currentUser } = useStore();
@@ -90,7 +101,7 @@ function Routed() {
       <Route path="/admin/exams" element={<RequireRole role="admin"><Exams /></RequireRole>} />
       <Route path="/admin/exams/:id" element={<RequireRole role="admin"><ExamManage /></RequireRole>} />
       <Route path="/admin/certificates" element={<RequireRole role="admin"><Certificates /></RequireRole>} />
-      <Route path="/admin/settings" element={<RequireRole role="admin"><Settings /></RequireRole>} />
+      <Route path="/admin/settings" element={<RequireSuper><Settings /></RequireSuper>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

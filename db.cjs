@@ -142,12 +142,14 @@ const TABLES = [
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
+// Returns true when the column was just created (lets callers backfill once).
 async function ensureColumn(table, col, decl) {
   const [rows] = await q(
     "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?",
     [table, col]
   );
-  if (rows[0].n === 0) await q(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+  if (rows[0].n === 0) { await q(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`); return true; }
+  return false;
 }
 
 function displayName(u) {
@@ -166,7 +168,7 @@ async function ensureAdmin() {
   const name = String(process.env.ADMIN_NAME || "Administrator");
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? OR lower(email)=? LIMIT 1", [username, email]);
   if (clash) return; // a non-admin already uses these credentials; leave it alone
-  await createAdmin({ name, username, email, password });
+  await createAdmin({ name, username, email, password, superAdmin: true });
   const [[brand]] = await q("SELECT 1 AS x FROM settings WHERE k='brand'");
   if (!brand) await q("INSERT INTO settings (k,v) VALUES ('brand',?)", [JSON.stringify({ company: "", name: "Learning Portal", logo: "" })]);
   console.log(`Created initial admin '${username}' (set ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_EMAIL / ADMIN_NAME to customise).`);
@@ -220,6 +222,12 @@ async function init() {
   await ensureColumn("users", "reg_no", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("enrolments", "locked", "TINYINT DEFAULT 0");
   await ensureColumn("payment_plans", "last_reminded", "BIGINT");
+  // Admin tiers: super admins have full access (incl. Settings); local admins do not.
+  // When the column is first added, promote every existing admin to super so no one
+  // loses access on upgrade; new local admins default to 0.
+  if (await ensureColumn("users", "super_admin", "TINYINT DEFAULT 0")) {
+    await q("UPDATE users SET super_admin=1 WHERE role='admin'");
+  }
   // Checkbox questions earn partial marks, so attempt scores can be fractional.
   await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
@@ -842,20 +850,28 @@ async function hasAdmin() {
   const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin'");
   return r.n > 0;
 }
-async function createAdmin({ name, username, email, password }) {
+async function createAdmin({ name, username, email, password, superAdmin = false }) {
   const parts = name.trim().split(/\s+/);
   const first = parts.shift() || "";
   const last = parts.join(" ");
-  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status) VALUES (?,?,?, '', ?,?,?, 'admin','active')",
-    [name.trim(), first, last, username, email, bcrypt.hashSync(password, 10)]);
+  await q("INSERT INTO users (name,first_name,last_name,nickname,username,email,password_hash,role,status,super_admin) VALUES (?,?,?, '', ?,?,?, 'admin','active', ?)",
+    [name.trim(), first, last, username, email, bcrypt.hashSync(password, 10), superAdmin ? 1 : 0]);
 }
 async function adminsList() {
-  const [rows] = await q("SELECT id, name, username, email, status FROM users WHERE role='admin' ORDER BY id DESC"); // newest first
+  const [rows] = await q("SELECT id, name, username, email, status, super_admin FROM users WHERE role='admin' ORDER BY id DESC"); // newest first
   return rows;
 }
 async function countAdmins() {
   const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin'");
   return r.n;
+}
+async function countSuperAdmins() {
+  const [[r]] = await q("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND super_admin=1");
+  return r.n;
+}
+async function adminById(id) {
+  const [[r]] = await q("SELECT id, super_admin FROM users WHERE id=? AND role='admin'", [id]);
+  return r || null;
 }
 async function deleteAdminUser(id) {
   await q("DELETE FROM sessions WHERE user_id=?", [id]);
@@ -1022,6 +1038,6 @@ module.exports = {
   getBrand, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getCaptcha, getCaptchaForClient, setCaptcha,
-  hasAdmin, createAdmin, adminsList, countAdmins, deleteAdminUser,
+  hasAdmin, createAdmin, adminsList, countAdmins, countSuperAdmins, adminById, deleteAdminUser,
   findLoginUser, setResetToken, getResetUser, applyReset,
 };
