@@ -72,7 +72,6 @@ export default function CourseManage() {
 function DetailsTab({ id, c, store, navigate }) {
   const [code, setCode] = useState(c.code);
   const [title, setTitle] = useState(c.title);
-  const [sessions, setSessions] = useState(c.sessions ?? 0);
   const [blurb, setBlurb] = useState(c.blurb || "");
   const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
   const [templates, setTemplates] = useState([]);
@@ -94,7 +93,7 @@ function DetailsTab({ id, c, store, navigate }) {
     if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions, blurb, certTemplate }));
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate }));
   const remove = async () => {
     if (!window.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`)) return;
     await store.deleteCourse(id);
@@ -104,12 +103,8 @@ function DetailsTab({ id, c, store, navigate }) {
   return (
     <div style={{ maxWidth: 620 }}>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
-      <div className="field-row">
-        <div className="form-group"><label className="form-label">Code</label>
-          <input className="form-control" value={code} onChange={(e) => setCode(e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Sessions</label>
-          <input className="form-control" type="number" min="0" value={sessions} onChange={(e) => setSessions(e.target.value)} /></div>
-      </div>
+      <div className="form-group"><label className="form-label">Code</label>
+        <input className="form-control" value={code} onChange={(e) => setCode(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Title</label>
         <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Description</label>

@@ -621,7 +621,9 @@ async function addCourseItem(courseId, groupId, bucket, title, url, seq) {
   const gid = Number(groupId) || 0;
   const u = String(url || "").trim();
   const s = Math.max(0, Number(seq) || 0);
-  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND group_id=?`, [courseId, gid]);
+  // Position runs across the whole course bucket (the list ignores groups), so a
+  // new item always lands at the very bottom.
+  const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=?`, [courseId]);
   if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq) VALUES (?,?,?,?, '','', ?,?)", [courseId, gid, title, u, p, s]);
   else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position,installment_seq) VALUES (?,?,?,?, ?,?)", [courseId, gid, title, u, p, s]);
   else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position,installment_seq) VALUES (?,?,?,?, '','LINK', ?,?)", [courseId, gid, title, u, p, s]);
@@ -653,7 +655,7 @@ async function reorderItems(courseId, bucket, orderedIds) {
 async function addMaterialFile(courseId, groupId, f) {
   const gid = Number(groupId) || 0;
   const s = Math.max(0, Number(f.seq) || 0);
-  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=? AND group_id=?", [courseId, gid]);
+  const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=?", [courseId]);
   await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position,installment_seq) VALUES (?,?,?,?,?,?,?,?)",
     [courseId, gid, f.title, f.size, f.ext, f.filename, p, s]);
 }
