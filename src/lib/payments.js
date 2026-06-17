@@ -48,6 +48,23 @@ export function installmentLabel(seq) {
   return `Installment ${n - 1}`;
 }
 
+// Header label conveying that content is available FROM a stage onward (it
+// stays visible for every later payment part once that stage is reached).
+export function installmentFromLabel(seq) {
+  const n = Number(seq) || 0;
+  if (n <= 0) return "Available to everyone";
+  if (n === 1) return "Available from registration fee";
+  return `Available from Installment ${n - 1}`;
+}
+
+// Compact label for the stage chips.
+export function installmentShort(seq) {
+  const n = Number(seq) || 0;
+  if (n <= 0) return "Everyone";
+  if (n === 1) return "Reg fee";
+  return `Inst ${n - 1}`;
+}
+
 // The buckets an admin can assign content to, derived from a course's plan
 // (its number of installments). Always offers "everyone" + registration fee.
 export function installmentBuckets(installments) {

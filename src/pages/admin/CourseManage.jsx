@@ -7,7 +7,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, installmentBuckets, installmentLabel } from "../../lib/payments.js";
+import { rs, fmtDate, planBadge, installmentBuckets, installmentFromLabel, installmentShort } from "../../lib/payments.js";
 
 export default function CourseManage() {
   const { id } = useParams();
@@ -389,47 +389,34 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
     if (!r.ok) setErr(r.msg);
   };
 
-  // Items grouped under their payment stage, in bucket order.
-  const groupsWithItems = buckets
-    .map((b) => ({ ...b, items: items.filter((it) => (Number(it.seq) || 0) === b.seq) }))
-    .filter((b) => b.items.length > 0);
-
   return (
     <div className="content-section" style={{ marginBottom: 14 }}>
       <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
+      <p className="content-empty" style={{ marginBottom: 12 }}>Slide each item along the payment plan to set when it unlocks. It stays available from that stage onward.</p>
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
-          {groupsWithItems.map((g) => (
-            <div key={g.seq} style={{ marginBottom: 14 }}>
-              <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 6px" }}>{g.label}</div>
-              {g.items.map((it) => (
-                <div key={it.id} className="media-row">
-                  <div className="mr-body">
-                    <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
-                    {it.filename
-                      ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
-                      : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
-                  </div>
-                  <select className="form-control" style={{ flex: "0 0 auto", width: "auto", height: 34, padding: "0 8px", fontSize: 12.5 }}
-                    value={Number(it.seq) || 0} onChange={(e) => setItemInstallment(id, bucket, it.id, Number(e.target.value))}>
-                    {buckets.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
-                  </select>
-                  <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+          {items.map((it) => (
+            <div key={it.id} className="content-item">
+              <div className="content-item-head">
+                <div className="mr-body">
+                  <div className="mr-title" style={{ marginBottom: 0 }}>{it.t}</div>
+                  {it.filename
+                    ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
+                    : it.u && <div className="mr-meta" style={{ color: "var(--primary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.u}</div>}
                 </div>
-              ))}
+                <button className="icon-btn-plain" onClick={() => removeItem(id, bucket, it.id)}><X style={{ width: 16, height: 16 }} /></button>
+              </div>
+              <StageSlider stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallment(id, bucket, it.id, s)} />
             </div>
           ))}
         </div>
       )}
       {err && <div className="field-error" style={{ marginTop: 8 }}>{err}</div>}
-      <div className="toolbar" style={{ marginTop: 10, marginBottom: 0, alignItems: "flex-start" }}>
+      <div className="toolbar" style={{ marginTop: 14, marginBottom: 0, alignItems: "flex-start" }}>
         <input className="form-control" style={{ flex: "1 1 150px" }} placeholder={placeholder} value={value}
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
         <input className="form-control" style={{ flex: "1 1 180px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
           onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
-        <select className="form-control" style={{ flex: "0 0 180px" }} value={seq} onChange={(e) => setSeq(Number(e.target.value))} title="Available from">
-          {buckets.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
-        </select>
         <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
         {isMaterials && (
           <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>
@@ -437,6 +424,28 @@ function ContentSection({ id, groupId, store, bucket, title, Icon, items, placeh
             <input type="file" style={{ display: "none" }} onChange={onFile} disabled={busy} />
           </label>
         )}
+      </div>
+      <div style={{ marginTop: 12, maxWidth: 460 }}>
+        <StageSlider stages={buckets} value={seq} onChange={setSeq} />
+      </div>
+    </div>
+  );
+}
+
+/* Full-width slider that snaps to each payment stage (registration fee +
+   installments). The handle "magnets" to a stage; the caption and the
+   highlighted tick show where the item becomes available (and onward). */
+function StageSlider({ stages, value, onChange }) {
+  let idx = stages.findIndex((s) => s.seq === (Number(value) || 0));
+  if (idx < 0) idx = 0;
+  const cur = stages[idx];
+  return (
+    <div className="stage-slider">
+      <div className="stage-caption">{installmentFromLabel(cur.seq)}</div>
+      <input type="range" className="stage-range" min={0} max={Math.max(1, stages.length - 1)} step={1} value={idx}
+        onChange={(e) => onChange(stages[Number(e.target.value)].seq)} />
+      <div className="stage-ticks">
+        {stages.map((s, i) => <span key={s.seq} className={"stage-tick" + (i === idx ? " on" : "")}>{installmentShort(s.seq)}</span>)}
       </div>
     </div>
   );
