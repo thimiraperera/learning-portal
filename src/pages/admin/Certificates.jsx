@@ -3,6 +3,7 @@ import { Award, Plus, Eye, Download, Send, LockOpen, CheckCircle, AlertTriangle,
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 function fmt(ts) { return new Date(Number(ts) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
@@ -110,9 +111,9 @@ export default function Certificates() {
             <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student or course" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
           </div>
           {activeFilters > 0 && <button className="btn btn-ghost btn-sm" onClick={() => { setCourseF("all"); setStatusF("all"); setBatchF("all"); setQy(""); reset(); }}><X /> Clear</button>}
-          <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
+          <Button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
             <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
-          </button>
+          </Button>
         </div>
         <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 14 }}>{filtered.length} row{filtered.length === 1 ? "" : "s"}</div>
 

@@ -7,6 +7,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function InstructorManage() {
@@ -93,8 +94,8 @@ function ProfileTab({ instr, store, navigate }) {
       <div className="form-group"><label className="form-label">Notes <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(admin only)</span></label>
         <textarea className="form-control" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this instructor." /></div>
       <div style={{ display: "flex", gap: 10 }}>
-        <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
-        <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove instructor</button>
+        <Button className="btn btn-primary" onClick={save}><Save /> Save profile</Button>
+        <Button className="btn btn-danger" onClick={remove}><Trash2 /> Remove instructor</Button>
       </div>
 
       <LoginAccess instr={instr} store={store} />
@@ -139,7 +140,7 @@ function LoginAccess({ instr, store }) {
           </span>
         </div>
       ) : (
-        <button className="btn btn-outline" disabled={busy} onClick={invite}><KeyRound /> {busy ? "Sending..." : "Invite to log in"}</button>
+        <Button className="btn btn-outline" loading={busy} onClick={invite}><KeyRound /> Invite to log in</Button>
       )}
     </div>
   );
@@ -168,7 +169,7 @@ function CoursesTab({ iid, taught, store, navigate }) {
                   <span className="ar-sub">{c.code}</span>
                 </span>
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, iid)}><UserMinus /> Remove</button>
+              <Button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, iid)}><UserMinus /> Remove</Button>
             </div>
           ))}
         </div>
@@ -181,7 +182,7 @@ function CoursesTab({ iid, taught, store, navigate }) {
             <option value="">Select a course...</option>
             {available.map(([id, c]) => <option key={id} value={id}>{c.code} - {c.title}</option>)}
           </select>
-          <button className="btn btn-primary" onClick={add}><Plus /> Add to course</button>
+          <Button className="btn btn-primary" onClick={add}><Plus /> Add to course</Button>
         </div>
       )}
     </div>

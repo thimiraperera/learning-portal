@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
+import Button from "../components/Button.jsx";
 
 /* Public password-reset page reached from the emailed link (/reset?token=...). */
 export default function Reset() {
@@ -67,7 +68,7 @@ export default function Reset() {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
               <label>Confirm new password</label>
               <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter password" autoComplete="new-password" />
-              <button type="submit" className="reg-btn" disabled={busy}>{busy ? "Updating..." : "Update password"}</button>
+              <Button type="submit" className="reg-btn" loading={busy}>Update password</Button>
             </form>
           </>
         )}

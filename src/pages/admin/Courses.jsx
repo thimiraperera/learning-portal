@@ -4,6 +4,7 @@ import { Plus, PlayCircle, Link2, FileDown, Users, ChevronRight, X, UserPlus, Ch
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [] };
@@ -136,7 +137,7 @@ export default function Courses() {
           </div>
         )}
 
-        <button className="btn btn-primary" onClick={create}><Plus /> Add course</button>
+        <Button className="btn btn-primary" onClick={create}><Plus /> Add course</Button>
       </div>
 
       <div className="card">

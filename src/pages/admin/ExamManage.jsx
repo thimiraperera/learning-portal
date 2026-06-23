@@ -8,6 +8,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 const SAMPLE_CSV = [
@@ -134,8 +135,8 @@ function SettingsTab({ exam, setExam, store, navigate }) {
       </div>
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Answer order is always shuffled per attempt; each student can take the exam once. Checkbox questions earn partial marks but never below zero.</div>
       <div style={{ display: "flex", gap: 10 }}>
-        <button className="btn btn-primary" onClick={save}><Save /> Save settings</button>
-        <button className="btn btn-danger" onClick={remove}><Trash2 /> Delete exam</button>
+        <Button className="btn btn-primary" onClick={save}><Save /> Save settings</Button>
+        <Button className="btn btn-danger" onClick={remove}><Trash2 /> Delete exam</Button>
       </div>
     </div>
   );
@@ -204,7 +205,7 @@ function QuestionsTab({ exam, setExam, store }) {
           ))}
           <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
             <button className="btn btn-outline btn-sm" onClick={() => open(qn)}><Pencil /> Edit</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => remove(qn)}><Trash2 /> Delete</button>
+            <Button className="btn btn-ghost btn-sm" onClick={() => remove(qn)}><Trash2 /> Delete</Button>
           </div>
         </div>
       ))}
@@ -245,7 +246,7 @@ function QuestionsTab({ exam, setExam, store }) {
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
               {form.options.length < 6 && <button className="btn btn-ghost btn-sm" onClick={addOpt}><Plus /> Add option</button>}
-              <button className="btn btn-primary btn-sm" onClick={save}><Save /> {form.id ? "Save question" : "Add question"}</button>
+              <Button className="btn btn-primary btn-sm" onClick={save}><Save /> {form.id ? "Save question" : "Add question"}</Button>
               <button className="btn btn-ghost btn-sm" onClick={() => setForm(null)}>Cancel</button>
             </div>
           </div>
@@ -314,7 +315,7 @@ function CsvTab({ exam, setExam, store }) {
             <option value="append">Add to existing questions</option>
             <option value="replace">Replace all questions</option>
           </select>
-          <button className="btn btn-primary" onClick={doImport} disabled={!csv.trim()}><FileUp /> Import</button>
+          <Button className="btn btn-primary" onClick={doImport} disabled={!csv.trim()}><FileUp /> Import</Button>
           <button className="btn btn-ghost" onClick={downloadSample}><Download /> Download sample CSV</button>
         </div>
         {fileName && <div style={{ fontSize: 12.5, color: "#6B7280", marginTop: 10 }}>Loaded: {fileName}</div>}

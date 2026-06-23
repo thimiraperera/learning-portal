@@ -9,6 +9,7 @@ import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, instBadge } from "../../lib/payments.js";
 
@@ -146,8 +147,8 @@ function ProfileTab({ id, s, store, navigate }) {
       <div className="form-group"><label className="form-label">Notes <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(admin only)</span></label>
         <textarea className="form-control" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this student." /></div>
       <div style={{ display: "flex", gap: 10 }}>
-        <button className="btn btn-primary" onClick={save}><Save /> Save profile</button>
-        <button className="btn btn-danger" onClick={remove}><Trash2 /> Remove student</button>
+        <Button className="btn btn-primary" onClick={save}><Save /> Save profile</Button>
+        <Button className="btn btn-danger" onClick={remove}><Trash2 /> Remove student</Button>
       </div>
     </div>
   );
@@ -302,7 +303,7 @@ function CoursesTab({ id, email, s, store, navigate }) {
           <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
             options={available.map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
             onChange={setSel} />
-          <button className="btn btn-primary" onClick={add}><Plus /> Enrol</button>
+          <Button className="btn btn-primary" onClick={add}><Plus /> Enrol</Button>
         </div>
       )}
     </div>
@@ -497,7 +498,7 @@ function PlanCard({ course, plan, store, onApply }) {
               <label className="form-label">Paid on</label>
               <input className="form-control" type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
             </div>
-            <button className="btn btn-primary" onClick={pay}><Plus /> Add payment</button>
+            <Button className="btn btn-primary" onClick={pay}><Plus /> Add payment</Button>
           </div>
           {err && <div className="field-error" style={{ marginTop: 6 }}>{err}</div>}
         </>

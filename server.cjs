@@ -302,11 +302,33 @@ app.post("/api/logout", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* Normalize a username to the allowed shape: lowercase, a-z 0-9 and hyphens,
+   no leading/trailing hyphen, max 24 chars. */
+function normalizeUsername(v) {
+  return String(v || "").trim().toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24)
+    .replace(/-+$/g, "");
+}
+
 /* ---- public registration (invite link) ---- */
 app.get("/api/register/:token", wrap(async (req, res) => {
   const invite = await dbmod.getInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: "This registration link is invalid or has already been used." });
   res.json({ name: invite.name, email: invite.email, username: invite.username });
+}));
+
+/* Live username availability check for the registration page. */
+app.get("/api/register/:token/username", wrap(async (req, res) => {
+  const invite = await dbmod.getInvite(req.params.token);
+  if (!invite) return res.status(404).json({ error: "This registration link is invalid or has already been used." });
+  const u = normalizeUsername(req.query.u);
+  if (!u) return res.json({ username: u, available: false, reason: "Enter a username." });
+  if (u.length < 3) return res.json({ username: u, available: false, reason: "Use at least 3 characters." });
+  if (u === String(invite.username || "").toLowerCase()) return res.json({ username: u, available: true });
+  const taken = await dbmod.usernameExists(u, invite.id);
+  res.json({ username: u, available: !taken, reason: taken ? "That username is already taken." : "" });
 }));
 
 app.post("/api/register/:token", wrap(async (req, res) => {
@@ -319,13 +341,24 @@ app.post("/api/register/:token", wrap(async (req, res) => {
   const phone = String(req.body?.phone || "").trim();
   const gender = String(req.body?.gender || "").trim();
   const password = String(req.body?.password || "");
+  // The student may pick their own username; fall back to the invited one.
+  const username = normalizeUsername(req.body?.username) || String(invite.username || "").toLowerCase();
   if (!firstName) return res.status(400).json({ error: "Enter your first name." });
   if (!lastName) return res.status(400).json({ error: "Enter your last name." });
   if (!name) return res.status(400).json({ error: "Confirm your full name (used on certificates)." });
   if (!phone) return res.status(400).json({ error: "Enter your phone number." });
   if (!gender) return res.status(400).json({ error: "Select your gender." });
+  if (!username || username.length < 3) return res.status(400).json({ error: "Choose a username of at least 3 characters." });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
-  await dbmod.completeRegistration(req.params.token, { name, firstName, lastName, phone, gender }, bcrypt.hashSync(password, 10));
+  if (username !== String(invite.username || "").toLowerCase() && await dbmod.usernameExists(username, invite.id)) {
+    return res.status(409).json({ error: "That username is already taken. Please choose another." });
+  }
+  try {
+    await dbmod.completeRegistration(req.params.token, { name, firstName, lastName, phone, gender, username }, bcrypt.hashSync(password, 10));
+  } catch (e) {
+    if (e && e.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "That username is already taken. Please choose another." });
+    throw e;
+  }
   res.json({ ok: true });
 }));
 

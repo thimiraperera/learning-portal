@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Clock, CheckCircle, AlertTriangle, Send, Award } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 function fmt(ms) {
@@ -142,7 +143,7 @@ export default function ExamTake() {
           );
         })}
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 20 }}>
-          <button className="btn btn-primary" onClick={() => doSubmit(false)}><Send /> Submit exam</button>
+          <Button className="btn btn-primary" onClick={() => doSubmit(false)}><Send /> Submit exam</Button>
           <span style={{ fontSize: 13, color: answered === state.questions.length ? "#16A34A" : "#9CA3AF", fontWeight: 600 }}>
             {answered === state.questions.length && <CheckCircle style={{ width: 14, height: 14, verticalAlign: "-2px", marginRight: 4 }} />}
             Answered {answered} of {state.questions.length}

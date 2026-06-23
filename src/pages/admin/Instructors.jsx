@@ -6,6 +6,7 @@ import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "", notify: false };
@@ -94,7 +95,7 @@ export default function Instructors() {
               <option value="Female">Female</option>
             </select>
           </div>
-          <button className="btn btn-primary" onClick={submit}><Plus /> Add instructor</button>
+          <Button className="btn btn-primary" onClick={submit}><Plus /> Add instructor</Button>
         </div>
         <label className="check-row" style={{ marginTop: 12 }}>
           <input type="checkbox" checked={form.notify} onChange={(e) => setForm((f) => ({ ...f, notify: e.target.checked }))} />

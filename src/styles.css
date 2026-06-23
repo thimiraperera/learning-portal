@@ -202,6 +202,18 @@ a { color: inherit; }
 .btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
 .btn-sm { padding: 6px 14px; font-size: 12.5px; }
 
+/* Loading spinner shown on a button while its action is in flight. Uses
+   currentColor so it matches each button variant's text. .is-loading turns any
+   button (including the scoped auth-page buttons) into a centered flex row so
+   the spinner is spaced consistently. */
+.is-loading { display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: default !important; opacity: 0.85; }
+.btn-spinner {
+  width: 14px; height: 14px; box-sizing: border-box; flex-shrink: 0;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: btnspin 0.6s linear infinite;
+}
+@keyframes btnspin { to { transform: rotate(360deg); } }
+
 /* Status badges */
 .badge {
   display: inline-flex; align-items: center; gap: 5px;

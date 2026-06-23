@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import Captcha from "../components/Captcha.jsx";
+import Button from "../components/Button.jsx";
 
 /* Public registration page reached from the invite email link
    (/register?token=...). Email and username are locked; the user confirms
@@ -17,6 +18,8 @@ export default function Register() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [uname, setUname] = useState({ status: "idle", msg: "" }); // idle | checking | ok | taken | invalid
   const [phone, setPhone] = useState("");
   const [gender, setGender] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +38,7 @@ export default function Register() {
       .then((data) => {
         setInvite(data);
         setName(data.name || "");
+        setUsername(String(data.username || "").toLowerCase());
         const parts = String(data.name || "").trim().split(/\s+/);
         setFirstName(parts.shift() || "");
         setLastName(parts.join(" "));
@@ -43,19 +47,42 @@ export default function Register() {
       .catch(() => setState("invalid"));
   }, [token]);
 
+  // Sanitize as the user types: lowercase, only a-z 0-9 and hyphens.
+  const onUsername = (v) => setUsername(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24));
+
+  // Live availability check (debounced) against the database.
+  useEffect(() => {
+    if (state !== "ready" || !token) return undefined;
+    const u = username.trim();
+    if (!u || u.length < 3) { setUname({ status: "invalid", msg: u ? "Use at least 3 characters." : "Enter a username." }); return undefined; }
+    if (invite && u === String(invite.username || "").toLowerCase()) { setUname({ status: "ok", msg: "Available" }); return undefined; }
+    setUname({ status: "checking", msg: "Checking availability..." });
+    const id = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/register/${token}/username?u=${encodeURIComponent(u)}`);
+        const d = await r.json();
+        setUname(d.available ? { status: "ok", msg: "Available" } : { status: "taken", msg: d.reason || "That username is taken." });
+      } catch { setUname({ status: "idle", msg: "" }); }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [username, state, token, invite]);
+
   const submit = async (e) => {
     e?.preventDefault?.();
     setError("");
     if (!firstName.trim()) { setError("Enter your first name."); return; }
     if (!lastName.trim()) { setError("Enter your last name."); return; }
     if (!name.trim()) { setError("Confirm your full name (used on certificates)."); return; }
+    if (username.trim().length < 3) { setError("Choose a username of at least 3 characters."); return; }
+    if (uname.status === "taken") { setError("That username is taken. Please choose another."); return; }
+    if (uname.status === "checking") { setError("Please wait for the username check to finish."); return; }
     if (!phone.trim()) { setError("Enter your phone number."); return; }
     if (!gender) { setError("Select your gender."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (password !== confirm) { setError("Passwords do not match."); return; }
     if (captchaCfg.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
-    const r = await register(token, { firstName: firstName.trim(), lastName: lastName.trim(), name: name.trim(), phone: phone.trim(), gender, password, captcha });
+    const r = await register(token, { firstName: firstName.trim(), lastName: lastName.trim(), name: name.trim(), username: username.trim(), phone: phone.trim(), gender, password, captcha });
     setBusy(false);
     if (!r.ok) { setError(r.error || "Registration failed."); return; }
     setState("done");
@@ -123,10 +150,11 @@ export default function Register() {
               <label>Email <span className="reg-hint">(cannot be changed)</span></label>
               <input className="locked" type="email" name="email" value={invite.email} readOnly autoComplete="email" />
 
-              {/* readOnly (not disabled) + autoComplete="username" so the browser saves
-                  THIS as the login username, not the phone number. */}
-              <label>Username <span className="reg-hint">(cannot be changed)</span></label>
-              <input className="locked" type="text" name="username" value={invite.username} readOnly autoComplete="username" />
+              {/* Editable, with a live availability check. autoComplete="username"
+                  so the browser saves THIS as the login name, not the phone. */}
+              <label>Username <span className="req">*</span> <span className="reg-hint">(this is what you sign in with)</span></label>
+              <input type="text" name="username" value={username} onChange={(e) => onUsername(e.target.value)} autoComplete="username" placeholder="Choose a username" />
+              <div className={"uname-hint uname-" + uname.status}>{uname.msg}</div>
 
               <label>Password <span className="req">*</span></label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
@@ -138,7 +166,7 @@ export default function Register() {
                 <div style={{ marginTop: 14 }}><Captcha provider={captchaCfg.provider} siteKey={captchaCfg.siteKey} onChange={setCaptcha} /></div>
               )}
 
-              <button type="submit" className="reg-btn" disabled={busy}>{busy ? "Creating account..." : "Create account"}</button>
+              <Button type="submit" className="reg-btn" loading={busy}>Create account</Button>
             </form>
           </>
         )}
@@ -163,6 +191,11 @@ const REG_CSS = `
 .reg-card input:focus, .reg-card select:focus { border-color: #1E509B; box-shadow: 0 0 0 3px rgba(30,80,155,0.1); }
 .reg-card input:disabled, .reg-card input.locked { background: #F4F7FB; color: #9CA3AF; cursor: not-allowed; }
 .reg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.uname-hint { font-size: 12px; font-weight: 600; margin-top: 6px; min-height: 16px; }
+.uname-checking { color: #6B7280; }
+.uname-ok { color: #15803D; }
+.uname-taken, .uname-invalid { color: #DC2626; }
+.uname-idle { color: transparent; }
 .reg-btn { width: 100%; margin-top: 22px; padding: 13px; background: linear-gradient(135deg,#1E509B,#00265E); color: #fff; border: none; border-radius: 999px; font-family: 'Figtree', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; }
 .reg-btn:hover { opacity: 0.93; }
 .reg-btn:disabled { opacity: 0.6; cursor: default; }

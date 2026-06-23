@@ -4,6 +4,7 @@ import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Search, Eye, X }
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { payFilterBucket } from "../../lib/payments.js";
 
@@ -144,7 +145,7 @@ export default function Students() {
             <input className={"form-control" + (fieldErr.username ? " is-invalid" : "")} style={{ width: "100%" }} placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setUsernameEdited(true); setFieldErr((er) => ({ ...er, username: undefined })); }} />
             {fieldErr.username && <div className="field-error">{fieldErr.username}</div>}
           </div>
-          <button className="btn btn-primary" onClick={invite}><Mail /> Send invite</button>
+          <Button className="btn btn-primary" onClick={invite}><Mail /> Send invite</Button>
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>A unique username is suggested from the full name (words joined with a hyphen). You can change it before sending.</div>
         {msg && (

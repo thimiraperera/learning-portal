@@ -3,6 +3,7 @@ import { Inbox, Check, X, Search } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 /* Pending course enrolment requests from students. Approve enrols them. */
@@ -87,8 +88,8 @@ export default function Requests() {
                             {batches.map((b) => <option key={b.id} value={b.id}>Batch {b.number}{b.status === "ended" ? " (ended)" : ""}</option>)}
                           </select>
                         )}
-                        <button className="btn btn-primary btn-sm" style={{ marginRight: 8 }} onClick={() => approveRequest(r.id, sel)}><Check /> Approve</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => declineRequest(r.id)}><X /> Decline</button>
+                        <Button className="btn btn-primary btn-sm" style={{ marginRight: 8 }} onClick={() => approveRequest(r.id, sel)}><Check /> Approve</Button>
+                        <Button className="btn btn-ghost btn-sm" onClick={() => declineRequest(r.id)}><X /> Decline</Button>
                       </td>
                     </tr>
                     );

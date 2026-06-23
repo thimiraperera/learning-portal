@@ -5,6 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge } from "../../lib/payments.js";
 
@@ -132,10 +133,10 @@ export default function Payments() {
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           {p.studentStatus !== "invited" && (
                             p.studentStatus === "inactive"
-                              ? <button className="btn btn-outline btn-sm" style={{ marginRight: 6 }} disabled={busyId === p.user_id}
-                                  title="Unlock account" onClick={() => toggleLock(p)}><Unlock /> Unlock</button>
-                              : <button className="btn btn-ghost btn-sm" style={{ marginRight: 6 }} disabled={busyId === p.user_id}
-                                  title="Lock account (e.g. unpaid)" onClick={() => toggleLock(p)}><Lock /> Lock</button>
+                              ? <Button className="btn btn-outline btn-sm" style={{ marginRight: 6 }} loading={busyId === p.user_id}
+                                  title="Unlock account" onClick={() => toggleLock(p)}><Unlock /> Unlock</Button>
+                              : <Button className="btn btn-ghost btn-sm" style={{ marginRight: 6 }} loading={busyId === p.user_id}
+                                  title="Lock account (e.g. unpaid)" onClick={() => toggleLock(p)}><Lock /> Lock</Button>
                           )}
                           <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${p.user_id}`)}><Eye /> View</button>
                         </td>

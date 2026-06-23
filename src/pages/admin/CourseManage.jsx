@@ -14,6 +14,7 @@ function batchLabel(b) {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
@@ -80,7 +81,7 @@ export default function CourseManage() {
             value={activeBatchId || ""} onChange={(e) => setViewBatchId(Number(e.target.value))}>
             {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b)}</option>)}
           </select>
-          <button className="btn btn-outline btn-sm" disabled={batchBusy} onClick={onStartNewBatch}><Plus /> {batchBusy ? "Starting..." : "Start new batch"}</button>
+          <Button className="btn btn-outline btn-sm" loading={batchBusy} onClick={onStartNewBatch}><Plus /> Start new batch</Button>
         </div>
       </div>
 
@@ -165,8 +166,8 @@ function DetailsTab({ id, c, store, navigate }) {
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <button className="btn btn-primary" onClick={save}><Save /> Save changes</button>
-        <button className="btn btn-danger" onClick={remove}><Trash2 /> Delete course</button>
+        <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>
+        <Button className="btn btn-danger" onClick={remove}><Trash2 /> Delete course</Button>
       </div>
     </div>
   );
@@ -251,8 +252,8 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
                 </div>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
                 {isEnrolled
-                  ? <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserMinus /> Remove</button>
-                  : <button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserPlus /> Add to Batch {batchNum}</button>}
+                  ? <Button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserMinus /> Remove</Button>
+                  : <Button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserPlus /> Add to Batch {batchNum}</Button>}
               </div>
             );
           })}
@@ -322,7 +323,7 @@ function CoursePlanTab({ id, batchId, store }) {
         <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <button className="btn btn-primary" disabled={busy} onClick={saveAndApply}><Save /> {busy ? "Saving..." : "Save & apply to enrolled students"}</button>
+        <Button className="btn btn-primary" loading={busy} onClick={saveAndApply}><Save /> Save & apply to enrolled students</Button>
       </div>
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>SCHEDULE PREVIEW (SAVED)</div>
@@ -374,7 +375,7 @@ function InstructorTab({ id, batchId, c, reload, store, navigate }) {
                 </span>
               </button>
               <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/instructors/${i.id}`)}><Eye /> View</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => remove(i.id)}><UserMinus /> Remove</button>
+              <Button className="btn btn-ghost btn-sm" onClick={() => remove(i.id)}><UserMinus /> Remove</Button>
             </div>
           ))}
         </div>
@@ -397,7 +398,7 @@ function InstructorTab({ id, batchId, c, reload, store, navigate }) {
                   <div className="ar-title">{i.name}</div>
                   {i.title && <div className="ar-sub">{i.title}</div>}
                 </div>
-                <button className="btn btn-outline btn-sm" onClick={() => add(i.id)}><UserPlus /> Add</button>
+                <Button className="btn btn-outline btn-sm" onClick={() => add(i.id)}><UserPlus /> Add</Button>
               </div>
             ))
           )}
@@ -527,7 +528,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
         <input className="form-control" style={{ flex: "1 1 180px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
           onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
-        <button className="btn btn-ghost" onClick={add}><Plus /> Add</button>
+        <Button className="btn btn-ghost" onClick={add}><Plus /> Add</Button>
         {isMaterials && (
           <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>
             <Upload /> {busy ? "Uploading..." : "Upload file"}

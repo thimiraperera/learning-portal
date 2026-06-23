@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import Captcha from "../components/Captcha.jsx";
+import Button from "../components/Button.jsx";
 
 const HOME = { admin: "/admin", instructor: "/instructor", student: "/" };
 
@@ -121,7 +122,7 @@ export default function Login() {
             {captchaCfg.enabled && captchaCfg.siteKey && (
               <div className="form-group"><Captcha provider={captchaCfg.provider} siteKey={captchaCfg.siteKey} onChange={setCaptcha} /></div>
             )}
-            <button type="submit" className="btn-login" disabled={busy}>{busy ? "Signing in..." : (twoFactor ? "Verify & sign in" : "Sign In")}</button>
+            <Button type="submit" className="btn-login" loading={busy}>{twoFactor ? "Verify & sign in" : "Sign In"}</Button>
           </form>
 
           {setupNeeded && (

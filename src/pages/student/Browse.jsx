@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BookOpen, Send, Clock, Search, CheckCircle, AlertTriangle } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 /* Courses the student is NOT enrolled in. They can request enrolment;
@@ -52,7 +53,7 @@ export default function Browse() {
                 <div className="cc-foot" style={{ justifyContent: "flex-end" }}>
                   {requested.has(c.id)
                     ? <span className="badge badge-pending"><Clock style={{ width: 13, height: 13, verticalAlign: "-2px", marginRight: 4 }} />Requested</span>
-                    : <button className="btn btn-primary btn-sm" onClick={() => ask(c)}><Send /> Request access</button>}
+                    : <Button className="btn btn-primary btn-sm" onClick={() => ask(c)}><Send /> Request access</Button>}
                 </div>
               </div>
             ))}

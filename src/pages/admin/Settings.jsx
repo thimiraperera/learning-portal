@@ -4,6 +4,7 @@ import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -82,7 +83,7 @@ export default function Settings() {
             <input className="form-control" type="file" accept="image/*" onChange={onFile} />
           </div>
 
-          <button className="btn btn-primary" onClick={save}><Save /> Save Settings</button>
+          <Button className="btn btn-primary" onClick={save}><Save /> Save Settings</Button>
         </div>
 
         {/* Live preview */}
@@ -151,10 +152,10 @@ function DangerZoneCard({ purgeData }) {
         <input className="form-control" value={text} placeholder={PHRASE} onChange={(e) => setText(e.target.value)} />
       </div>
 
-      <button className="btn" style={{ background: "#DC2626", color: "#fff", border: "none", opacity: text === PHRASE && !busy ? 1 : 0.55, cursor: text === PHRASE && !busy ? "pointer" : "not-allowed" }}
-        disabled={text !== PHRASE || busy} onClick={run}>
-        <Trash2 /> {busy ? "Deleting..." : "Delete all data"}
-      </button>
+      <Button className="btn" style={{ background: "#DC2626", color: "#fff", border: "none", opacity: text === PHRASE && !busy ? 1 : 0.55, cursor: text === PHRASE && !busy ? "pointer" : "not-allowed" }}
+        disabled={text !== PHRASE} loading={busy} onClick={run}>
+        <Trash2 /> Delete all data
+      </Button>
     </div>
   );
 }
@@ -189,7 +190,7 @@ function LoginPageCard({ brand, setBrand }) {
         <RichTextEditor value={intro} onChange={setIntro} placeholder="Describe your portal for visitors on the sign-in screen..." />
       </div>
 
-      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save description"}</button>
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save description</Button>
     </div>
   );
 }
@@ -293,7 +294,7 @@ function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
           <option value="super">Super admin (full access, including Settings)</option>
         </select>
       </div>
-      <button className="btn btn-primary" disabled={busy} onClick={add}><Plus /> {busy ? "Adding..." : "Add administrator"}</button>
+      <Button className="btn btn-primary" loading={busy} onClick={add}><Plus /> Add administrator</Button>
     </div>
   );
 }
@@ -335,9 +336,9 @@ function BackupCard({ downloadBackup, restoreBackup }) {
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>BACKUP</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
         {SCOPES.map((s) => (
-          <button key={s.key} className="btn btn-outline" disabled={!!busy} onClick={() => backup(s.key)}>
-            <s.icon /> {busy === "backup-" + s.key ? "Preparing..." : s.label}
-          </button>
+          <Button key={s.key} className="btn btn-outline" loading={busy === "backup-" + s.key} disabled={!!busy} onClick={() => backup(s.key)}>
+            <s.icon /> {s.label}
+          </Button>
         ))}
       </div>
 
@@ -431,7 +432,7 @@ function CaptchaCard({ captcha, saveCaptcha }) {
         </>
       )}
 
-      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save captcha settings"}</button>
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save captcha settings</Button>
     </div>
   );
 }
@@ -472,7 +473,7 @@ function RegNumberCard({ regnum, saveRegnum }) {
       </div>
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Example: <strong style={{ color: "#374151" }}>{example}</strong></div>
 
-      <button className="btn btn-primary" disabled={busy} onClick={save}><Save /> {busy ? "Saving..." : "Save format"}</button>
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save format</Button>
     </div>
   );
 }
@@ -509,7 +510,7 @@ function RemindersCard({ reminders, saveReminders, sendRemindersNow }) {
         <input type="checkbox" checked={enabled} onChange={(e) => toggle(e.target.checked)} /> Enable daily automatic reminders
       </label>
 
-      <button className="btn btn-outline" disabled={busy} onClick={sendNow}><Mail /> {busy ? "Sending..." : "Send reminders now"}</button>
+      <Button className="btn btn-outline" loading={busy} onClick={sendNow}><Mail /> Send reminders now</Button>
 
       <div style={{ borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
         <label className="form-label">Daily schedule (cPanel Cron Job)</label>
@@ -596,7 +597,7 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
         <label className="check-row"><input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} /> Use SSL (port 465)</label>
       </div>
 
-      <button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</button>
+      <Button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</Button>
 
       <div style={{ borderTop: "1px solid var(--border)", marginTop: 22, paddingTop: 18 }}>
         <label className="form-label">Send a test email</label>
@@ -606,9 +607,9 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
             <input className="form-control" style={{ width: "100%" }} type="email" placeholder="recipient@example.com (optional)"
               value={testTo} onChange={(e) => setTestTo(e.target.value)} />
           </div>
-          <button className="btn btn-outline" disabled={testing || !host} onClick={sendTest}>
-            <Mail /> {testing ? "Sending..." : "Send test mail"}
-          </button>
+          <Button className="btn btn-outline" loading={testing} disabled={!host} onClick={sendTest}>
+            <Mail /> Send test mail
+          </Button>
         </div>
       </div>
     </div>

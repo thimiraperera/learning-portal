@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
+import Button from "../components/Button.jsx";
 
 /* Public "forgot password" page. Sends a reset link when the account has an
    email on file; otherwise tells the user to contact their administrator. */
@@ -43,7 +44,7 @@ export default function Forgot() {
           <form onSubmit={submit}>
             <label>Username or email</label>
             <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Your username or email" autoFocus />
-            <button type="submit" className="reg-btn" disabled={busy}>{busy ? "Sending..." : "Send reset link"}</button>
+            <Button type="submit" className="reg-btn" loading={busy}>Send reset link</Button>
           </form>
         )}
 

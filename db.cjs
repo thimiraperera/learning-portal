@@ -632,10 +632,17 @@ async function getInvite(token) {
   const [[u]] = await q("SELECT id, name, email, username FROM users WHERE reg_token=? AND status='invited'", [token]);
   return u || null;
 }
+// Is this username already used by another account? (exceptId lets the invited
+// user keep their own reserved username.)
+async function usernameExists(username, exceptId) {
+  const [[r]] = await q("SELECT 1 AS x FROM users WHERE lower(username)=? AND id<>? LIMIT 1",
+    [String(username || "").trim().toLowerCase(), Number(exceptId) || 0]);
+  return !!r;
+}
 async function completeRegistration(token, f, passwordHash) {
   const [r] = await q(
-    "UPDATE users SET name=?, first_name=?, last_name=?, phone=?, gender=?, password_hash=?, status='active', reg_token=NULL WHERE reg_token=? AND status='invited'",
-    [f.name.trim(), f.firstName.trim(), f.lastName.trim(), f.phone || "", f.gender || "", passwordHash, token]);
+    "UPDATE users SET name=?, first_name=?, last_name=?, phone=?, gender=?, username=?, password_hash=?, status='active', reg_token=NULL WHERE reg_token=? AND status='invited'",
+    [f.name.trim(), f.firstName.trim(), f.lastName.trim(), f.phone || "", f.gender || "", f.username, passwordHash, token]);
   return r.affectedRows > 0;
 }
 async function updateStudentProfile(id, f) {
@@ -1186,7 +1193,7 @@ async function setSmtp(next) {
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, enrolledBatches, lockedCourses, usersMap,
   listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch,
-  updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration,
+  updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration, usernameExists,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,

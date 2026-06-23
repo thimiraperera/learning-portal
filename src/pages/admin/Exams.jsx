@@ -5,6 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import { popup } from "../../components/Popup.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function Exams() {
@@ -58,7 +59,7 @@ export default function Exams() {
             onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") create(); }} />
           <SearchSelect style={{ flex: "0 0 260px" }} value={courseSel} placeholder="Assign to course (optional)" allLabel="No course yet"
             options={courseOptions} onChange={setCourseSel} />
-          <button className="btn btn-primary" onClick={create}><Plus /> Create exam</button>
+          <Button className="btn btn-primary" onClick={create}><Plus /> Create exam</Button>
         </div>
         {msg && !msg.ok && (
           <div className="alert alert-danger" style={{ marginTop: 16, marginBottom: 0 }}><AlertTriangle /> {msg.msg}</div>

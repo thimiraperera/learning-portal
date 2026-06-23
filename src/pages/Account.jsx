@@ -3,6 +3,7 @@ import { Save, CheckCircle, AlertTriangle, KeyRound, User, Upload, Trash2 } from
 import Layout from "../components/Layout.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import TwoFactor from "../components/TwoFactor.jsx";
+import Button from "../components/Button.jsx";
 import { resizeToWebp } from "../lib/image.js";
 import { useStore } from "../state.jsx";
 
@@ -117,7 +118,7 @@ export default function Account() {
             </select>
           </div>
 
-          <button className="btn btn-primary" onClick={saveProfile}><Save /> Save profile</button>
+          <Button className="btn btn-primary" onClick={saveProfile}><Save /> Save profile</Button>
         </div>
 
         {/* Password */}
@@ -144,7 +145,7 @@ export default function Account() {
             <input className="form-control" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </div>
 
-          <button className="btn btn-primary" onClick={savePassword}><KeyRound /> Change password</button>
+          <Button className="btn btn-primary" onClick={savePassword}><KeyRound /> Change password</Button>
         </div>
 
         <TwoFactor />
