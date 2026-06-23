@@ -525,7 +525,6 @@ function RemindersCard({ reminders, saveReminders, sendRemindersNow }) {
 function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
   const s = smtp || {};
   const [host, setHost] = useState(s.host || "");
-  const [port, setPort] = useState(s.port || "587");
   const [username, setUsername] = useState(s.username || "");
   const [password, setPassword] = useState("");
   const [fromEmail, setFromEmail] = useState(s.fromEmail || "");
@@ -535,12 +534,11 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // Standard port per encryption mode; set it for the user (still editable).
+  // Port is derived from the encryption mode (SSL 465, STARTTLS 587, none 25).
   const STD_PORT = { ssl: "465", starttls: "587", none: "25" };
-  const onSecurity = (val) => { setSecurity(val); if (STD_PORT[val]) setPort(STD_PORT[val]); };
 
   const save = async () => {
-    setMsg(await saveSmtp({ host, port, username, password, fromEmail, fromName, security }));
+    setMsg(await saveSmtp({ host, port: STD_PORT[security] || "587", username, password, fromEmail, fromName, security }));
     setPassword("");
   };
 
@@ -562,15 +560,9 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
         </div>
       )}
 
-      <div className="field-row">
-        <div className="form-group">
-          <label className="form-label">SMTP host</label>
-          <input className="form-control" value={host} placeholder="e.g. smtp.gmail.com" onChange={(e) => setHost(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Port</label>
-          <input className="form-control" value={port} placeholder="587" onChange={(e) => setPort(e.target.value)} />
-        </div>
+      <div className="form-group">
+        <label className="form-label">SMTP host</label>
+        <input className="form-control" value={host} placeholder="e.g. smtp.gmail.com" onChange={(e) => setHost(e.target.value)} />
       </div>
 
       <div className="field-row">
@@ -597,12 +589,12 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
 
       <div className="form-group" style={{ maxWidth: 360, marginBottom: 20 }}>
         <label className="form-label">Encryption</label>
-        <select className="form-control" value={security} onChange={(e) => onSecurity(e.target.value)}>
+        <select className="form-control" value={security} onChange={(e) => setSecurity(e.target.value)}>
           <option value="ssl">SSL/TLS (implicit, port 465)</option>
           <option value="starttls">STARTTLS (port 587)</option>
           <option value="none">None (no encryption)</option>
         </select>
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Sets the standard port above; you can still change it for non-standard servers.</div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The connection port is set automatically from this choice.</div>
       </div>
 
       <Button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</Button>
