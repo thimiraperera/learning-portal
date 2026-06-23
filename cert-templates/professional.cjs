@@ -14,7 +14,7 @@ function fitSize(doc, text, font, maxSize, minSize, maxWidth) {
 }
 
 module.exports = {
-  name: "Professional",
+  name: "Professional Certificate",
   render(doc, d) {
     const W = doc.page.width;  // 842
     const H = doc.page.height; // 595
