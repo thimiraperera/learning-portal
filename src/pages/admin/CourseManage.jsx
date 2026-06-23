@@ -146,7 +146,7 @@ function DetailsTab({ id, c, store, navigate }) {
 
   return (
     <div style={{ maxWidth: 620 }}>
-      <div className="alert alert-info" style={{ marginBottom: 18 }}><Layers /> These details (code, title, description, certificate template) are shared across <strong>all batches</strong> of this course. Per-batch setup lives in the other tabs.</div>
+      <div className="alert alert-info" style={{ marginBottom: 18 }}><Layers /> <span>These details (code, title, description, certificate template) are shared across all batches of this course. Per-batch setup lives in the other tabs.</span></div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
       <div className="form-group"><label className="form-label">Code</label>
         <input className="form-control" value={code} onChange={(e) => setCode(e.target.value)} /></div>
