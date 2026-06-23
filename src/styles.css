@@ -616,11 +616,21 @@ textarea.form-control { min-height: 82px; resize: vertical; }
   /* Stat cards two-up instead of one tall column. */
   .stats-grid { grid-template-columns: 1fr 1fr; }
   /* Keep the desktop underline tab bar, but collapse each tab to just its icon;
-     only the active tab expands to show its full name (and count). */
-  .tab-btn { padding: 11px 10px 13px; }
-  .tab-btn .tab-label, .tab-btn .tab-count { display: none; }
-  .tab-btn.on .tab-label { display: inline; }
-  .tab-btn.on .tab-count { display: inline-block; }
+     only the active tab expands (animated) to show its full name and count. */
+  .tab-btn { padding: 11px 12px 13px; gap: 0; position: relative; }
+  /* Lite divider between tabs. */
+  .tab-btn:not(:last-child)::after {
+    content: ""; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    height: 18px; width: 1px; background: var(--border);
+  }
+  .tab-btn .tab-label {
+    display: inline-block; max-width: 0; margin-left: 0; opacity: 0; overflow: hidden;
+    white-space: nowrap;
+    transition: max-width 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
+  }
+  .tab-btn.on .tab-label { max-width: 160px; margin-left: 8px; opacity: 1; }
+  .tab-btn .tab-count { display: none; }
+  .tab-btn.on .tab-count { display: inline-block; margin-left: 6px; }
   /* Card padding is tighter on small screens. */
   .card { padding: 16px; }
   /* Filters and inline add-forms (.toolbar) stack: every control full width.
