@@ -342,6 +342,11 @@ select.form-control { cursor: pointer; }
   border-radius: var(--radius-pill); padding: 1px 8px;
 }
 .tab-btn.on .tab-count { background: var(--primary-light); color: var(--primary); }
+/* Tab cards keep a stable minimum height so switching to a shorter tab does not
+   shrink the page and yank the scroll position to the top. A modest reserve on
+   desktop; near full-height on mobile (where the jump is most jarring and a
+   full-height single-column card looks natural). */
+.card:has(> .tabs) { min-height: calc(100vh - 130px); }
 
 /* media row */
 .media-row {
@@ -464,6 +469,9 @@ select.form-control { cursor: pointer; }
 
 /* account page two-column */
 .account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+/* min-width:0 lets the 1fr columns shrink to fit instead of forcing the page
+   wider than the viewport (grid items default to min-width:auto). */
+.account-grid > *, .field-row > * { min-width: 0; }
 @media (max-width: 820px) { .account-grid { grid-template-columns: 1fr; } }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 textarea.form-control { min-height: 82px; resize: vertical; }
@@ -631,6 +639,9 @@ textarea.form-control { min-height: 82px; resize: vertical; }
   .tab-btn.on .tab-label { max-width: 160px; margin-left: 8px; opacity: 1; }
   .tab-btn .tab-count { display: none; }
   .tab-btn.on .tab-count { display: inline-block; margin-left: 6px; }
+  /* Reserve near full-height for tab cards on mobile so switching tabs does not
+     shrink the page and scroll the user away from the tab bar. */
+  .card:has(> .tabs) { min-height: calc(100vh - 40px); }
   /* Card padding is tighter on small screens. */
   .card { padding: 16px; }
   /* Filters and inline add-forms (.toolbar) stack: every control full width.
