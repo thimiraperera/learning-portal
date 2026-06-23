@@ -754,7 +754,7 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
   const email = String(ins.email || "").trim().toLowerCase();
   if (!email.includes("@")) return res.status(400).json({ error: "Add a valid email to the instructor before inviting them to log in." });
   let username = String(req.body?.username || "").trim().toLowerCase();
-  if (!username) username = String(ins.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || ("instr" + id);
+  if (!username) username = String(ins.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/g, "") || ("instr" + id);
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? OR lower(username)=? LIMIT 1", [email, username]);
   if (clash) return res.status(409).json({ error: "That email or username is already in use by another account." });
 

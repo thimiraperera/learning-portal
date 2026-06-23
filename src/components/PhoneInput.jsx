@@ -100,7 +100,7 @@ export default function PhoneInput({ value, onChange, style }) {
         <span>{country.d}</span>
         <ChevronDown className="ss-chev" />
       </button>
-      <input className="phone-num" inputMode="tel" value={number} onChange={(e) => setNum(e.target.value)} placeholder="771234567" />
+      <input className="phone-num" inputMode="tel" name="phone" autoComplete="tel" value={number} onChange={(e) => setNum(e.target.value)} placeholder="771234567" />
       {open && (
         <div className="ss-panel phone-menu">
           <div className="ss-search">

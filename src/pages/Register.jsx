@@ -99,16 +99,16 @@ export default function Register() {
               <div className="reg-row">
                 <div>
                   <label>First name <span className="req">*</span></label>
-                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" />
+                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" autoComplete="given-name" />
                 </div>
                 <div>
                   <label>Last name <span className="req">*</span></label>
-                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" />
+                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" autoComplete="family-name" />
                 </div>
               </div>
 
               <label>Full name <span className="req">*</span> <span className="reg-hint">(used on certificates)</span></label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoComplete="name" />
 
               <label>Phone <span className="req">*</span></label>
               <PhoneInput value={phone} onChange={setPhone} />
@@ -121,10 +121,12 @@ export default function Register() {
               </select>
 
               <label>Email <span className="reg-hint">(cannot be changed)</span></label>
-              <input type="text" value={invite.email} readOnly disabled />
+              <input className="locked" type="email" name="email" value={invite.email} readOnly autoComplete="email" />
 
+              {/* readOnly (not disabled) + autoComplete="username" so the browser saves
+                  THIS as the login username, not the phone number. */}
               <label>Username <span className="reg-hint">(cannot be changed)</span></label>
-              <input type="text" value={invite.username} readOnly disabled />
+              <input className="locked" type="text" name="username" value={invite.username} readOnly autoComplete="username" />
 
               <label>Password <span className="req">*</span></label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" />
@@ -159,7 +161,7 @@ const REG_CSS = `
 .reg-hint { color: #9CA3AF; font-weight: 400; }
 .reg-card input, .reg-card select { width: 100%; padding: 12px 14px; border: 1.5px solid #D8E2F0; border-radius: 10px; font-family: 'Figtree', sans-serif; font-size: 14.5px; color: #121212; outline: none; background: white; }
 .reg-card input:focus, .reg-card select:focus { border-color: #1E509B; box-shadow: 0 0 0 3px rgba(30,80,155,0.1); }
-.reg-card input:disabled { background: #F4F7FB; color: #9CA3AF; cursor: not-allowed; }
+.reg-card input:disabled, .reg-card input.locked { background: #F4F7FB; color: #9CA3AF; cursor: not-allowed; }
 .reg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .reg-btn { width: 100%; margin-top: 22px; padding: 13px; background: linear-gradient(135deg,#1E509B,#00265E); color: #fff; border: none; border-radius: 999px; font-family: 'Figtree', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; }
 .reg-btn:hover { opacity: 0.93; }

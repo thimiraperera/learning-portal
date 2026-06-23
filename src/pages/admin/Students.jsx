@@ -7,15 +7,31 @@ import SearchSelect from "../../components/SearchSelect.jsx";
 import { useStore } from "../../state.jsx";
 import { payFilterBucket } from "../../lib/payments.js";
 
-/* Build a sensible username suggestion from the full name: lowercase,
-   strip accents and punctuation. Admins can still type their own. */
+/* Build a sensible username suggestion from the full name: lowercase, strip
+   accents, and join words with a hyphen ("John Doe" becomes "john-doe").
+   Admins can still type their own. */
 function suggestUsername(name) {
   // NFD splits accented letters into base + combining mark; drop the marks
-  // (̀-ͯ) so "José" becomes "jose", then keep a-z0-9 only.
+  // (̀-ͯ) so "Jose" stays "jose", then keep a-z0-9 and hyphenate gaps.
   return name.trim().toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 24);
+    .replace(/[^a-z0-9]+/g, "-")   // spaces / punctuation between words become a hyphen
+    .replace(/^-+|-+$/g, "")        // no leading or trailing hyphen
+    .slice(0, 24)
+    .replace(/-+$/g, "");           // slice may leave a dangling hyphen
+}
+
+/* Make a suggestion unique against usernames already in the database: append
+   -2, -3, ... and trim the base so the result still fits in 24 characters. */
+function uniqueUsername(base, taken) {
+  if (!base) return "";
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 10000; i++) {
+    const suffix = "-" + i;
+    const cand = base.slice(0, 24 - suffix.length).replace(/-+$/g, "") + suffix;
+    if (!taken.has(cand)) return cand;
+  }
+  return base;
 }
 
 const PAY_COL = {
@@ -61,7 +77,10 @@ export default function Students() {
   const onName = (v) => {
     setName(v);
     setFieldErr((e) => ({ ...e, name: undefined }));
-    if (!usernameEdited) setUsername(suggestUsername(v));
+    if (!usernameEdited) {
+      const taken = new Set(Object.values(users).map((u) => (u.username || "").toLowerCase()).filter(Boolean));
+      setUsername(uniqueUsername(suggestUsername(v), taken));
+    }
   };
 
   const invite = async () => {
@@ -127,7 +146,7 @@ export default function Students() {
           </div>
           <button className="btn btn-primary" onClick={invite}><Mail /> Send invite</button>
         </div>
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>A username is suggested from the full name. You can change it before sending.</div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>A unique username is suggested from the full name (words joined with a hyphen). You can change it before sending.</div>
         {msg && (
           <>
             <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")} style={{ marginTop: 16, marginBottom: msg.link ? 8 : 0 }}>

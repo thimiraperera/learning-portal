@@ -96,12 +96,12 @@ export default function Login() {
           <form onSubmit={submit}>
             <div className="form-group">
               <label htmlFor="username">Username</label>
-              <input id="username" type="text" placeholder="Enter your username" autoComplete="username"
+              <input id="username" name="username" type="text" placeholder="Enter your username" autoComplete="username"
                 value={username} onChange={(e) => setUsername(e.target.value)} />
             </div>
             <div className="form-group">
               <label htmlFor="password">Password</label>
-              <input id="password" type="password" placeholder="Enter your password" autoComplete="current-password"
+              <input id="password" name="password" type="password" placeholder="Enter your password" autoComplete="current-password"
                 value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {twoFactor && (
