@@ -530,14 +530,17 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
   const [password, setPassword] = useState("");
   const [fromEmail, setFromEmail] = useState(s.fromEmail || "");
   const [fromName, setFromName] = useState(s.fromName || "");
-  const [useTls, setUseTls] = useState(s.useTls !== false);
-  const [useSsl, setUseSsl] = useState(!!s.useSsl);
+  const [security, setSecurity] = useState(s.security || (s.useSsl ? "ssl" : "starttls"));
   const [testTo, setTestTo] = useState("");
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState(null);
 
+  // Standard port per encryption mode; set it for the user (still editable).
+  const STD_PORT = { ssl: "465", starttls: "587", none: "25" };
+  const onSecurity = (val) => { setSecurity(val); if (STD_PORT[val]) setPort(STD_PORT[val]); };
+
   const save = async () => {
-    setMsg(await saveSmtp({ host, port, username, password, fromEmail, fromName, useTls, useSsl }));
+    setMsg(await saveSmtp({ host, port, username, password, fromEmail, fromName, security }));
     setPassword("");
   };
 
@@ -592,9 +595,14 @@ function SmtpCard({ smtp, saveSmtp, sendTestMail }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 28, marginBottom: 20 }}>
-        <label className="check-row"><input type="checkbox" checked={useTls} onChange={(e) => setUseTls(e.target.checked)} /> Use TLS (port 587)</label>
-        <label className="check-row"><input type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} /> Use SSL (port 465)</label>
+      <div className="form-group" style={{ maxWidth: 360, marginBottom: 20 }}>
+        <label className="form-label">Encryption</label>
+        <select className="form-control" value={security} onChange={(e) => onSecurity(e.target.value)}>
+          <option value="ssl">SSL/TLS (implicit, port 465)</option>
+          <option value="starttls">STARTTLS (port 587)</option>
+          <option value="none">None (no encryption)</option>
+        </select>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Sets the standard port above; you can still change it for non-standard servers.</div>
       </div>
 
       <Button className="btn btn-primary" onClick={save}><Save /> Save SMTP settings</Button>

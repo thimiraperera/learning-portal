@@ -109,10 +109,13 @@ async function sendMail(to, subject, html, attachments) {
   const s = await dbmod.getSmtp();
   if (!s.host) return { sent: false, reason: "SMTP is not configured" };
   try {
+    const security = s.security || (s.useSsl ? "ssl" : "starttls");
     const transporter = nodemailer.createTransport({
       host: s.host,
       port: Number(s.port) || 587,
-      secure: !!s.useSsl, // true for 465, false uses STARTTLS on 587
+      secure: security === "ssl",          // implicit TLS (usually port 465)
+      requireTLS: security === "starttls", // force STARTTLS upgrade (usually port 587)
+      ignoreTLS: security === "none",      // no encryption
       auth: s.username ? { user: s.username, pass: s.password } : undefined,
     });
     const from = s.fromName ? `"${s.fromName}" <${s.fromEmail || s.username}>` : (s.fromEmail || s.username);
@@ -1457,11 +1460,12 @@ app.put("/api/admin/captcha", auth, superOnly, wrap(async (req, res) => {
 /* ---- SMTP settings (admins) ---- */
 app.put("/api/admin/smtp", auth, superOnly, wrap(async (req, res) => {
   const b = req.body || {};
+  const security = ["ssl", "starttls", "none"].includes(b.security) ? b.security : (b.useSsl ? "ssl" : "starttls");
   res.json(await dbmod.setSmtp({
     host: String(b.host || ""), port: String(b.port || ""),
     username: String(b.username || ""), password: b.password === undefined ? "" : String(b.password),
     fromEmail: String(b.fromEmail || ""), fromName: String(b.fromName || ""),
-    useTls: !!b.useTls, useSsl: !!b.useSsl,
+    security, useSsl: security === "ssl", useTls: security === "starttls", // keep legacy flags in sync
   }));
 }));
 

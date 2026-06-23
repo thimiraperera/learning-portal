@@ -1173,10 +1173,15 @@ async function setCaptcha(next) {
   return getCaptchaForClient();
 }
 
-const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", useTls: true, useSsl: false };
+// security: "ssl" (implicit TLS, port 465) | "starttls" (port 587) | "none".
+// useTls/useSsl are kept for backward compatibility with older saved settings.
+const SMTP_DEFAULT = { host: "", port: "587", username: "", password: "", fromEmail: "", fromName: "", security: "starttls", useTls: true, useSsl: false };
 async function getSmtp() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='smtp'");
-  return row ? { ...SMTP_DEFAULT, ...JSON.parse(row.v) } : { ...SMTP_DEFAULT };
+  const s = row ? { ...SMTP_DEFAULT, ...JSON.parse(row.v) } : { ...SMTP_DEFAULT };
+  // Older saved settings only had useSsl/useTls; derive security from them.
+  if (!["ssl", "starttls", "none"].includes(s.security)) s.security = s.useSsl ? "ssl" : "starttls";
+  return s;
 }
 async function getSmtpForClient() {
   const { password, ...rest } = await getSmtp();
