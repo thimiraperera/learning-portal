@@ -528,6 +528,62 @@ textarea.form-control { min-height: 82px; resize: vertical; }
 .sp-courses-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #9CA3AF; margin-bottom: 8px; }
 .sp-course { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); padding: 6px 0; }
 
+/* Hidden ("None" stage) content items: admin-only, dimmed with a tag */
+.content-item.is-hidden { background: #FAFAFB; border-style: dashed; }
+.hidden-tag {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+  color: #6B7280; background: #F3F4F6; border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 8px;
+}
+
+/* Popup notifications (in-app dialogs + toasts) replacing native browser dialogs */
+.popup-overlay {
+  position: fixed; inset: 0; background: rgba(8,18,38,0.55); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: fadeIn .12s ease;
+}
+.popup-card {
+  background: white; border-radius: 16px; width: 100%; max-width: 430px;
+  padding: 24px; box-shadow: 0 24px 60px rgba(0,0,0,0.3); animation: popIn .14s ease;
+}
+@keyframes popIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.popup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.popup-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.popup-icon svg { width: 20px; height: 20px; }
+.popup-icon.primary { background: #EFF6FF; color: var(--primary); }
+.popup-icon.danger  { background: #FEF2F2; color: var(--danger); }
+.popup-icon.success { background: #F0FDF4; color: #16A34A; }
+.popup-icon.warning { background: #FFFBEB; color: #D97706; }
+.popup-icon.info    { background: #EFF6FF; color: var(--primary); }
+.popup-title { font-size: 16px; font-weight: 800; color: var(--title); }
+.popup-message { font-size: 13.5px; color: #4B5563; line-height: 1.55; margin-bottom: 18px; white-space: pre-wrap; }
+.popup-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.toast-stack {
+  position: fixed; top: 18px; right: 18px; z-index: 1100;
+  display: flex; flex-direction: column; gap: 10px; max-width: 360px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex; align-items: flex-start; gap: 10px; background: white;
+  border: 1px solid var(--border); border-left-width: 4px; border-radius: 12px;
+  padding: 12px 14px; box-shadow: 0 12px 30px rgba(0,0,0,0.14); animation: toastIn .16s ease;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+.toast > svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast-msg { font-size: 13px; color: var(--text); line-height: 1.45; flex: 1; }
+.toast.success { border-left-color: #16A34A; } .toast.success > svg { color: #16A34A; }
+.toast.error   { border-left-color: var(--danger); } .toast.error > svg { color: var(--danger); }
+.toast.info    { border-left-color: var(--primary); } .toast.info > svg { color: var(--primary); }
+.toast.warning { border-left-color: #D97706; } .toast.warning > svg { color: #D97706; }
+.toast-x { background: none; border: none; cursor: pointer; color: #9CA3AF; padding: 0; display: flex; flex-shrink: 0; }
+.toast-x:hover { color: var(--danger); }
+
+@media (max-width: 760px) {
+  .toast-stack { left: 12px; right: 12px; top: 12px; max-width: none; }
+}
+
 @media (max-width: 760px) {
   .sidebar { transform: translateX(-100%); transition: transform .2s; }
   .sidebar.open { transform: translateX(0); box-shadow: 0 0 50px rgba(0,0,0,0.45); }

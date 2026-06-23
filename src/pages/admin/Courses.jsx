@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, PlayCircle, Link2, FileDown, Users, ChevronRight, X, UserPlus, CheckCircle, AlertTriangle, Search } from "lucide-react";
+import { Plus, PlayCircle, Link2, FileDown, Users, ChevronRight, X, UserPlus, CheckCircle, AlertTriangle, Search, Eye } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -9,7 +9,7 @@ import { useStore } from "../../state.jsx";
 const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [] };
 
 export default function Courses() {
-  const { courses, users, instructors, addCourse, fetchCertTemplates } = useStore();
+  const { courses, users, instructors, addCourse, fetchCertTemplates, previewCertTemplate } = useStore();
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState({}); // { title, code, instructors }
@@ -35,6 +35,11 @@ export default function Courses() {
 
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setErrors((er) => ({ ...er, [k]: undefined })); };
   const defaultName = templates.find((t) => t.id === defaultId)?.name || "Classic";
+  // Open a PDF preview of the chosen (or default) certificate template in a new tab.
+  const previewTemplate = async () => {
+    const tid = form.certTemplate || defaultId;
+    if (tid) { try { await previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+  };
   const chosenInstructors = form.instructorIds.map((id) => instructors.find((i) => i.id === id)).filter(Boolean);
   const availableInstructors = instructors.filter((i) => !form.instructorIds.includes(i.id));
 
@@ -104,10 +109,13 @@ export default function Courses() {
 
         <div className="field-row">
           <div className="form-group"><label className="form-label">Certificate template</label>
-            <select className="form-control" value={form.certTemplate} onChange={set("certTemplate")}>
-              <option value="">Default ({defaultName})</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select></div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <select className="form-control" value={form.certTemplate} onChange={set("certTemplate")}>
+                <option value="">Default ({defaultName})</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button className="btn btn-outline" type="button" onClick={previewTemplate}><Eye /> Preview</button>
+            </div></div>
           <div className="form-group"><label className="form-label">Instructors <span className="req">*</span> <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(at least one)</span></label>
             {instructors.length === 0
               ? <input className="form-control locked-input" value="No instructors created yet" readOnly disabled />

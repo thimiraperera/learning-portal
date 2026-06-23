@@ -8,6 +8,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, instBadge } from "../../lib/payments.js";
 
@@ -92,7 +93,7 @@ function ProfileTab({ id, s, store, navigate }) {
     setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, nic, status }));
   };
   const remove = async () => {
-    if (!window.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`)) return;
+    if (!(await popup.confirm(`Remove ${s.name}? This deletes the account and its enrolments.`, { title: "Remove student", confirmText: "Remove", danger: true }))) return;
     await store.removeStudent(s.email);
     navigate("/admin/students");
   };

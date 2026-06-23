@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Clock, CheckCircle, AlertTriangle, Send, Award } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 function fmt(ms) {
@@ -43,7 +44,7 @@ export default function ExamTake() {
     if (submittedRef.current) return;
     const unanswered = answers.filter((a) => a == null).length;
     if (!auto && unanswered > 0 &&
-      !window.confirm(`You have ${unanswered} unanswered question${unanswered === 1 ? "" : "s"}. Submit anyway?`)) return;
+      !(await popup.confirm(`You have ${unanswered} unanswered question${unanswered === 1 ? "" : "s"}. Submit anyway?`, { title: "Submit exam", confirmText: "Submit anyway", tone: "warning" }))) return;
     submittedRef.current = true;
     try {
       const d = await submitExam(eid, answers);

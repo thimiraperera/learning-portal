@@ -667,7 +667,12 @@ async function coursesForInstructor(instructorId) {
   const [rows] = await q(
     "SELECT ci.course_id FROM course_instructors ci WHERE ci.instructor_id=? ORDER BY ci.course_id", [instructorId]);
   const map = {};
-  for (const { course_id } of rows) map[course_id] = await courseFull(course_id);
+  for (const { course_id } of rows) {
+    const cf = await courseFull(course_id);
+    // Hidden ("None" stage, seq < 0) items are admin-only; keep them out of the instructor view.
+    for (const b of ["recordings", "links", "materials"]) cf[b] = (cf[b] || []).filter((it) => (Number(it.seq) || 0) >= 0);
+    map[course_id] = cf;
+  }
   return map;
 }
 async function linkInstructorUser(instructorId, userId) {
@@ -719,7 +724,7 @@ async function addCourseItem(courseId, batchId, bucket, title, url, seq) {
   if (!t) return;
   const bid = Number(batchId);
   const u = String(url || "").trim();
-  const s = Math.max(0, Number(seq) || 0);
+  const s = Math.max(-1, Number(seq) || 0); // -1 = None (hidden, admin only)
   // Position runs across the batch's bucket, so a new item lands at the bottom.
   const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND batch_id=?`, [courseId, bid]);
   if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq,batch_id) VALUES (?,0,?,?, '','', ?,?,?)", [courseId, title, u, p, s, bid]);
@@ -730,7 +735,7 @@ async function addCourseItem(courseId, batchId, bucket, title, url, seq) {
 async function setItemInstallment(courseId, bucket, itemId, seq) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
-  await q(`UPDATE ${t} SET installment_seq=? WHERE id=? AND course_id=?`, [Math.max(0, Number(seq) || 0), itemId, courseId]);
+  await q(`UPDATE ${t} SET installment_seq=? WHERE id=? AND course_id=?`, [Math.max(-1, Number(seq) || 0), itemId, courseId]);
 }
 async function removeCourseItem(courseId, bucket, itemId) {
   const t = ITEM_TABLE[bucket];
@@ -752,7 +757,7 @@ async function reorderItems(courseId, bucket, orderedIds) {
 }
 async function addMaterialFile(courseId, batchId, f) {
   const bid = Number(batchId);
-  const s = Math.max(0, Number(f.seq) || 0);
+  const s = Math.max(-1, Number(f.seq) || 0); // -1 = None (hidden, admin only)
   const [[{ p }]] = await q("SELECT COALESCE(MAX(position),-1)+1 AS p FROM materials WHERE course_id=? AND batch_id=?", [courseId, bid]);
   await q("INSERT INTO materials (course_id,group_id,title,size,ext,filename,position,installment_seq,batch_id) VALUES (?,0,?,?,?,?,?,?,?)",
     [courseId, f.title, f.size, f.ext, f.filename, p, s, bid]);

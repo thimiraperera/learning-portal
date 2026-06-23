@@ -98,7 +98,8 @@ async function userCanAccessCourse(user, courseId) {
 // src/lib/payments.js: 0 = everyone, 1 = registration fee, 2 = Installment 1...
 function installmentLabel(seq) {
   const n = Number(seq) || 0;
-  if (n <= 0) return "Available to everyone";
+  if (n < 0) return "Hidden (admin only)";
+  if (n === 0) return "Available to everyone";
   if (n === 1) return "Registration fee";
   return `Installment ${n - 1}`;
 }
@@ -392,12 +393,15 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
       if (paymentLocked.includes(cid)) continue;
       const paid = paidByCourse[cid] || new Set();
       for (const bucket of ["recordings", "links", "materials"]) {
-        courses[cid][bucket] = (courses[cid][bucket] || []).map((it) => {
-          const seq = Number(it.seq) || 0;
-          if (seq <= 0 || paid.has(seq)) return { ...it, locked: false };
-          const { u: _url, filename: _f, ...rest } = it;
-          return { ...rest, locked: true, lockLabel: installmentLabel(seq) };
-        });
+        courses[cid][bucket] = (courses[cid][bucket] || [])
+          // Hidden ("None" stage, seq < 0) items are admin-only: drop them entirely.
+          .filter((it) => (Number(it.seq) || 0) >= 0)
+          .map((it) => {
+            const seq = Number(it.seq) || 0;
+            if (seq <= 0 || paid.has(seq)) return { ...it, locked: false };
+            const { u: _url, filename: _f, ...rest } = it;
+            return { ...rest, locked: true, lockLabel: installmentLabel(seq) };
+          });
       }
     }
     res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrand() });
@@ -1220,8 +1224,10 @@ app.get("/api/materials/:id/file", auth, wrap(async (req, res) => {
   const m = await dbmod.getMaterial(Number(req.params.id));
   if (!m || !m.filename) return res.status(404).json({ error: "File not found." });
   if (!(await userCanAccessCourse(req.user, m.course_id))) return res.status(403).json({ error: "Not allowed." });
-  // Students must have paid the installment this material is tied to.
+  // Hidden ("None" stage, seq < 0) materials are admin-only.
   const seq = Number(m.installment_seq) || 0;
+  if (seq < 0 && req.user.role !== "admin") return res.status(404).json({ error: "File not found." });
+  // Students must have paid the installment this material is tied to.
   if (req.user.role === "student" && seq > 0) {
     const paid = await dbmod.paidInstallmentSeqs(req.user.id, m.course_id);
     if (!paid.includes(seq)) return res.status(403).json({ error: `This material unlocks when you pay ${installmentLabel(seq)}.` });

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
-  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, GripVertical, Upload, Wallet, Pencil, Check, Layers,
+  CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, EyeOff, GripVertical, Upload, Wallet, Pencil, Check, Layers,
 } from "lucide-react";
 
 // "Batch 2 · ongoing" style label for the batch dropdown / cards.
@@ -13,6 +13,7 @@ function batchLabel(b) {
 }
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
@@ -57,7 +58,7 @@ export default function CourseManage() {
   ];
 
   const onStartNewBatch = async () => {
-    if (!window.confirm("Start a new batch? The current batch is marked ended, and its instructors, content, and payment plan are copied into a fresh batch (students are not copied).")) return;
+    if (!(await popup.confirm("Start a new batch? The current batch is marked ended, and its instructors, content, and payment plan are copied into a fresh batch (students are not copied).", { title: "Start new batch", confirmText: "Start new batch" }))) return;
     setBatchBusy(true);
     const r = await startNewBatch(id, {});
     setBatchBusy(false);
@@ -138,7 +139,7 @@ function DetailsTab({ id, c, store, navigate }) {
 
   const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate }));
   const remove = async () => {
-    if (!window.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`)) return;
+    if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
     navigate("/admin/courses");
   };
@@ -471,12 +472,12 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
   return (
     <div className="content-section" style={{ marginBottom: 14 }}>
       <div className="content-section-head"><Icon /> {title} <span className="tab-count">{items.length}</span></div>
-      <p className="content-empty" style={{ marginBottom: 12 }}>Choose the payment stage each item unlocks at. It stays available from that stage onward.</p>
+      <p className="content-empty" style={{ marginBottom: 12 }}>Choose the payment stage each item unlocks at. It stays available from that stage onward. Pick <strong>None</strong> to add an item that stays hidden from students and instructors until you enable it.</p>
       {items.length === 0 ? <p className="content-empty">Nothing here yet.</p> : (
         <div>
           {items.map((it) => (
             <div key={it.id}
-              className={"content-item" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "")}
+              className={"content-item" + (overId === it.id ? " drag-over" : "") + (dragId === it.id ? " dragging" : "") + ((Number(it.seq) || 0) < 0 ? " is-hidden" : "")}
               onDragOver={(e) => { if (dragIdRef.current != null) { e.preventDefault(); setOverId(it.id); } }}
               onDragLeave={() => setOverId((o) => (o === it.id ? null : o))}
               onDrop={() => onDrop(it.id)}>
@@ -500,7 +501,10 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
                       onDragEnd={endDrag}><GripVertical /></span>
                     <span className="ci-icon" style={{ background: tint.bg }}><Icon style={{ width: 18, height: 18, color: tint.color }} /></span>
                     <div className="mr-body">
-                      <div className="mr-title" style={{ marginBottom: 2 }}>{it.t}</div>
+                      <div className="mr-title" style={{ marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
+                        {it.t}
+                        {(Number(it.seq) || 0) < 0 && <span className="hidden-tag"><EyeOff style={{ width: 12, height: 12 }} /> Hidden</span>}
+                      </div>
                       {it.filename
                         ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
                         : it.u && <div className="ci-url">{it.u}</div>}

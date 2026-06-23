@@ -3,6 +3,7 @@ import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Dow
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -127,7 +128,7 @@ function DangerZoneCard({ purgeData }) {
 
   const run = async () => {
     if (text !== PHRASE) return;
-    if (!window.confirm("This permanently deletes ALL students, instructors, courses, content, payments, exams, certificates and uploaded files. Administrator accounts and settings are kept. This cannot be undone. Continue?")) return;
+    if (!(await popup.confirm("This permanently deletes ALL students, instructors, courses, content, payments, exams, certificates and uploaded files. Administrator accounts and settings are kept. This cannot be undone. Continue?", { title: "Delete all data", confirmText: "Delete everything", danger: true }))) return;
     setBusy(true); setMsg(null);
     const r = await purgeData();
     setBusy(false);
@@ -226,7 +227,7 @@ function AdminsCard({ currentUser, fetchAdmins, addAdmin, deleteAdmin }) {
   };
 
   const remove = async (a) => {
-    if (!window.confirm(`Remove administrator "${a.name}" (@${a.username})? They will no longer be able to sign in.`)) return;
+    if (!(await popup.confirm(`Remove administrator "${a.name}" (@${a.username})? They will no longer be able to sign in.`, { title: "Remove administrator", confirmText: "Remove", danger: true }))) return;
     setMsg(null);
     const r = await deleteAdmin(a.id);
     if (!r.ok) { setMsg({ ok: false, text: r.msg }); return; }
@@ -317,7 +318,7 @@ function BackupCard({ downloadBackup, restoreBackup }) {
 
   const restore = async (scope, file) => {
     if (!file) return;
-    if (!window.confirm(`Restore ${LABELS[scope]} from this backup? This OVERWRITES current ${LABELS[scope]} and cannot be undone.`)) return;
+    if (!(await popup.confirm(`Restore ${LABELS[scope]} from this backup? This OVERWRITES current ${LABELS[scope]} and cannot be undone.`, { title: "Restore backup", confirmText: "Restore", danger: true }))) return;
     setBusy("restore-" + scope); setMsg(null);
     const r = await restoreBackup(scope, file);
     setBusy("");

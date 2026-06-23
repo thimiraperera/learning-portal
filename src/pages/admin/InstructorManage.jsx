@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function InstructorManage() {
@@ -61,7 +62,7 @@ function ProfileTab({ instr, store, navigate }) {
 
   const save = async () => setMsg(await store.updateInstructor(instr.id, { name, title, email, phone, bio, gender, notes }));
   const remove = async () => {
-    if (!window.confirm(`Remove ${instr.name}? They will be unassigned from all courses.`)) return;
+    if (!(await popup.confirm(`Remove ${instr.name}? They will be unassigned from all courses.`, { title: "Remove instructor", confirmText: "Remove", danger: true }))) return;
     await store.deleteInstructor(instr.id);
     navigate("/admin/instructors");
   };

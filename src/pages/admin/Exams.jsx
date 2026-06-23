@@ -4,6 +4,7 @@ import { Plus, Search, X, Eye, Trash2, FileQuestion, AlertTriangle } from "lucid
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 export default function Exams() {
@@ -28,7 +29,7 @@ export default function Exams() {
   };
 
   const remove = async (x) => {
-    if (!window.confirm(`Delete "${x.title}"? This removes its questions and results. This cannot be undone.`)) return;
+    if (!(await popup.confirm(`Delete "${x.title}"? This removes its questions and results. This cannot be undone.`, { title: "Delete exam", confirmText: "Delete", danger: true }))) return;
     await deleteExam(x.id);
   };
 

@@ -5,6 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import PhoneInput from "../../components/PhoneInput.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 const EMPTY = { name: "", title: "", email: "", phone: "", gender: "", bio: "", notify: false };
@@ -142,7 +143,7 @@ export default function Instructors() {
                       <td>{courseCount(i.id)}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/instructors/${i.id}`)} style={{ marginRight: 8 }}><Eye /> View</button>
-                        <button className="icon-btn-plain" title="Remove" onClick={() => { if (window.confirm(`Remove ${i.name}?`)) deleteInstructor(i.id); }}>
+                        <button className="icon-btn-plain" title="Remove" onClick={async () => { if (await popup.confirm(`Remove ${i.name}?`, { title: "Remove instructor", confirmText: "Remove", danger: true })) deleteInstructor(i.id); }}>
                           <Trash2 style={{ width: 16, height: 16 }} />
                         </button>
                       </td>

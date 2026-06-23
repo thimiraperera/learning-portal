@@ -4,6 +4,7 @@ import { Wallet, Search, X, Eye, Lock, Unlock } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge } from "../../lib/payments.js";
 
@@ -17,7 +18,7 @@ export default function Payments() {
     const msg = lock
       ? `Lock ${p.studentName}'s account? They will not be able to sign in until you unlock it.`
       : `Unlock ${p.studentName}'s account? They will be able to sign in again.`;
-    if (!window.confirm(msg)) return;
+    if (!(await popup.confirm(msg, { title: lock ? "Lock account" : "Unlock account", confirmText: lock ? "Lock" : "Unlock", danger: lock }))) return;
     setBusyId(p.user_id);
     await lockStudent(p.user_id, lock);
     setBusyId(null);

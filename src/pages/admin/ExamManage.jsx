@@ -7,6 +7,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 
 const SAMPLE_CSV = [
@@ -108,7 +109,7 @@ function SettingsTab({ exam, setExam, store, navigate }) {
     if (r.ok && r.exam) setExam(r.exam);
   };
   const remove = async () => {
-    if (!window.confirm(`Delete "${exam.title}"? This removes its questions and results. This cannot be undone.`)) return;
+    if (!(await popup.confirm(`Delete "${exam.title}"? This removes its questions and results. This cannot be undone.`, { title: "Delete exam", confirmText: "Delete", danger: true }))) return;
     await store.deleteExam(exam.id);
     navigate("/admin/exams");
   };
@@ -178,7 +179,7 @@ function QuestionsTab({ exam, setExam, store }) {
     else setMsg(r.msg);
   };
   const remove = async (qn) => {
-    if (!window.confirm("Delete this question?")) return;
+    if (!(await popup.confirm("Delete this question?", { title: "Delete question", confirmText: "Delete", danger: true }))) return;
     const r = await store.deleteExamQuestion(exam.id, qn.id);
     if (r.ok) setExam(r.exam);
   };
@@ -281,7 +282,7 @@ function CsvTab({ exam, setExam, store }) {
   const doImport = async () => {
     if (!csv.trim()) { setResult({ ok: false, msg: "Choose a CSV file first." }); return; }
     if (mode === "replace" && exam.questions.length > 0 &&
-      !window.confirm(`Replace all ${exam.questions.length} existing questions with the imported ones?`)) return;
+      !(await popup.confirm(`Replace all ${exam.questions.length} existing questions with the imported ones?`, { title: "Replace questions", confirmText: "Replace", danger: true }))) return;
     const r = await store.importExamCsv(exam.id, csv, mode);
     if (r.ok) {
       setExam(r.exam);

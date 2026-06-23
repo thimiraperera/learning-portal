@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Eraser } from "lucide-react";
+import { popup } from "./Popup.jsx";
 
 /* Lightweight rich-text / HTML editor (no extra dependency). A small toolbar
    drives document.execCommand on a contentEditable area; the raw HTML is synced
@@ -24,10 +25,17 @@ export default function RichTextEditor({ value, onChange, placeholder }) {
     </button>
   );
 
-  const addLink = (e) => {
+  const addLink = async (e) => {
     e.preventDefault();
-    const url = window.prompt("Link URL (include https://)");
-    if (url) run("createLink", url);
+    // The popup steals focus from the editor, so save the current selection and
+    // restore it before applying the link command.
+    const sel = window.getSelection();
+    const saved = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const url = await popup.prompt("Link URL (include https://)", "", { title: "Insert link", confirmText: "Insert", placeholder: "https://..." });
+    if (!url) return;
+    if (saved) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(saved); }
+    if (ref.current) ref.current.focus();
+    run("createLink", url);
   };
 
   return (

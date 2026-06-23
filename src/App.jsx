@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { StoreProvider, useStore } from "./state.jsx";
+import { PopupProvider } from "./components/Popup.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import Setup from "./pages/Setup.jsx";
@@ -112,7 +113,9 @@ export default function App() {
   return (
     <StoreProvider>
       <BrowserRouter>
-        <Routed />
+        <PopupProvider>
+          <Routed />
+        </PopupProvider>
       </BrowserRouter>
     </StoreProvider>
   );

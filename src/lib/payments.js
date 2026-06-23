@@ -43,7 +43,8 @@ export const instBadge = (status) => INST_BADGE[status] || INST_BADGE.upcoming;
 // (seq 1 is the first schedule line, which is always the registration fee).
 export function installmentLabel(seq) {
   const n = Number(seq) || 0;
-  if (n <= 0) return "Available to everyone";
+  if (n < 0) return "Hidden (admin only)";
+  if (n === 0) return "Available to everyone";
   if (n === 1) return "Registration fee";
   return `Installment ${n - 1}`;
 }
@@ -60,15 +61,21 @@ export function installmentFromLabel(seq) {
 // Compact label for the stage chips.
 export function installmentShort(seq) {
   const n = Number(seq) || 0;
-  if (n <= 0) return "Everyone";
+  if (n < 0) return "Hidden";
+  if (n === 0) return "Everyone";
   if (n === 1) return "Reg fee";
   return `Inst ${n - 1}`;
 }
 
 // The buckets an admin can assign content to, derived from a course's plan
-// (its number of installments). Always offers "everyone" + registration fee.
+// (its number of installments). seq -1 = None (hidden from everyone but admins);
+// always offers "everyone" + registration fee.
 export function installmentBuckets(installments) {
-  const out = [{ seq: 0, label: "Available to everyone" }, { seq: 1, label: "Registration fee" }];
+  const out = [
+    { seq: -1, label: "None (hidden, admin only)" },
+    { seq: 0, label: "Available to everyone" },
+    { seq: 1, label: "Registration fee" },
+  ];
   for (let i = 1; i <= (Number(installments) || 0); i++) out.push({ seq: i + 1, label: `Installment ${i}` });
   return out;
 }
