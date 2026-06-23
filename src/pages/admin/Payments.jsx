@@ -74,7 +74,7 @@ export default function Payments() {
               value={qy} onChange={(e) => { setQy(e.target.value); resetPage(); }} />
           </div>
           <SearchSelect style={{ flex: "1 1 220px" }} value={course} placeholder="All courses" allLabel="All courses"
-            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }))}
             onChange={(v) => { setCourse(v); resetPage(); }} />
           <select className="form-control" style={{ flex: "0 0 160px" }} value={status} onChange={(e) => { setStatus(e.target.value); resetPage(); }}>
             <option value="all">All statuses</option>
@@ -120,7 +120,7 @@ export default function Payments() {
                           <div style={{ fontSize: 12, color: "#9CA3AF" }}>{p.studentRegNo || p.studentEmail}</div>
                           {p.studentStatus === "inactive" && <span className="badge badge-rejected" style={{ marginTop: 4, display: "inline-block" }}>Account locked</span>}
                         </td>
-                        <td style={{ color: "#6B7280" }}>{p.courseCode} - {p.courseTitle}</td>
+                        <td style={{ color: "#6B7280" }}>{p.courseTitle}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{p.batchNumber != null ? `Batch ${p.batchNumber}` : "-"}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{rs(p.total)}</td>
                         <td style={{ whiteSpace: "nowrap", color: "#16A34A" }}>{rs(p.paid)}</td>

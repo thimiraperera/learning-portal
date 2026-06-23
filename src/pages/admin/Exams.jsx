@@ -20,7 +20,7 @@ export default function Exams() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
+  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }));
 
   const create = async () => {
     if (!title.trim()) { setMsg({ ok: false, msg: "Enter an exam title." }); return; }
@@ -101,7 +101,7 @@ export default function Exams() {
                           {x.title}
                         </button>
                       </td>
-                      <td style={{ color: "#6B7280" }}>{x.course_id ? `${x.courseCode} - ${x.courseTitle}` : <span style={{ color: "#9CA3AF" }}>Not assigned</span>}</td>
+                      <td style={{ color: "#6B7280" }}>{x.course_id ? x.courseTitle : <span style={{ color: "#9CA3AF" }}>Not assigned</span>}</td>
                       <td>{x.bankSize}</td>
                       <td>{x.question_count > 0 ? Math.min(x.question_count, x.bankSize) || x.question_count : "All"}</td>
                       <td>{x.time_limit > 0 ? `${x.time_limit} min` : "None"}</td>

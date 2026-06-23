@@ -145,7 +145,7 @@ async function sendOverdueReminders({ force }) {
     for (const p of s.plans) {
       for (const i of p.installments.filter((x) => x.status === "missed")) {
         const owing = i.amount - i.covered;
-        rows.push([`${p.courseCode} - ${i.label}`, `${rs(owing)} (was due ${i.due_date})`]);
+        rows.push([`${p.courseTitle} - ${i.label}`, `${rs(owing)} (was due ${i.due_date})`]);
       }
     }
     const html = await emailHtml("Payment overdue", "A reminder about your course fees",
@@ -651,8 +651,10 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
 /* ---- admin: courses & items ---- */
 app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   const title = String(req.body?.title || "").trim();
-  const code = String(req.body?.code || "").trim().toUpperCase();
-  if (!title || !code) return res.status(400).json({ error: "Enter a title and a code." });
+  // Course code is hidden in the UI but still stored (it keys the storage folder
+  // and appears on certificates). Auto-generate one when the form omits it.
+  let code = String(req.body?.code || "").trim().toUpperCase();
+  if (!title) return res.status(400).json({ error: "Enter a course title." });
   const blurb = String(req.body?.blurb || "").trim() || "Newly created course.";
   const sessions = Number.parseInt(req.body?.sessions, 10) || 0;
   const certTemplate = String(req.body?.certTemplate || "");
@@ -662,6 +664,7 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   const instructorIds = (Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter(Boolean);
   if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
+  if (!code) code = id.toUpperCase();
   await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, ?)", [id, code, title, blurb, sessions, certTemplate]);
   const [br] = await q("INSERT INTO batches (course_id,number,status,created_at) VALUES (?,1,'ongoing',?)", [id, Date.now()]);
   for (const iid of instructorIds) await dbmod.addCourseInstructor(id, br.insertId, iid);
@@ -670,11 +673,12 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
 
 app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   const id = req.params.id;
-  const [[c]] = await q("SELECT id FROM courses WHERE id=?", [id]);
+  const [[c]] = await q("SELECT id, code FROM courses WHERE id=?", [id]);
   if (!c) return res.status(404).json({ error: "Course not found." });
-  const code = String(req.body?.code || "").trim().toUpperCase();
+  // Code is hidden in the UI; keep the existing one when the form omits it.
+  const code = String(req.body?.code || "").trim().toUpperCase() || c.code;
   const title = String(req.body?.title || "").trim();
-  if (!code || !title) return res.status(400).json({ error: "Code and title are required." });
+  if (!title) return res.status(400).json({ error: "A course title is required." });
   const certTemplate = String(req.body?.certTemplate || "");
   if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
     return res.status(400).json({ error: "Unknown certificate template." });
@@ -835,7 +839,7 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
       mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
       mailer.statusBox(`Your certificate for ${mailer.esc(course.title)} has been issued.`, "success") +
-      mailer.infoTable([["Course", mailer.esc(course.title)], ["Code", mailer.esc(course.code)], ["Certificate No", mailer.esc(certNo)]]) +
+      mailer.infoTable([["Course", mailer.esc(course.title)], /* course code hidden: ["Code", mailer.esc(course.code)], */ ["Certificate No", mailer.esc(certNo)]]) +
       mailer.muted("Sign in to your dashboard to download your certificate."));
     await sendMail(stu.email, "Your certificate has been issued", html);
     issued++;
@@ -859,7 +863,7 @@ app.post("/api/admin/certificates/:id/send", auth, adminOnly, wrap(async (req, r
   const html = await emailHtml("Your certificate", `Certificate for ${cert.courseTitle}`,
     mailer.paragraph(`Hello <strong>${mailer.esc(cert.studentName)}</strong>,`) +
     mailer.statusBox(`Your certificate for ${mailer.esc(cert.courseTitle)} is attached to this email.`, "success") +
-    mailer.infoTable([["Course", mailer.esc(cert.courseTitle)], ["Code", mailer.esc(cert.courseCode)], ["Certificate No", mailer.esc(cert.cert_no)]]));
+    mailer.infoTable([["Course", mailer.esc(cert.courseTitle)], /* course code hidden: ["Code", mailer.esc(cert.courseCode)], */ ["Certificate No", mailer.esc(cert.cert_no)]]));
   const mail = await sendMail(cert.studentEmail, `Your certificate: ${cert.courseTitle}`, html,
     [{ filename: `${cert.cert_no}.pdf`, content: pdf }]);
   res.json({ ok: mail.sent, msg: mail.sent ? `Certificate emailed to ${cert.studentEmail}.` : `Not sent: ${mail.reason}` });

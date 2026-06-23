@@ -67,7 +67,7 @@ export default function ExamManage() {
       <button className="back-link" onClick={() => navigate("/admin/exams")}><ArrowLeft /> All exams</button>
 
       <div className="page-hero">
-        <div className="ph-code">{exam.course_id ? `${exam.courseCode} - ${exam.courseTitle}` : "Not assigned to a course"}</div>
+        <div className="ph-code">{exam.course_id ? exam.courseTitle : "Not assigned to a course"}</div>
         <h1>{exam.title}</h1>
         <p>
           {exam.questions.length} question{exam.questions.length === 1 ? "" : "s"} in the bank ·
@@ -122,7 +122,7 @@ function SettingsTab({ exam, setExam, store, navigate }) {
         <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Assigned course</label>
         <SearchSelect style={{ maxWidth: 380 }} value={courseId} placeholder="Not assigned" allLabel="Not assigned"
-          options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+          options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }))}
           onChange={setCourseId} />
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Students only see the exam once it is assigned to a course they are enrolled in.</div></div>
       <div className="field-row">

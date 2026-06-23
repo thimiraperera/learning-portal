@@ -45,7 +45,7 @@ export default function Requests() {
               value={qy} onChange={(e) => { setQy(e.target.value); resetPage(); }} />
           </div>
           <SearchSelect style={{ flex: "1 1 220px" }} value={course} placeholder="All courses" allLabel="All courses"
-            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }))}
             onChange={(v) => { setCourse(v); resetPage(); }} />
           {activeFilters > 0 && (
             <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setCourse("all"); resetPage(); }}>
@@ -77,19 +77,19 @@ export default function Requests() {
                         <div style={{ fontWeight: 700 }}>{r.studentName}</div>
                         <div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.studentEmail}</div>
                       </td>
-                      <td style={{ color: "#6B7280" }}>{r.courseCode} - {r.courseTitle}</td>
+                      <td style={{ color: "#6B7280" }}>{r.courseTitle}</td>
                       <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>
                         {new Date(Number(r.created_at)).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                       </td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {batches.length > 0 && (
-                          <select className="form-control" style={{ display: "inline-block", width: "auto", height: 34, padding: "0 8px", fontSize: 12.5, marginRight: 8 }}
+                          <select className="form-control" style={{ display: "inline-block", width: "auto", height: 34, padding: "0 8px", fontSize: 12.5, marginRight: 8, verticalAlign: "middle" }}
                             value={sel || ""} onChange={(e) => setBatchSel((s) => ({ ...s, [r.id]: Number(e.target.value) }))}>
                             {batches.map((b) => <option key={b.id} value={b.id}>Batch {b.number}{b.status === "ended" ? " (ended)" : ""}</option>)}
                           </select>
                         )}
-                        <Button className="btn btn-primary btn-sm" style={{ marginRight: 8 }} onClick={() => approveRequest(r.id, sel)}><Check /> Approve</Button>
-                        <Button className="btn btn-ghost btn-sm" onClick={() => declineRequest(r.id)}><X /> Decline</Button>
+                        <Button className="btn btn-primary btn-sm" style={{ marginRight: 8, height: 34, verticalAlign: "middle" }} onClick={() => approveRequest(r.id, sel)}><Check /> Approve</Button>
+                        <Button className="btn btn-ghost btn-sm" style={{ height: 34, verticalAlign: "middle" }} onClick={() => declineRequest(r.id)}><X /> Decline</Button>
                       </td>
                     </tr>
                     );

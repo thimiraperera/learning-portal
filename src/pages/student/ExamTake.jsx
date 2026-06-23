@@ -83,7 +83,7 @@ export default function ExamTake() {
       <Layout title="Exam">
         <button className="back-link" onClick={() => navigate(`/courses/${state.courseId}`)}><ArrowLeft /> Back to course</button>
         <div className="page-hero">
-          <div className="ph-code">{state.courseCode} - {state.courseTitle}</div>
+          <div className="ph-code">{state.courseTitle}</div>
           <h1>{state.title}</h1>
         </div>
         <div className="card" style={{ textAlign: "center", padding: 40 }}>
@@ -107,7 +107,7 @@ export default function ExamTake() {
 
       <div className="page-hero" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <div className="ph-code">{state.courseCode} - {state.courseTitle}</div>
+          <div className="ph-code">{state.courseTitle}</div>
           <h1>{state.title}</h1>
           <p>{state.questions.length} questions{state.timeLimit > 0 ? ` · ${state.timeLimit} minute limit` : ""} · answers are saved when you submit</p>
         </div>

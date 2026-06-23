@@ -54,8 +54,8 @@ export default function Login() {
           <div className="fc-val">{showcase?.course?.title || "Equity Markets"}</div>
           <div className="fc-sub">
             {showcase
-              ? [showcase.course.sessions > 0 ? `${showcase.course.sessions} sessions` : null, showcase.course.code].filter(Boolean).join(" · ")
-              : "8 sessions · EQ-101"}
+              ? [showcase.course.sessions > 0 ? `${showcase.course.sessions} sessions` : null /* course code hidden */].filter(Boolean).join(" · ")
+              : "8 sessions"}
           </div>
         </div>
         <div className="float-card float-card-2">

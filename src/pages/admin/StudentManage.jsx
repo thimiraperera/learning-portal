@@ -215,7 +215,7 @@ function OverviewTab({ id, s, store, navigate }) {
                         </button>
                         {times > 1 && <div style={{ fontSize: 12, color: "#9CA3AF" }}>Written {times} times</div>}
                       </td>
-                      <td style={{ color: "#6B7280" }}>{a.course_id ? `${a.courseCode} - ${a.courseTitle}` : "-"}</td>
+                      <td style={{ color: "#6B7280" }}>{a.course_id ? a.courseTitle : "-"}</td>
                       <td><span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span></td>
                       <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateTime(a.finished_at)}</td>
                       <td style={{ color: "#6B7280" }}>{fmtDuration(a.started_at, a.finished_at)}</td>
@@ -278,10 +278,10 @@ function CoursesTab({ id, email, s, store, navigate }) {
                       {locked && <span className="badge badge-muted" style={{ marginLeft: 6 }}>locked</span>}
                     </span>
                     <span className="ar-sub">
-                      {c.code}
+                      {/* Course code hidden for now: {c.code} */}
                       {plan && (plan.remaining > 0
-                        ? ` · ${rs(plan.remaining)} remaining${plan.nextDue ? `, next due ${fmtDate(plan.nextDue.due_date)}` : ""}`
-                        : plan ? " · fully paid" : "")}
+                        ? `${rs(plan.remaining)} remaining${plan.nextDue ? `, next due ${fmtDate(plan.nextDue.due_date)}` : ""}`
+                        : plan ? "fully paid" : "")}
                     </span>
                   </span>
                 </button>
@@ -301,7 +301,7 @@ function CoursesTab({ id, email, s, store, navigate }) {
       {available.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrolled in every course already.</p> : (
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
-            options={available.map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            options={available.map(([cid, c]) => ({ value: cid, label: c.title }))}
             onChange={setSel} />
           <Button className="btn btn-primary" onClick={add}><Plus /> Enrol</Button>
         </div>
@@ -384,7 +384,7 @@ function PaymentHistoryTab({ id, store }) {
                 {slice.map((pay) => (
                   <tr key={pay.id}>
                     <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(new Date(Number(pay.paid_at)).toISOString().slice(0, 10))}</td>
-                    <td style={{ color: "#6B7280" }}>{pay.courseCode} - {pay.courseTitle}</td>
+                    <td style={{ color: "#6B7280" }}>{pay.courseTitle}</td>
                     <td style={{ color: "#6B7280" }}>{pay.note || "-"}</td>
                     <td style={{ fontWeight: 600 }}>{rs(pay.amount)}</td>
                   </tr>

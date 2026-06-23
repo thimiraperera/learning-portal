@@ -178,7 +178,7 @@ export default function Register() {
 const REG_CSS = `
 .register-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
   background: linear-gradient(145deg, #001A4D 0%, #1E509B 60%, #2563EB 100%); }
-.reg-card { width: 100%; max-width: 440px; background: #fff; border-radius: 16px; padding: 34px; box-shadow: 0 24px 60px rgba(0,0,0,0.3); }
+.reg-card { width: 100%; max-width: 560px; background: #fff; border-radius: 16px; padding: 34px; box-shadow: 0 24px 60px rgba(0,0,0,0.3); }
 .reg-brand { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #1E509B; margin-bottom: 18px; }
 .reg-card h1 { font-size: 24px; font-weight: 800; color: #121212; margin-bottom: 6px; }
 .reg-muted { font-size: 14px; color: #6B7280; line-height: 1.5; }

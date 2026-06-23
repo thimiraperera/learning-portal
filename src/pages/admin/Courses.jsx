@@ -55,7 +55,8 @@ export default function Courses() {
   const create = async () => {
     const er = {};
     if (!form.title.trim()) er.title = "Enter a course title.";
-    if (!form.code.trim()) er.code = "Enter a short course code (e.g. EQ-101).";
+    // Course code hidden for now (auto-generated on the server):
+    // if (!form.code.trim()) er.code = "Enter a short course code (e.g. EQ-101).";
     if (form.instructorIds.length === 0) er.instructors = "Assign at least one instructor.";
     setErrors(er);
     setMsg(null);
@@ -93,17 +94,17 @@ export default function Courses() {
 
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="card-title">Add a course</div>
-        <div className="card-subtitle">Title, code and at least one instructor are required.</div>
+        <div className="card-subtitle">A title and at least one instructor are required.</div>
         {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
-        <div className="field-row">
-          <div className="form-group"><label className="form-label">Title <span className="req">*</span></label>
-            <input className={"form-control" + (errors.title ? " is-invalid" : "")} placeholder="Course title" value={form.title} onChange={set("title")} />
-            {errors.title && <div className="field-error">{errors.title}</div>}</div>
-          <div className="form-group"><label className="form-label">Code <span className="req">*</span></label>
-            <input className={"form-control" + (errors.code ? " is-invalid" : "")} placeholder="EQ-101" value={form.code} onChange={set("code")} />
-            {errors.code && <div className="field-error">{errors.code}</div>}</div>
-        </div>
+        <div className="form-group"><label className="form-label">Title <span className="req">*</span></label>
+          <input className={"form-control" + (errors.title ? " is-invalid" : "")} placeholder="Course title" value={form.title} onChange={set("title")} />
+          {errors.title && <div className="field-error">{errors.title}</div>}</div>
+        {/* Course code hidden for now (auto-generated on the server). To restore, put this back inside a .field-row with the Title field:
+        <div className="form-group"><label className="form-label">Code <span className="req">*</span></label>
+          <input className={"form-control" + (errors.code ? " is-invalid" : "")} placeholder="EQ-101" value={form.code} onChange={set("code")} />
+          {errors.code && <div className="field-error">{errors.code}</div>}</div>
+        */}
 
         <div className="form-group"><label className="form-label">Description</label>
           <textarea className="form-control" rows="2" placeholder="What this course covers." value={form.blurb} onChange={set("blurb")} /></div>

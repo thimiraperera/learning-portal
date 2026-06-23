@@ -20,7 +20,7 @@ export default function InstructorCourseView() {
       <button className="back-link" onClick={() => navigate("/instructor")}><ArrowLeft /> All courses</button>
 
       <div className="page-hero">
-        <div className="ph-code">{c.code}</div>
+        {/* Course code hidden for now: <div className="ph-code">{c.code}</div> */}
         <h1>{c.title}</h1>
         <p>{c.blurb}</p>
       </div>

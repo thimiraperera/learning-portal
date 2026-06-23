@@ -166,7 +166,7 @@ function CoursesTab({ iid, taught, store, navigate }) {
                 <span className="mr-icon" style={{ width: 34, height: 34 }}><BookOpen /></span>
                 <span>
                   <span className="ar-title" style={{ display: "block" }}>{c.title}</span>
-                  <span className="ar-sub">{c.code}</span>
+                  {/* Course code hidden for now: <span className="ar-sub">{c.code}</span> */}
                 </span>
               </button>
               <Button className="btn btn-ghost btn-sm" onClick={() => removeCourseInstructor(id, iid)}><UserMinus /> Remove</Button>
@@ -180,7 +180,7 @@ function CoursesTab({ iid, taught, store, navigate }) {
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <select className="form-control" value={sel} onChange={(e) => setSel(e.target.value)}>
             <option value="">Select a course...</option>
-            {available.map(([id, c]) => <option key={id} value={id}>{c.code} - {c.title}</option>)}
+            {available.map(([id, c]) => <option key={id} value={id}>{c.title}</option>)}
           </select>
           <Button className="btn btn-primary" onClick={add}><Plus /> Add to course</Button>
         </div>

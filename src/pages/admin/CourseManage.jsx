@@ -71,7 +71,7 @@ export default function CourseManage() {
       <button className="back-link" onClick={() => navigate("/admin/courses")}><ArrowLeft /> All courses</button>
 
       <div className="page-hero">
-        <div className="ph-code">{c.code}</div>
+        {/* Course code hidden for now: <div className="ph-code">{c.code}</div> */}
         <h1>{c.title}</h1>
         <p>{data.instructor ? `Instructor: ${data.instructor}` : "No instructor assigned"}</p>
         <div className="batch-bar">
@@ -81,7 +81,7 @@ export default function CourseManage() {
             value={activeBatchId || ""} onChange={(e) => setViewBatchId(Number(e.target.value))}>
             {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b)}</option>)}
           </select>
-          <Button className="btn btn-outline btn-sm" loading={batchBusy} onClick={onStartNewBatch}><Plus /> Start new batch</Button>
+          <Button className="btn btn-outline" loading={batchBusy} onClick={onStartNewBatch}><Plus /> Start new batch</Button>
         </div>
       </div>
 
@@ -147,10 +147,12 @@ function DetailsTab({ id, c, store, navigate }) {
 
   return (
     <div style={{ maxWidth: 620 }}>
-      <div className="alert alert-info" style={{ marginBottom: 18 }}><Layers /> <span>These details (code, title, description, certificate template) are shared across all batches of this course. Per-batch setup lives in the other tabs.</span></div>
+      <div className="alert alert-info" style={{ marginBottom: 18 }}><Layers /> <span>These details (title, description, certificate template) are shared across all batches of this course. Per-batch setup lives in the other tabs.</span></div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+      {/* Course code hidden for now (preserved on save via the `code` state):
       <div className="form-group"><label className="form-label">Code</label>
         <input className="form-control" value={code} onChange={(e) => setCode(e.target.value)} /></div>
+      */}
       <div className="form-group"><label className="form-label">Title</label>
         <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Description</label>

@@ -111,7 +111,7 @@ export default function Instructors() {
               value={qy} onChange={(e) => { setQy(e.target.value); resetPage(); }} />
           </div>
           <SearchSelect style={{ flex: "0 0 200px" }} value={course} placeholder="All courses" allLabel="All courses"
-            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }))}
+            options={Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }))}
             onChange={(v) => { setCourse(v); resetPage(); }} />
           <select className="form-control" style={{ flex: "0 0 140px" }} value={gender} onChange={(e) => { setGender(e.target.value); resetPage(); }}>
             <option value="all">Any gender</option>

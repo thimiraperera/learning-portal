@@ -79,7 +79,7 @@ export default function Certificates() {
     return <span className="badge badge-accepted">Available</span>;
   };
 
-  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: `${c.code} - ${c.title}` }));
+  const courseOptions = Object.entries(courses).map(([cid, c]) => ({ value: cid, label: c.title }));
   const activeFilters = (courseF !== "all") + (statusF !== "all") + (batchF !== "all") + (ql ? 1 : 0);
 
   return (
@@ -141,7 +141,7 @@ export default function Certificates() {
                           : <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: "pointer" }} />}
                       </td>
                       <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
-                      <td><span className="cc-code">{r.code}</span> <span style={{ color: "#6B7280", fontSize: 13 }}>{r.title}</span></td>
+                      <td>{/* Course code hidden for now: <span className="cc-code">{r.code}</span> */}<span style={{ color: "#6B7280", fontSize: 13 }}>{r.title}</span></td>
                       <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
                       <td>{statusBadge(r.cert)}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmt(r.cert.issued_at)}</div>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>

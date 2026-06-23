@@ -53,7 +53,7 @@ export default function Browse() {
                 <div className="cc-foot" style={{ justifyContent: "flex-end" }}>
                   {requested.has(c.id)
                     ? <span className="badge badge-pending"><Clock style={{ width: 13, height: 13, verticalAlign: "-2px", marginRight: 4 }} />Requested</span>
-                    : <Button className="btn btn-primary btn-sm" onClick={() => ask(c)}><Send /> Request access</Button>}
+                    : <Button className="btn btn-primary" onClick={() => ask(c)}><Send /> Request access</Button>}
                 </div>
               </div>
             ))}

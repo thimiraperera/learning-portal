@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ShieldCheck, ShieldAlert, CheckCircle, AlertTriangle, Save, X } from "lucide-react";
+import { ShieldCheck, ShieldAlert, CheckCircle, AlertTriangle, Save, X, Smartphone } from "lucide-react";
 import { useStore } from "../state.jsx";
+import Button from "./Button.jsx";
 
 /* Self-service TOTP two-factor setup for any signed-in user. */
 export default function TwoFactor() {
@@ -34,7 +35,12 @@ export default function TwoFactor() {
         <ShieldCheck style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />
         Two-factor authentication
       </div>
-      <div className="card-subtitle">Protect your account with a code from an authenticator app (Google Authenticator, Authy, etc.).</div>
+      <div className="card-subtitle">Protect your account with a code from an authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.).</div>
+
+      <div className="alert alert-info" style={{ marginTop: 4 }}>
+        <Smartphone />
+        <span>This is <strong>code-generator (TOTP)</strong> two-factor authentication. You verify with a 6-digit code from an authenticator app. It does <strong>not</strong> use your mobile number or SMS, so no phone number is needed.</span>
+      </div>
 
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
@@ -45,7 +51,7 @@ export default function TwoFactor() {
       {mode === "idle" && (
         on
           ? <button className="btn btn-ghost" style={{ marginTop: 14 }} onClick={() => { setMode("disable"); setMsg(null); setCode(""); }}><X /> Turn off</button>
-          : <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={begin}><ShieldCheck /> Enable two-factor</button>
+          : <Button className="btn btn-primary" style={{ marginTop: 14 }} onClick={begin}><ShieldCheck /> Enable two-factor</Button>
       )}
 
       {mode === "setup" && data && (
@@ -56,7 +62,7 @@ export default function TwoFactor() {
           <p style={{ fontSize: 13.5, color: "#6B7280", marginBottom: 8 }}>2. Enter the 6-digit code it shows to finish.</p>
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <input className="form-control" style={{ maxWidth: 180 }} inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value)} />
-            <button className="btn btn-primary" onClick={confirmEnable}><Save /> Verify & enable</button>
+            <Button className="btn btn-primary" onClick={confirmEnable}><Save /> Verify & enable</Button>
             <button className="btn btn-ghost" onClick={cancel}>Cancel</button>
           </div>
         </div>
@@ -67,7 +73,7 @@ export default function TwoFactor() {
           <p style={{ fontSize: 13.5, color: "#6B7280", marginBottom: 8 }}>Enter a current 6-digit code to turn off two-factor authentication.</p>
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <input className="form-control" style={{ maxWidth: 180 }} inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value)} />
-            <button className="btn btn-danger" onClick={confirmDisable}><X /> Turn off</button>
+            <Button className="btn btn-danger" onClick={confirmDisable}><X /> Turn off</Button>
             <button className="btn btn-ghost" onClick={cancel}>Cancel</button>
           </div>
         </div>
