@@ -615,11 +615,12 @@ textarea.form-control { min-height: 82px; resize: vertical; }
   .assigned-row .ar-body { flex: 1 1 100%; }
   /* Stat cards two-up instead of one tall column. */
   .stats-grid { grid-template-columns: 1fr 1fr; }
-  /* Tabs wrap into pills instead of an awkward horizontal scroll. */
-  .tabs { flex-wrap: wrap; overflow: visible; border-bottom: none; gap: 8px; }
-  .tab-btn { border: 1px solid var(--border); border-radius: 999px; padding: 8px 13px; margin-bottom: 0; }
-  .tab-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .tab-btn.on .tab-count { background: rgba(255,255,255,0.25); color: #fff; }
+  /* Keep the desktop underline tab bar, but collapse each tab to just its icon;
+     only the active tab expands to show its full name (and count). */
+  .tab-btn { padding: 11px 10px 13px; }
+  .tab-btn .tab-label, .tab-btn .tab-count { display: none; }
+  .tab-btn.on .tab-label { display: inline; }
+  .tab-btn.on .tab-count { display: inline-block; }
   /* Card padding is tighter on small screens. */
   .card { padding: 16px; }
   /* Filters and inline add-forms (.toolbar) stack: every control full width.

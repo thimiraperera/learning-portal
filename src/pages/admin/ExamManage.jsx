@@ -80,7 +80,7 @@ export default function ExamManage() {
         <div className="tabs">
           {tabs.map((t) => (
             <button key={t.k} className={"tab-btn" + (tab === t.k ? " on" : "")} onClick={() => setTab(t.k)}>
-              <t.icon /> {t.label}{t.n != null && <span className="tab-count">{t.n}</span>}
+              <t.icon /> <span className="tab-label">{t.label}</span>{t.n != null && <span className="tab-count">{t.n}</span>}
             </button>
           ))}
         </div>

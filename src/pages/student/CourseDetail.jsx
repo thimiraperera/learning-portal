@@ -56,7 +56,7 @@ export default function CourseDetail() {
         <div className="tabs">
           {tabs.map((t) => (
             <button key={t.k} className={"tab-btn" + (tab === t.k ? " on" : "")} onClick={() => setTab(t.k)}>
-              <t.icon /> {t.label} <span className="tab-count">{t.n}</span>
+              <t.icon /> <span className="tab-label">{t.label}</span> <span className="tab-count">{t.n}</span>
             </button>
           ))}
         </div>
