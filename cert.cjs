@@ -36,7 +36,7 @@ function templatesList() {
   return Object.values(templates).map(({ id, name }) => ({ id, name }));
 }
 function defaultTemplateId() {
-  return templates.classic ? "classic" : (Object.keys(templates)[0] || null);
+  return templates.completion ? "completion" : (Object.keys(templates)[0] || null);
 }
 
 function generateCertificate(data, templateId) {

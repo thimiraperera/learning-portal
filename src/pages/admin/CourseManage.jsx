@@ -132,9 +132,12 @@ function DetailsTab({ id, c, store, navigate }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const defaultName = templates.find((t) => t.id === defaultId)?.name || "Classic";
+  const defaultName = templates.find((t) => t.id === defaultId)?.name || "default";
+  // A previously-saved template id may no longer exist; fall back to the default.
+  const knownTemplate = templates.length === 0 || templates.some((t) => t.id === certTemplate);
+  const certValue = knownTemplate ? certTemplate : "";
   const preview = async () => {
-    const tid = certTemplate || defaultId;
+    const tid = certValue || defaultId;
     if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
@@ -159,7 +162,7 @@ function DetailsTab({ id, c, store, navigate }) {
         <textarea className="form-control" rows="3" value={blurb} onChange={(e) => setBlurb(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Certificate template</label>
         <div style={{ display: "flex", gap: 10 }}>
-          <select className="form-control" style={{ maxWidth: 300 }} value={certTemplate} onChange={(e) => setCertTemplate(e.target.value)}>
+          <select className="form-control" style={{ maxWidth: 300 }} value={certValue} onChange={(e) => setCertTemplate(e.target.value)}>
             <option value="">Default ({defaultName})</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>

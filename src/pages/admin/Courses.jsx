@@ -35,7 +35,7 @@ export default function Courses() {
   }, []);
 
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setErrors((er) => ({ ...er, [k]: undefined })); };
-  const defaultName = templates.find((t) => t.id === defaultId)?.name || "Classic";
+  const defaultName = templates.find((t) => t.id === defaultId)?.name || "default";
   // Open a PDF preview of the chosen (or default) certificate template in a new tab.
   const previewTemplate = async () => {
     const tid = form.certTemplate || defaultId;
