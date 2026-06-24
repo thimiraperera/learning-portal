@@ -651,9 +651,19 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
   const [[course]] = await q("SELECT id FROM courses WHERE id=?", [cid]);
   if (u && course) {
     const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
-    const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
-    if (has) await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
-    else { await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?)", [u.id, cid, bid]); await applyCoursePlanToStudent(u.id, cid); }
+    const [[e0]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
+    if (e0 && Number(e0.batch_id) === bid) {
+      // Already in this batch -> unenrol (toggle off).
+      await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
+    } else if (e0) {
+      // Enrolled in a different batch -> move them to this batch and apply its fee.
+      await q("UPDATE enrolments SET batch_id=? WHERE user_id=? AND course_id=?", [bid, u.id, cid]);
+      await applyCoursePlanToStudent(u.id, cid);
+    } else {
+      // Not enrolled -> enrol into this batch and apply its fee.
+      await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?)", [u.id, cid, bid]);
+      await applyCoursePlanToStudent(u.id, cid);
+    }
     await dbmod.clearRequest(u.id, cid); // resolve any pending request for this pair
   }
   res.json(await adminState());

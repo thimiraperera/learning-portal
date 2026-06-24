@@ -116,7 +116,7 @@ export default function CourseManage() {
         {tab === "links" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="links" title="Course links" Icon={Link2} items={data.links} placeholder="Link title" installments={data.planInstallments} />}
         {tab === "materials" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="materials" title="Materials" Icon={FileDown} items={data.materials} placeholder="Material title" installments={data.planInstallments} />}
         {tab === "students" && <StudentsTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} navigate={navigate} />}
-        {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} store={store} />}
+        {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} batchId={activeBatchId} c={data} reload={reload} store={store} navigate={navigate} />}
       </div>
     </Layout>
@@ -199,13 +199,14 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
 
   const inThisBatch = (s) => s.enrolled.includes(id) && (s.enrolledBatch ? s.enrolledBatch[id] === batchNum : true);
   const inCourse = (s) => s.enrolled.includes(id);
+  const otherBatch = (s) => (inCourse(s) && !inThisBatch(s) ? (s.enrolledBatch ? s.enrolledBatch[id] : null) : null);
   const ql = qy.trim().toLowerCase();
   const all = Object.entries(users).filter(([, u]) => u.role === "student");
   const enrolledCount = all.filter(([, s]) => inThisBatch(s)).length;
 
   const filtered = all
     .filter(([, s]) => status === "all" || s.status === status)
-    .filter(([, s]) => enrolment === "all" ? (inThisBatch(s) || !inCourse(s)) : (enrolment === "enrolled" ? inThisBatch(s) : !inCourse(s)))
+    .filter(([, s]) => enrolment === "all" ? true : (enrolment === "enrolled" ? inThisBatch(s) : !inThisBatch(s)))
     .filter(([email, s]) => !ql || s.name.toLowerCase().includes(ql) || email.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -213,6 +214,18 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
   const activeFilters = (status !== "all") + (enrolment !== "enrolled") + (ql ? 1 : 0);
+
+  // Add to / move into / remove from the viewed batch. Moving asks first, since
+  // it switches the student onto this batch's fee schedule.
+  const onToggle = async (email, s) => {
+    const inThis = inThisBatch(s);
+    const other = otherBatch(s);
+    if (!inThis && other != null) {
+      if (!(await popup.confirm(`Move ${s.name} from Batch ${other} to Batch ${batchNum}? Their fee schedule switches to Batch ${batchNum}'s plan (recorded payments are kept).`, { title: "Move to this batch", confirmText: `Move to Batch ${batchNum}` }))) return;
+    }
+    await toggleEnrol(email, id, batchId);
+    popup.toast(inThis ? "Removed from this batch" : (other != null ? `Moved to Batch ${batchNum}` : `Added to Batch ${batchNum}`));
+  };
 
   return (
     <>
@@ -222,10 +235,10 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
           <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search by full name or email"
             value={qy} onChange={(e) => { setQy(e.target.value); resetPage(); }} />
         </div>
-        <select className="form-control" style={{ flex: "0 0 160px" }} value={enrolment} onChange={(e) => { setEnrolment(e.target.value); resetPage(); }}>
+        <select className="form-control" style={{ flex: "0 0 170px" }} value={enrolment} onChange={(e) => { setEnrolment(e.target.value); resetPage(); }}>
           <option value="all">All students</option>
-          <option value="enrolled">Enrolled only</option>
-          <option value="not">Not enrolled</option>
+          <option value="enrolled">In this batch</option>
+          <option value="not">Not in this batch</option>
         </select>
         <select className="form-control" style={{ flex: "0 0 150px" }} value={status} onChange={(e) => { setStatus(e.target.value); resetPage(); }}>
           <option value="all">All statuses</option>
@@ -245,6 +258,7 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
         <>
           {slice.map(([email, s]) => {
             const isEnrolled = inThisBatch(s);
+            const inOther = otherBatch(s);
             const plan = planByUser[s.id];
             const pb = isEnrolled ? planBadge(plan ? plan.status : "empty") : null;
             return (
@@ -252,7 +266,8 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
                 <div className="ar-body">
                   <div className="ar-title">
                     {s.name}
-                    {isEnrolled && <span className="badge badge-accepted" style={{ marginLeft: 6 }}>enrolled</span>}
+                    {isEnrolled && <span className="badge badge-accepted" style={{ marginLeft: 6 }}>in Batch {batchNum}</span>}
+                    {inOther != null && <span className="badge badge-muted" style={{ marginLeft: 6 }}>in Batch {inOther}</span>}
                     <span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")} style={{ marginLeft: 6 }}>{s.status}</span>
                     {pb && <span className={"badge " + pb.cls} style={{ marginLeft: 6 }}>{pb.label}</span>}
                     {isEnrolled && plan && plan.missedCount > 0 && <span className="badge badge-rejected" style={{ marginLeft: 6 }}>{plan.missedCount} missed</span>}
@@ -266,8 +281,8 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
                 </div>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
                 {isEnrolled
-                  ? <Button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserMinus /> Remove</Button>
-                  : <Button className="btn btn-primary btn-sm" onClick={() => toggleEnrol(email, id, batchId)}><UserPlus /> Add to Batch {batchNum}</Button>}
+                  ? <Button className="btn btn-ghost btn-sm" onClick={() => onToggle(email, s)}><UserMinus /> Remove</Button>
+                  : <Button className="btn btn-primary btn-sm" onClick={() => onToggle(email, s)}><UserPlus /> {inOther != null ? `Move to Batch ${batchNum}` : `Add to Batch ${batchNum}`}</Button>}
               </div>
             );
           })}
@@ -279,7 +294,8 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   );
 }
 
-function CoursePlanTab({ id, batchId, store }) {
+function CoursePlanTab({ id, batchId, batchNum, store }) {
+  const batchLabel = batchNum != null ? `Batch ${batchNum}` : "this batch";
   const { fetchCoursePlan, saveCoursePlan, applyCoursePlan } = store;
   const [plan, setPlan] = useState(null);
   const [preview, setPreview] = useState([]);
@@ -310,7 +326,7 @@ function CoursePlanTab({ id, batchId, store }) {
     const a = await applyCoursePlan(id, batchId);
     setBusy(false);
     setMsg(a.ok
-      ? { ok: true, text: `Saved and applied to ${a.applied} enrolled student${a.applied === 1 ? "" : "s"}. New enrolments get it automatically.` }
+      ? { ok: true, text: `Saved for ${batchLabel} and applied to ${a.applied} student${a.applied === 1 ? "" : "s"} in this batch. New enrolments in this batch get it automatically.` }
       : { ok: false, text: `Saved, but applying failed: ${a.msg}` });
   };
 
@@ -318,7 +334,8 @@ function CoursePlanTab({ id, batchId, store }) {
 
   return (
     <div style={{ maxWidth: 680 }}>
-      <div className="card-subtitle" style={{ marginTop: 0 }}>Set the fee plan for this course. Saving applies it to every enrolled student, and anyone enrolled later follows it automatically. You then record each student's payments on their own Payments tab.</div>
+      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Wallet /> <span>This fee is for <strong>{batchLabel}</strong> only. Each batch has its own fee; other batches are not affected. Use the batch selector above to set a different fee for another batch.</span></div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Saving applies it to every student enrolled in {batchLabel}, and anyone who enrols in this batch later follows it automatically. You then record each student's payments on their own Payments tab.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
 
       <div className="field-row">
@@ -337,7 +354,7 @@ function CoursePlanTab({ id, batchId, store }) {
         <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <Button className="btn btn-primary" loading={busy} onClick={saveAndApply}><Save /> Save & apply to enrolled students</Button>
+        <Button className="btn btn-primary" loading={busy} onClick={saveAndApply}><Save /> Save & apply to {batchLabel} students</Button>
       </div>
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>SCHEDULE PREVIEW (SAVED)</div>
