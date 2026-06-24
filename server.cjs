@@ -23,7 +23,7 @@ const BRAND_ISSUER = "Learning Portal";
 /* Build a branded HTML email (pulls the portal name from saved branding). */
 async function emailHtml(title, subtitle, body) {
   const brand = await dbmod.getBrand();
-  return mailer.wrap({ brandName: brand.name, title, subtitle, body });
+  return mailer.wrap({ brandName: brand.name, title, subtitle, body, logoCid: brand.emailLogo ? "brandlogo" : undefined });
 }
 
 /* Verify a captcha token against the configured provider's secret. Returns true
@@ -119,7 +119,12 @@ async function sendMail(to, subject, html, attachments) {
       auth: s.username ? { user: s.username, pass: s.password } : undefined,
     });
     const from = s.fromName ? `"${s.fromName}" <${s.fromEmail || s.username}>` : (s.fromEmail || s.username);
-    await transporter.sendMail({ from, to, subject, html, attachments });
+    // Embed the email header logo inline (cid:brandlogo) so it renders in all
+    // clients (data URLs are blocked by Gmail; external URLs are often blocked).
+    const atts = Array.isArray(attachments) ? attachments.slice() : [];
+    const m = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec((await dbmod.getBrand()).emailLogo || "");
+    if (m) atts.push({ filename: m[1].toLowerCase() === "png" ? "logo.png" : "logo.jpg", content: Buffer.from(m[2], "base64"), cid: "brandlogo" });
+    await transporter.sendMail({ from, to, subject, html, attachments: atts });
     return { sent: true };
   } catch (e) {
     return { sent: false, reason: e.message };
@@ -254,7 +259,7 @@ async function adminState() {
 }
 
 /* ---- public ---- */
-app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrand())));
+app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrandPublic())));
 app.get("/api/auth-config", wrap(async (_req, res) => res.json({ captcha: await dbmod.getCaptchaForClient(), showcase: await dbmod.loginShowcase() })));
 
 /* ---- first-admin setup (only works while no admin exists) ---- */
@@ -376,12 +381,15 @@ app.post("/api/forgot", wrap(async (req, res) => {
   const token = crypto.randomBytes(24).toString("hex");
   await dbmod.setResetToken(u.id, token, Date.now() + 60 * 60 * 1000); // 1 hour
   const link = `${req.protocol}://${req.get("host")}/reset?token=${token}`;
-  const html = await emailHtml("Reset your password", "Password reset request",
-    mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(u))}</strong>,`) +
-    mailer.statusBox("We received a request to reset your password. This link expires in 1 hour.", "info") +
-    mailer.button("Reset password", link) +
-    mailer.muted("If the button does not work, copy and paste this link:") + mailer.linkBox(link) +
-    mailer.muted("If you did not request this, you can safely ignore this email."));
+  const brandName = (await dbmod.getBrand()).name || "Learning Portal";
+  const html = await emailHtml("Reset your password", "",
+    mailer.paragraph(`Hi <strong>${mailer.esc(dbmod.displayName(u))}</strong>,`) +
+    mailer.paragraph(`We got a request to change the password for your ${mailer.esc(brandName)} account. Tap the button below to choose a new password.`) +
+    mailer.button("Reset Your Password", link) +
+    mailer.muted("If the button does not work, copy and paste this link (it expires in 1 hour):") + mailer.linkBox(link) +
+    mailer.paragraph("If you don't want to reset your password, you can ignore this email.") +
+    mailer.paragraph("If you didn't request this change, you may want to review your account security settings.") +
+    mailer.muted(`Have a nice day,<br>${mailer.esc(brandName)} Support`));
   const mail = await sendMail(u.email, "Reset your password", html);
   res.json({ state: mail.sent ? "sent" : "nomail_config" });
 }));
@@ -411,7 +419,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), ...settings, ...(await adminState()) });
   } else if (u.role === "instructor") {
     const ins = await dbmod.instructorByUserId(u.id);
-    res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrandPublic() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
     const courses = await dbmod.coursesMap(ids, await dbmod.enrolledBatches(u.id));
@@ -440,7 +448,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
           });
       }
     }
-    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrand() });
+    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
   }
 }));
 
@@ -1498,11 +1506,18 @@ function sanitizeHtml(html) {
 app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
   const cur = await dbmod.getBrand();
   const b = req.body || {};
+  // The email logo must be a PNG or JPEG data URL (WebP is unreliable in email
+  // clients). Anything else is rejected; an empty string clears it.
+  let emailLogo = b.emailLogo === undefined ? (cur.emailLogo || "") : String(b.emailLogo);
+  if (emailLogo && !/^data:image\/(png|jpeg|jpg);base64,/i.test(emailLogo)) {
+    return res.status(400).json({ error: "The email logo must be a PNG or JPG image." });
+  }
   const brand = {
     company: b.company === undefined ? cur.company : String(b.company),
     name: b.name === undefined ? cur.name : String(b.name),
     logo: b.logo === undefined ? cur.logo : String(b.logo),
     loginIntro: b.loginIntro === undefined ? (cur.loginIntro || "") : sanitizeHtml(b.loginIntro),
+    emailLogo,
   };
   res.json(await dbmod.setBrandValue(brand));
 }));

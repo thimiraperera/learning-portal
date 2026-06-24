@@ -426,7 +426,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
 
   // The store refresh only carries the current batch, so re-fetch the viewed batch after each change.
   const removeItemB = async (b, itemId) => { await removeItem(id, b, itemId); await reload(); };
-  const setItemInstallmentB = async (b, itemId, s) => { await setItemInstallment(id, b, itemId, s); await reload(); };
+  const setItemInstallmentB = async (b, itemId, s) => { await setItemInstallment(id, b, itemId, s); await reload(); popup.toast("Visibility updated"); };
   const beginEdit = (it) => { setEditId(it.id); setEt(it.t); setEu(it.u || ""); };
   const saveEdit = async (it) => {
     if (!et.trim()) return;
@@ -462,7 +462,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
     if (!value.trim()) { setErr("Enter a title."); return; }
     setErr(null);
     const r = await addItem(id, batchId, bucket, value.trim(), url.trim(), seq);
-    if (r.ok) { setValue(""); setUrl(""); await reload(); } else setErr(r.msg);
+    if (r.ok) { setValue(""); setUrl(""); await reload(); popup.toast(`Added to ${title}`); } else setErr(r.msg);
   };
 
   const onFile = async (e) => {
@@ -472,7 +472,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
     setBusy(true); setErr(null);
     const r = await uploadMaterial(id, batchId, file, seq);
     setBusy(false);
-    if (!r.ok) setErr(r.msg); else await reload();
+    if (!r.ok) setErr(r.msg); else { await reload(); popup.toast("File uploaded"); }
   };
 
   return (
@@ -521,7 +521,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
                 )}
               </div>
               <div className="content-item-foot">
-                <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallmentB(bucket, it.id, s)} />
+                <StageSelect stages={buckets} value={Number(it.seq) || 0} onChange={(s) => setItemInstallmentB(bucket, it.id, s)} feedback />
               </div>
             </div>
           ))}
@@ -551,16 +551,25 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
 /* Dropdown to set the payment stage a content item unlocks at. Uses an
    optimistic local value so the selection does not flicker back to the old
    value while the save round-trips. */
-function StageSelect({ stages, value, onChange }) {
+function StageSelect({ stages, value, onChange, feedback = false }) {
   const [localSeq, setLocalSeq] = useState(Number(value) || 0);
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef(null);
   useEffect(() => { setLocalSeq(Number(value) || 0); }, [value]);
+  useEffect(() => () => clearTimeout(savedTimer.current), []);
+  const change = (s) => {
+    setLocalSeq(s);
+    onChange(s);
+    if (feedback) { setSaved(true); clearTimeout(savedTimer.current); savedTimer.current = setTimeout(() => setSaved(false), 1800); }
+  };
   return (
     <div className="stage-select">
       <span className="stage-select-label">Unlocks at</span>
       <select className="form-control" value={localSeq}
-        onChange={(e) => { const s = Number(e.target.value); setLocalSeq(s); onChange(s); }}>
+        onChange={(e) => change(Number(e.target.value))}>
         {stages.map((b) => <option key={b.seq} value={b.seq}>{b.label}</option>)}
       </select>
+      {feedback && saved && <span className="stage-saved"><Check style={{ width: 13, height: 13 }} /> Saved</span>}
     </div>
   );
 }

@@ -1112,10 +1112,16 @@ async function markReminded(planIds, when) {
   await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
 }
 
-const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", loginIntro: "" };
+const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", loginIntro: "", emailLogo: "" };
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? { ...BRAND_DEFAULT, ...JSON.parse(row.v) } : { ...BRAND_DEFAULT };
+}
+// Brand without the (large, server-only) email logo data URL. Used for the
+// public/login and student/instructor responses so it isn't shipped to them.
+async function getBrandPublic() {
+  const { emailLogo, ...rest } = await getBrand(); // eslint-disable-line no-unused-vars
+  return rest;
 }
 // Public showcase for the login page's two floating cards: the newest course
 // (title + session count + code) and the total number of recordings. Returns
@@ -1214,7 +1220,7 @@ module.exports = {
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
-  getBrand, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
+  getBrand, getBrandPublic, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getCaptcha, getCaptchaForClient, setCaptcha,
   hasAdmin, createAdmin, adminsList, countAdmins, countSuperAdmins, adminById, deleteAdminUser,

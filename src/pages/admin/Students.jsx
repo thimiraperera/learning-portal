@@ -5,6 +5,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import Button from "../../components/Button.jsx";
+import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
 import { payFilterBucket } from "../../lib/payments.js";
 
@@ -234,7 +235,8 @@ export default function Students() {
                         <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)} style={{ marginRight: 8 }}>
                           <Eye /> View
                         </button>
-                        <button className="icon-btn-plain" title="Remove" onClick={() => removeStudent(email)}>
+                        <button className="icon-btn-plain" title="Remove"
+                          onClick={async () => { if (await popup.confirm(`Remove ${s.name}? This deletes the account and its enrolments. This cannot be undone.`, { title: "Remove student", confirmText: "Remove", danger: true })) removeStudent(email); }}>
                           <Trash2 style={{ width: 16, height: 16 }} />
                         </button>
                       </td>

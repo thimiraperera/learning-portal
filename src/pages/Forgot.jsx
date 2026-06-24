@@ -13,9 +13,9 @@ export default function Forgot() {
   const [error, setError] = useState("");
 
   const MESSAGES = {
-    sent: { tone: "ok", text: "If an account with that username or email exists and has an email on file, we've sent a password reset link. Please check your inbox (and spam folder)." },
-    noemail: { tone: "warn", text: "This account has no email address on file, so we can't send a reset link. Please contact your administrator to reset your password." },
-    nomail_config: { tone: "warn", text: "We couldn't send the email right now. Please contact your administrator to reset your password." },
+    sent: { tone: "ok", text: "If that account exists, we've sent it a password reset link. Please check your inbox and spam folder." },
+    noemail: { tone: "warn", text: "This account has no email address, so we can't send a reset link. Please ask your administrator to reset your password." },
+    nomail_config: { tone: "warn", text: "We couldn't send the email right now. Please ask your administrator to reset your password." },
   };
 
   const submit = async (e) => {

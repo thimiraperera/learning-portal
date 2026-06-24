@@ -52,9 +52,13 @@ function muted(html) {
   return `<p style="color:#9CA3AF;font-size:13px;margin:0">${html}</p>`;
 }
 
-/* Wrap body content in the standard branded shell. */
-function wrap({ brandName, title, subtitle, body }) {
+/* Wrap body content in the standard branded shell. When logoCid is given, the
+   header shows that inline (cid:) image instead of the text brand name. */
+function wrap({ brandName, title, subtitle, body, logoCid }) {
   const brand = esc(brandName || "Learning Portal");
+  const header = logoCid
+    ? `<img src="cid:${esc(logoCid)}" alt="${brand}" style="max-height:48px;max-width:220px;margin:0 auto 12px;display:block">`
+    : `<div style="color:rgba(255,255,255,0.6);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">${brand}</div>`;
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#F0F4FB;font-family:'Segoe UI',Arial,sans-serif">
@@ -62,7 +66,7 @@ function wrap({ brandName, title, subtitle, body }) {
     <tr><td align="center">
       <table width="580" cellpadding="0" cellspacing="0" style="background:white;border-radius:16px;overflow:hidden;border:1px solid #E2EAF4;box-shadow:0 4px 24px rgba(30,80,155,0.08)">
         <tr><td style="background:linear-gradient(135deg,#00265E,#1E509B);padding:32px 40px;text-align:center">
-          <div style="color:rgba(255,255,255,0.6);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">${brand}</div>
+          ${header}
           <h1 style="color:white;margin:0;font-size:20px;font-weight:800;letter-spacing:-0.3px">${esc(title)}</h1>
           ${subtitle ? `<p style="color:rgba(255,255,255,0.65);margin:8px 0 0;font-size:13px">${esc(subtitle)}</p>` : ""}
         </td></tr>

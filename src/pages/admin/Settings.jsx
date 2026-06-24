@@ -5,6 +5,7 @@ import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
+import { resizeToPng } from "../../lib/image.js";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -15,6 +16,7 @@ export default function Settings() {
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
+  const [emailLogo, setEmailLogo] = useState(brand.emailLogo || "");
   const [msg, setMsg] = useState(null); // { ok, text }
 
   const onFile = (e) => {
@@ -27,9 +29,17 @@ export default function Settings() {
     reader.readAsDataURL(f);
   };
 
+  const onEmailLogo = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try { setEmailLogo(await resizeToPng(f)); setMsg(null); }
+    catch (err) { setMsg({ ok: false, text: err.message || "Could not read the image." }); }
+  };
+
   const save = async () => {
     try {
-      await setBrand({ company: company.trim(), name: name.trim(), logo });
+      await setBrand({ company: company.trim(), name: name.trim(), logo, emailLogo });
       setMsg({ ok: true, text: "Branding saved. It applies across the portal immediately." });
     } catch (e) {
       setMsg({ ok: false, text: e.message || "Could not save branding." });
@@ -81,6 +91,23 @@ export default function Settings() {
               </div>
             )}
             <input className="form-control" type="file" accept="image/*" onChange={onFile} />
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20, marginBottom: 20 }}>
+            <label className="form-label">
+              Email header logo <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(PNG or JPG only, shown at the top of emails)</span>
+            </label>
+            <div style={{ fontSize: 12, color: "#9CA3AF", margin: "0 0 10px" }}>Appears on the dark header of every email. A transparent PNG looks best. WebP is not supported by email clients.</div>
+            {emailLogo && (
+              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={emailLogo} alt="Email logo"
+                  style={{ maxHeight: 48, maxWidth: 180, objectFit: "contain", borderRadius: 8, padding: 8, background: "linear-gradient(135deg,#00265E,#1E509B)" }} />
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEmailLogo("")}>
+                  <Trash2 /> Remove
+                </button>
+              </div>
+            )}
+            <input className="form-control" type="file" accept="image/png,image/jpeg" onChange={onEmailLogo} />
           </div>
 
           <Button className="btn btn-primary" onClick={save}><Save /> Save Settings</Button>
