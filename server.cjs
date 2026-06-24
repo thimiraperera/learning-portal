@@ -660,10 +660,9 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   if (!title) return res.status(400).json({ error: "Enter a course title." });
   const blurb = String(req.body?.blurb || "").trim() || "Newly created course.";
   const sessions = Number.parseInt(req.body?.sessions, 10) || 0;
-  const certTemplate = String(req.body?.certTemplate || "");
-  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
-    return res.status(400).json({ error: "Unknown certificate template." });
-  }
+  // An unknown / removed template id just falls back to the default.
+  let certTemplate = String(req.body?.certTemplate || "");
+  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) certTemplate = "";
   const instructorIds = (Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter(Boolean);
   if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
@@ -682,10 +681,9 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   const code = String(req.body?.code || "").trim().toUpperCase() || c.code;
   const title = String(req.body?.title || "").trim();
   if (!title) return res.status(400).json({ error: "A course title is required." });
-  const certTemplate = String(req.body?.certTemplate || "");
-  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) {
-    return res.status(400).json({ error: "Unknown certificate template." });
-  }
+  // An unknown / removed template id just falls back to the default.
+  let certTemplate = String(req.body?.certTemplate || "");
+  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) certTemplate = "";
   await dbmod.updateCourse(id, {
     code, title, certTemplate,
     instructor: String(req.body?.instructor || ""),
