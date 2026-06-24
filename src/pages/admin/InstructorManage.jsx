@@ -176,15 +176,13 @@ function CoursesTab({ iid, taught, store, navigate }) {
       )}
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ADD TO A COURSE</div>
-      {available.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Assigned to every course already.</p> : (
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <select className="form-control" value={sel} onChange={(e) => setSel(e.target.value)}>
-            <option value="">Select a course...</option>
-            {available.map(([id, c]) => <option key={id} value={id}>{c.title}</option>)}
-          </select>
-          <Button className="btn btn-primary" onClick={add}><Plus /> Add to course</Button>
-        </div>
-      )}
+      <div className="toolbar" style={{ marginBottom: 0 }}>
+        <select className="form-control" value={sel} onChange={(e) => setSel(e.target.value)} disabled={available.length === 0}>
+          <option value="">{available.length === 0 ? "Assigned to every course already." : "Select a course..."}</option>
+          {available.map(([id, c]) => <option key={id} value={id}>{c.title}</option>)}
+        </select>
+        <Button className="btn btn-primary" onClick={add} disabled={available.length === 0}><Plus /> Add to course</Button>
+      </div>
     </div>
   );
 }

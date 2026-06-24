@@ -4,7 +4,7 @@ import { ChevronDown, Search } from "lucide-react";
 /* A searchable dropdown (typeahead combobox).
    options: [{ value, label }]; value "all" (or unset) shows the placeholder.
    Pass showAll={false} to hide the "All" reset option (pick-one mode). */
-export default function SearchSelect({ value, onChange, options, placeholder = "All", allLabel = "All", showAll = true, style, limit = 10 }) {
+export default function SearchSelect({ value, onChange, options, placeholder = "All", allLabel = "All", showAll = true, style, limit = 10, emptyText = "No matches" }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -41,7 +41,7 @@ export default function SearchSelect({ value, onChange, options, placeholder = "
             {shown.map((o) => (
               <button type="button" key={o.value} className={"ss-option" + (o.value === value ? " on" : "")} onClick={() => pick(o.value)}>{o.label}</button>
             ))}
-            {matches.length === 0 && <div className="ss-empty">No matches</div>}
+            {matches.length === 0 && <div className="ss-empty">{q ? "No matches" : emptyText}</div>}
             {hidden > 0 && <div className="ss-hint">Showing {shown.length} of {matches.length}. Type to search the rest.</div>}
           </div>
         </div>

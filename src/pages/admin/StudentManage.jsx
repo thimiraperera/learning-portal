@@ -298,14 +298,13 @@ function CoursesTab({ id, email, s, store, navigate }) {
       )}
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROL IN A COURSE</div>
-      {available.length === 0 ? <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrolled in every course already.</p> : (
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
-            options={available.map(([cid, c]) => ({ value: cid, label: c.title }))}
-            onChange={setSel} />
-          <Button className="btn btn-primary" onClick={add}><Plus /> Enrol</Button>
-        </div>
-      )}
+      <div className="toolbar" style={{ marginBottom: 0 }}>
+        <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
+          emptyText="Enrolled in every course already."
+          options={available.map(([cid, c]) => ({ value: cid, label: c.title }))}
+          onChange={setSel} />
+        <Button className="btn btn-primary" onClick={add} disabled={available.length === 0}><Plus /> Enrol</Button>
+      </div>
     </div>
   );
 }
