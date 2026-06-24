@@ -396,9 +396,14 @@ async function setBatchDates(batchId, startDate, endDate) {
 async function endBatch(batchId) { await q("UPDATE batches SET status='ended' WHERE id=?", [batchId]); }
 // Start a new batch: end the current ongoing one, create the next number, and
 // copy instructors + content + the payment-plan template (NOT students/payments).
-async function startNewBatch(courseId, { startDate = "", endDate = "" } = {}) {
+async function startNewBatch(courseId, { startDate = "", endDate = "", number } = {}) {
   const [[prev]] = await q("SELECT id, number FROM batches WHERE course_id=? ORDER BY number DESC LIMIT 1", [courseId]);
-  const nextNum = prev ? prev.number + 1 : 1;
+  // Admin may pick the batch number (they may already be on batch N in real life);
+  // otherwise auto-increment from the highest existing batch.
+  let nextNum = prev ? prev.number + 1 : 1;
+  if (Number.isInteger(number) && number > 0) nextNum = number;
+  const [[clash]] = await q("SELECT 1 AS x FROM batches WHERE course_id=? AND number=? LIMIT 1", [courseId, nextNum]);
+  if (clash) { const e = new Error(`Batch ${nextNum} already exists for this course.`); e.status = 409; throw e; }
   await q("UPDATE batches SET status='ended' WHERE course_id=? AND status='ongoing'", [courseId]);
   const [r] = await q("INSERT INTO batches (course_id, number, status, start_date, end_date, created_at) VALUES (?,?, 'ongoing', ?,?,?)",
     [courseId, nextNum, String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), Date.now()]);

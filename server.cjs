@@ -675,8 +675,12 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
   if (!code) code = id.toUpperCase();
+  // The course may already be running at batch N in real life, so the admin can
+  // set the starting batch number (default 1).
+  let batchNumber = Number.parseInt(req.body?.batchNumber, 10);
+  if (!Number.isInteger(batchNumber) || batchNumber < 1) batchNumber = 1;
   await q("INSERT INTO courses (id,code,title,instructor,blurb,sessions,cert_template) VALUES (?,?,?, '', ?, ?, ?)", [id, code, title, blurb, sessions, certTemplate]);
-  const [br] = await q("INSERT INTO batches (course_id,number,status,created_at) VALUES (?,1,'ongoing',?)", [id, Date.now()]);
+  const [br] = await q("INSERT INTO batches (course_id,number,status,created_at) VALUES (?,?,'ongoing',?)", [id, batchNumber, Date.now()]);
   for (const iid of instructorIds) await dbmod.addCourseInstructor(id, br.insertId, iid);
   res.json({ ok: true, courseId: id, ...(await adminState()) });
 }));
@@ -732,7 +736,15 @@ app.get("/api/admin/courses/:id/batch/:batchId", auth, adminOnly, wrap(async (re
 }));
 // Start a new batch (ends the current one; copies instructors + content + plan).
 app.post("/api/admin/courses/:id/batches", auth, adminOnly, wrap(async (req, res) => {
-  await dbmod.startNewBatch(String(req.params.id), { startDate: req.body?.startDate, endDate: req.body?.endDate });
+  const courseId = String(req.params.id);
+  let number;
+  if (req.body?.number !== undefined && req.body?.number !== null && String(req.body.number).trim() !== "") {
+    number = Number.parseInt(req.body.number, 10);
+    if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: "Batch number must be a positive whole number." });
+    const [[clash]] = await q("SELECT 1 AS x FROM batches WHERE course_id=? AND number=? LIMIT 1", [courseId, number]);
+    if (clash) return res.status(409).json({ error: `Batch ${number} already exists for this course.` });
+  }
+  await dbmod.startNewBatch(courseId, { startDate: req.body?.startDate, endDate: req.body?.endDate, number });
   res.json(await adminState());
 }));
 // Mark a batch ended.
@@ -1394,14 +1406,15 @@ app.post("/api/admin/purge", auth, superOnly, wrap(async (_req, res) => {
    libraries, but for large storage use FTP directly against the storage/ folder. */
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
 
-app.get("/api/admin/backup/db", auth, superOnly, wrap(async (_req, res) => {
+// Any admin (super or local) can DOWNLOAD backups; only super admins can restore.
+app.get("/api/admin/backup/db", auth, adminOnly, wrap(async (_req, res) => {
   const sql = await dbmod.dumpDatabase();
   res.setHeader("Content-Type", "application/sql");
   res.setHeader("Content-Disposition", `attachment; filename="lms-database-${stamp()}.sql"`);
   res.send(sql);
 }));
 
-app.get("/api/admin/backup/files", auth, superOnly, wrap(async (_req, res) => {
+app.get("/api/admin/backup/files", auth, adminOnly, wrap(async (_req, res) => {
   const zip = new AdmZip();
   zip.addLocalFolder(STORAGE);
   res.setHeader("Content-Type", "application/zip");
@@ -1409,7 +1422,7 @@ app.get("/api/admin/backup/files", auth, superOnly, wrap(async (_req, res) => {
   res.send(zip.toBuffer());
 }));
 
-app.get("/api/admin/backup/all", auth, superOnly, wrap(async (_req, res) => {
+app.get("/api/admin/backup/all", auth, adminOnly, wrap(async (_req, res) => {
   const zip = new AdmZip();
   zip.addFile("database.sql", Buffer.from(await dbmod.dumpDatabase(), "utf8"));
   zip.addLocalFolder(STORAGE, "storage");

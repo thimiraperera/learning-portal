@@ -18,6 +18,7 @@ import CourseManage from "./pages/admin/CourseManage.jsx";
 import Instructors from "./pages/admin/Instructors.jsx";
 import InstructorManage from "./pages/admin/InstructorManage.jsx";
 import Certificates from "./pages/admin/Certificates.jsx";
+import Backup from "./pages/admin/Backup.jsx";
 import Settings from "./pages/admin/Settings.jsx";
 import Requests from "./pages/admin/Requests.jsx";
 import Payments from "./pages/admin/Payments.jsx";
@@ -102,6 +103,7 @@ function Routed() {
       <Route path="/admin/exams" element={<RequireRole role="admin"><Exams /></RequireRole>} />
       <Route path="/admin/exams/:id" element={<RequireRole role="admin"><ExamManage /></RequireRole>} />
       <Route path="/admin/certificates" element={<RequireRole role="admin"><Certificates /></RequireRole>} />
+      <Route path="/admin/backup" element={<RequireRole role="admin"><Backup /></RequireRole>} />
       <Route path="/admin/settings" element={<RequireSuper><Settings /></RequireSuper>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />

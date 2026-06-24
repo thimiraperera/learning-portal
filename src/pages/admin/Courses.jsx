@@ -7,7 +7,7 @@ import SearchSelect from "../../components/SearchSelect.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 
-const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [] };
+const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [], batchNumber: "1" };
 
 export default function Courses() {
   const { courses, users, instructors, addCourse, fetchCertTemplates, previewCertTemplate } = useStore();
@@ -108,6 +108,12 @@ export default function Courses() {
 
         <div className="form-group"><label className="form-label">Description</label>
           <textarea className="form-control" rows="2" placeholder="What this course covers." value={form.blurb} onChange={set("blurb")} /></div>
+
+        <div className="form-group" style={{ maxWidth: 240 }}>
+          <label className="form-label">Starting batch number</label>
+          <input className="form-control" type="number" min="1" step="1" value={form.batchNumber} onChange={set("batchNumber")} />
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>If the course already ran a few batches, set the one you're on now (e.g. 5). Default is 1.</div>
+        </div>
 
         <div className="field-row">
           <div className="form-group"><label className="form-label">Certificate template</label>

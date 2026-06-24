@@ -59,11 +59,20 @@ export default function CourseManage() {
   ];
 
   const onStartNewBatch = async () => {
-    if (!(await popup.confirm("Start a new batch? The current batch is marked ended, and its instructors, content, and payment plan are copied into a fresh batch (students are not copied).", { title: "Start new batch", confirmText: "Start new batch" }))) return;
+    const nextNum = batches.length ? Math.max(...batches.map((b) => b.number)) + 1 : 1;
+    const input = await popup.prompt(
+      "The current batch is ended, and its instructors, content, and payment plan are copied into the new batch (students are not copied). Enter the batch number for the new batch:",
+      String(nextNum),
+      { title: "Start new batch", confirmText: "Start new batch", placeholder: "Batch number" }
+    );
+    if (input === null) return; // cancelled
+    const num = parseInt(String(input).trim(), 10);
+    if (!Number.isInteger(num) || num < 1) { popup.toast("Enter a valid batch number.", "error"); return; }
     setBatchBusy(true);
-    const r = await startNewBatch(id, {});
+    const r = await startNewBatch(id, { number: num });
     setBatchBusy(false);
-    if (r.ok) setViewBatchId(null); // jump to the new ongoing batch
+    if (r.ok) { setViewBatchId(null); popup.toast(`Batch ${num} started`); } // jump to the new ongoing batch
+    else popup.toast(r.msg || "Could not start the batch.", "error");
   };
 
   return (
