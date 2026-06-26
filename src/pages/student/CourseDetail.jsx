@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet, RotateCcw,
+  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet, RotateCcw, Award, Download, CheckCircle, AlertTriangle,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
+import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, instBadge, allocatePayments } from "../../lib/payments.js";
 
@@ -17,7 +18,7 @@ export function openUrl(u) {
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments } = useStore();
+  const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments, certificates, downloadCertificate, requestCertRedownload } = useStore();
   const [tab, setTab] = useState("recordings");
   // Start every tab at the top of the page (long content can leave you scrolled down).
   useEffect(() => { window.scrollTo(0, 0); }, [tab]);
@@ -28,12 +29,14 @@ export default function CourseDetail() {
   const isLocked = (paymentLocked || []).includes(id);
   const myExams = isLocked ? [] : exams.filter((x) => x.course_id === id);
   const myPlan = (payments || []).find((p) => p.course_id === id) || null;
+  const myCert = (certificates || []).find((c2) => c2.course_id === id) || null;
 
   const tabs = [
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
     { k: "payments", label: "Payments", icon: Wallet, n: myPlan ? myPlan.installments.length : 0 },
+    { k: "certificate", label: "Certificate", icon: Award, n: myCert ? 1 : 0 },
     ...(myExams.length > 0 ? [{ k: "exam", label: "Exams", icon: FileQuestion, n: myExams.length }] : []),
   ];
 
@@ -96,6 +99,8 @@ export default function CourseDetail() {
         )}
 
         {tab === "payments" && <PaymentsView plan={myPlan} />}
+
+        {tab === "certificate" && <CertificateView cert={myCert} plan={myPlan} download={downloadCertificate} requestRedownload={requestCertRedownload} />}
 
         {tab === "exam" && myExams.map((x) => {
           const served = x.question_count > 0 ? Math.min(x.question_count, x.bankSize) : x.bankSize;
@@ -186,6 +191,59 @@ function PaymentsView({ plan }) {
         <div style={{ fontSize: 12.5, color: "#6B7280", marginTop: 10 }}>Next due: {plan.nextDue.label} - {rs(plan.nextDue.amount)} by {fmtDate(plan.nextDue.due_date)}</div>
       )}
       <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 10 }}>Payments are recorded by your administrator. If anything looks wrong, please contact them.</div>
+    </div>
+  );
+}
+
+/* The student's certificate for this course. It can be downloaded only when the
+   certificate has been issued AND the course fees are fully paid, and only once
+   (a second download needs the admin to re-enable it; the student requests that
+   here and the admin sees the request on the course's Certificates tab). */
+function CertificateView({ cert, plan, download, requestRedownload }) {
+  const [msg, setMsg] = useState(null);
+  if (!cert) {
+    return <div className="empty-state"><div className="empty-icon"><Award /></div><p>No certificate yet. It appears here once your administrator issues it for this course.</p></div>;
+  }
+  const owed = plan && plan.remaining > 0 ? plan.remaining : 0;
+  const fullyPaid = owed <= 0;
+  const alreadyUsed = cert.downloaded && !cert.unlocked;
+  const canDownload = fullyPaid && !alreadyUsed;
+  const issued = new Date(Number(cert.issued_at) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  const get = async () => { setMsg(null); try { await download(cert.id, cert.cert_no); setMsg({ ok: true, text: "Certificate downloaded." }); } catch (e) { setMsg({ ok: false, text: e.message }); } };
+  const ask = async () => { setMsg(null); const r = await requestRedownload(cert.id); setMsg({ ok: r.ok, text: r.msg }); };
+
+  return (
+    <div>
+      <div className="media-row" style={{ marginBottom: 12 }}>
+        <div className="mr-icon"><Award /></div>
+        <div className="mr-body">
+          <div className="mr-title">Course certificate</div>
+          <div className="mr-meta">Certificate {cert.cert_no} · issued {issued}</div>
+        </div>
+        {canDownload && <Button className="btn btn-primary btn-sm" onClick={get}><Download style={{ width: 15, height: 15 }} /> Download</Button>}
+      </div>
+
+      {!fullyPaid && (
+        <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginBottom: 0 }}>
+          <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Payment required</div>
+          <div className="card-subtitle" style={{ marginBottom: 0 }}>You can download your certificate once your course fees are fully paid. You still owe {rs(owed)}. Check the Payments tab for your schedule.</div>
+        </div>
+      )}
+
+      {fullyPaid && alreadyUsed && (
+        <div className="card" style={{ marginBottom: 0 }}>
+          <div className="card-subtitle" style={{ marginTop: 0, marginBottom: cert.redownload_requested ? 0 : 12 }}>
+            You have already downloaded this certificate once. {cert.redownload_requested
+              ? "Your re-download request has been sent to your administrator."
+              : "If you need it again, request a re-download and your administrator will re-enable it."}
+          </div>
+          {cert.redownload_requested
+            ? <span className="badge badge-pending">Re-download requested</span>
+            : <Button className="btn btn-outline btn-sm" onClick={ask}><RotateCcw style={{ width: 14, height: 14 }} /> Request re-download</Button>}
+        </div>
+      )}
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")} style={{ marginTop: 12, marginBottom: 0 }}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
     </div>
   );
 }

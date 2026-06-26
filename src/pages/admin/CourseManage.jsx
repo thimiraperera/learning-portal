@@ -401,7 +401,7 @@ function CertificatesTab({ id, batchNum, courseTitle, store }) {
                     </td>
                     <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
                     <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
-                    <td>{statusBadge(r.cert)}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmtCertDate(r.cert.issued_at)}</div>}</td>
+                    <td>{statusBadge(r.cert)}{r.cert && r.cert.redownload_requested ? <span className="badge badge-pending" style={{ marginLeft: 6 }}>Re-download requested</span> : null}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmtCertDate(r.cert.issued_at)}</div>}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {r.cert && <>
                         <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(r.cert.id))}><Eye style={{ width: 16, height: 16 }} /></button>

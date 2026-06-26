@@ -353,6 +353,13 @@ export function StoreProvider({ children }) {
     await fetchBlobDownload(`/certificates/${id}/download`, `${certNo || "certificate"}.pdf`);
     setCertificates((cs) => cs.map((c) => (c.id === id ? { ...c, downloaded: 1, unlocked: 0 } : c)));
   }, [token]);
+  const requestCertRedownload = useCallback(async (id) => {
+    try {
+      const d = await api(`/certificates/${id}/request-redownload`, { method: "POST", token });
+      setCertificates((cs) => cs.map((c) => (c.id === id ? { ...c, redownload_requested: 1 } : c)));
+      return { ok: true, msg: d.msg };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   /* ---- certificate templates ---- */
   const fetchCertTemplates = useCallback(() => api("/admin/cert-templates", { token }), [token]);
@@ -539,7 +546,7 @@ export function StoreProvider({ children }) {
     addGroup, renameGroup, deleteGroup, reorderGroups,
     requestCourse, approveRequest, declineRequest,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
-    issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate,
+    issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate, requestCertRedownload,
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,

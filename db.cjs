@@ -94,7 +94,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS certificates (
      id INT AUTO_INCREMENT PRIMARY KEY, cert_no VARCHAR(40) NOT NULL UNIQUE,
      student_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, issued_at BIGINT,
-     downloaded TINYINT DEFAULT 0, unlocked TINYINT DEFAULT 0
+     downloaded TINYINT DEFAULT 0, unlocked TINYINT DEFAULT 0, redownload_requested TINYINT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS exams (
      id INT AUTO_INCREMENT PRIMARY KEY,
@@ -267,6 +267,8 @@ async function init() {
   // How many times a student may sit an exam: 0 = unlimited retakes (default),
   // 1 = a single attempt, N = up to N attempts.
   await ensureColumn("exams", "attempt_limit", "INT DEFAULT 0");
+  // A student can ask the admin to re-enable a one-time certificate download.
+  await ensureColumn("certificates", "redownload_requested", "TINYINT DEFAULT 0");
   await migrateBatches();
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
@@ -844,7 +846,7 @@ async function issueCertificate(studentId, courseId, certNo, when) {
   await q("INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,?,0,0)", [certNo, studentId, courseId, bid, when]);
 }
 async function listCertificates() {
-  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.student_id, c.course_id, bt.number AS batchNumber,
+  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.redownload_requested, c.student_id, c.course_id, bt.number AS batchNumber,
       u.name AS studentName, u.email AS studentEmail, co.title AS courseTitle, co.code AS courseCode
     FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
     LEFT JOIN batches bt ON bt.id=c.batch_id
@@ -858,13 +860,16 @@ async function getCertificate(id) {
   return r || null;
 }
 async function studentCertificates(studentId) {
-  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked,
+  const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.redownload_requested, c.course_id,
       co.title AS courseTitle, co.code AS courseCode
     FROM certificates c JOIN courses co ON co.id=c.course_id WHERE c.student_id=? ORDER BY c.issued_at DESC`, [studentId]);
   return rows;
 }
+async function requestCertRedownload(id, studentId) {
+  await q("UPDATE certificates SET redownload_requested=1 WHERE id=? AND student_id=? AND downloaded=1 AND unlocked=0", [id, studentId]);
+}
 async function markCertDownloaded(id) { await q("UPDATE certificates SET downloaded=1, unlocked=0 WHERE id=?", [id]); }
-async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1 WHERE id=?", [id]); }
+async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1, redownload_requested=0 WHERE id=?", [id]); }
 
 /* ---- student activity log (admin-visible audit trail) ---- */
 async function logActivity(userId, action, detail) {
@@ -1251,7 +1256,7 @@ module.exports = {
   getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript, purgeData,
-  certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
+  certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, requestCertRedownload, markCertDownloaded, unlockCertificate,
   logActivity, listActivity, clearActivity,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, finishedAttemptCount, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,

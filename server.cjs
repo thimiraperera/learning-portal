@@ -931,6 +931,11 @@ app.post("/api/admin/certificates/:id/unlock", auth, adminOnly, wrap(async (req,
 app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  // The course fees must be fully settled before the certificate can be downloaded.
+  const plan = (await dbmod.studentPlans(req.user.id)).find((p) => p.course_id === cert.course_id);
+  if (plan && plan.remaining > 0.009) {
+    return res.status(403).json({ error: `Please settle your course balance before downloading your certificate. You still owe Rs. ${plan.remaining.toLocaleString("en-US")}.` });
+  }
   if (cert.downloaded && !cert.unlocked) return res.status(403).json({ error: "You have already downloaded this certificate. Ask your administrator to unlock it if you need it again." });
   const pdf = await certPdf(cert);
   await dbmod.markCertDownloaded(cert.id);
@@ -938,6 +943,17 @@ app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${cert.cert_no}.pdf"`);
   res.send(pdf);
+}));
+
+/* Student asks the admin to re-enable a one-time download they have already used.
+   The admin sees the request on the course's Certificates tab and clicks Unlock. */
+app.post("/api/certificates/:id/request-redownload", auth, wrap(async (req, res) => {
+  const cert = await dbmod.getCertificate(Number(req.params.id));
+  if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  if (!cert.downloaded || cert.unlocked) return res.status(400).json({ error: "This certificate is already available to download." });
+  await dbmod.requestCertRedownload(cert.id, req.user.id);
+  dbmod.logActivity(req.user.id, "certificate", `Requested a re-download of ${cert.cert_no}`).catch(() => {});
+  res.json({ ok: true, msg: "Your administrator has been notified and will re-enable the download for you." });
 }));
 
 /* Log a client-side student action (opening an external recording/link/material
