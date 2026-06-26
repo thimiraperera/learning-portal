@@ -87,6 +87,12 @@ export default function Login() {
 
       <div className="login-right">
         <div className="login-box">
+          {/* Shown only on mobile, where the branded left panel is hidden. */}
+          <div className="login-mobile-brand">
+            {brand.logo
+              ? <img src={brand.logo} alt={brand.name || "Logo"} />
+              : <div className="lmb-name">{[brand.company, brand.name || "Learning Portal"].filter(Boolean).join(" ")}</div>}
+          </div>
           <div className="login-header">
             <h1>Welcome back</h1>
             <p>Sign in to your account to continue</p>
@@ -212,5 +218,12 @@ const LOGIN_CSS = `
 .login-forgot { font-size:13px; color:#1E509B; font-weight:700; text-decoration:none; }
 .login-forgot:hover { text-decoration:underline; }
 .login-footer { margin-top:28px; text-align:center; font-size:12px; color:#aaa; }
-@media (max-width:768px) { .login-left { display:none; } .login-right { width:100%; padding:32px 24px; } }
+.login-mobile-brand { display:none; }
+@media (max-width:768px) {
+  .login-left { display:none; }
+  .login-right { width:100%; padding:32px 24px; }
+  .login-mobile-brand { display:block; text-align:center; margin-bottom:26px; }
+  .login-mobile-brand img { max-height:60px; max-width:220px; object-fit:contain; display:inline-block; }
+  .login-mobile-brand .lmb-name { font-size:23px; font-weight:800; color:#1E509B; line-height:1.2; }
+}
 `;

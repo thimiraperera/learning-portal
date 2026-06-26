@@ -5,7 +5,7 @@ import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
-import { resizeToPng } from "../../lib/image.js";
+import { resizeToPng, resizeToWebp } from "../../lib/image.js";
 import { useStore } from "../../state.jsx";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -17,6 +17,7 @@ export default function Settings() {
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
   const [emailLogo, setEmailLogo] = useState(brand.emailLogo || "");
+  const [favicon, setFavicon] = useState(brand.favicon || "");
   const [msg, setMsg] = useState(null); // { ok, text }
 
   const onFile = (e) => {
@@ -37,9 +38,18 @@ export default function Settings() {
     catch (err) { setMsg({ ok: false, text: err.message || "Could not read the image." }); }
   };
 
+  const onFavicon = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    // Auto-resize to a 256x256 WebP for the browser tab icon.
+    try { setFavicon(await resizeToWebp(f, 256, 0.9, true)); setMsg(null); }
+    catch (err) { setMsg({ ok: false, text: err.message || "Could not read the image." }); }
+  };
+
   const save = async () => {
     try {
-      await setBrand({ company: company.trim(), name: name.trim(), logo, emailLogo });
+      await setBrand({ company: company.trim(), name: name.trim(), logo, emailLogo, favicon });
       setMsg({ ok: true, text: "Branding saved. It applies across the portal immediately." });
     } catch (e) {
       setMsg({ ok: false, text: e.message || "Could not save branding." });
@@ -108,6 +118,23 @@ export default function Settings() {
               </div>
             )}
             <input className="form-control" type="file" accept="image/png,image/jpeg" onChange={onEmailLogo} />
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20, marginBottom: 20 }}>
+            <label className="form-label">
+              Favicon <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(the small icon in the browser tab)</span>
+            </label>
+            <div style={{ fontSize: 12, color: "#9CA3AF", margin: "0 0 10px" }}>Any image works; it is automatically resized to a 256x256 WebP.</div>
+            {favicon && (
+              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={favicon} alt="Favicon"
+                  style={{ width: 40, height: 40, objectFit: "contain", border: "1px solid var(--border)", borderRadius: 8, padding: 4, background: "white" }} />
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setFavicon("")}>
+                  <Trash2 /> Remove
+                </button>
+              </div>
+            )}
+            <input className="form-control" type="file" accept="image/*" onChange={onFavicon} />
           </div>
 
           <Button className="btn btn-primary" onClick={save}><Save /> Save Settings</Button>

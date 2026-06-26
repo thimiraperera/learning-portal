@@ -1644,6 +1644,8 @@ app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
     logo: b.logo === undefined ? cur.logo : String(b.logo),
     loginIntro: b.loginIntro === undefined ? (cur.loginIntro || "") : sanitizeHtml(b.loginIntro),
     emailLogo,
+    // Browser tab favicon: a small WebP/PNG/JPG data URL (empty clears it).
+    favicon: b.favicon === undefined ? (cur.favicon || "") : (/^data:image\/(webp|png|jpeg|jpg);base64,/i.test(String(b.favicon)) ? String(b.favicon) : ""),
     // Word cap for the course description shown on course cards (1-200).
     courseCardWords: b.courseCardWords === undefined ? (cur.courseCardWords ?? 30) : Math.max(1, Math.min(200, Number.parseInt(b.courseCardWords, 10) || 30)),
   };

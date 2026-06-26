@@ -8,7 +8,7 @@ const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
 const TOKEN_KEY = "lms_token";
-const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "", loginIntro: "", courseCardWords: 30 };
+const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "", loginIntro: "", favicon: "", courseCardWords: 30 };
 
 /* "Remember me" stores the token in localStorage (survives browser restarts);
    otherwise sessionStorage (cleared when the browser/tab closes). */
@@ -110,6 +110,15 @@ export function StoreProvider({ children }) {
       throw e;
     }
   }
+
+  // Reflect the brand favicon into the browser tab whenever it changes.
+  useEffect(() => {
+    if (!brand.favicon) return;
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+    link.type = "image/webp";
+    link.href = brand.favicon;
+  }, [brand.favicon]);
 
   // On first load: fetch public brand, and restore the session if a token exists.
   useEffect(() => {
