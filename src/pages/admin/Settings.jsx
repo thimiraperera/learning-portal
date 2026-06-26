@@ -16,6 +16,7 @@ export default function Settings() {
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
   const [logo, setLogo] = useState(brand.logo);
+  const [logoDark, setLogoDark] = useState(brand.logoDark || "");
   const [emailLogo, setEmailLogo] = useState(brand.emailLogo || "");
   const [favicon, setFavicon] = useState(brand.favicon || "");
   const [msg, setMsg] = useState(null); // { ok, text }
@@ -27,6 +28,16 @@ export default function Settings() {
     if (f.size > MAX_LOGO_BYTES) { setMsg({ ok: false, text: "Logo is larger than 2 MB. Choose a smaller file." }); return; }
     const reader = new FileReader();
     reader.onload = () => { setLogo(reader.result); setMsg(null); };
+    reader.readAsDataURL(f);
+  };
+
+  const onLogoDark = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith("image/")) { setMsg({ ok: false, text: "Please choose an image file (PNG, JPG, SVG)." }); return; }
+    if (f.size > MAX_LOGO_BYTES) { setMsg({ ok: false, text: "Logo is larger than 2 MB. Choose a smaller file." }); return; }
+    const reader = new FileReader();
+    reader.onload = () => { setLogoDark(reader.result); setMsg(null); };
     reader.readAsDataURL(f);
   };
 
@@ -49,7 +60,7 @@ export default function Settings() {
 
   const save = async () => {
     try {
-      await setBrand({ company: company.trim(), name: name.trim(), logo, emailLogo, favicon });
+      await setBrand({ company: company.trim(), name: name.trim(), logo, logoDark, emailLogo, favicon });
       setMsg({ ok: true, text: "Branding saved. It applies across the portal immediately." });
     } catch (e) {
       setMsg({ ok: false, text: e.message || "Could not save branding." });
@@ -101,6 +112,21 @@ export default function Settings() {
               </div>
             )}
             <input className="form-control" type="file" accept="image/*" onChange={onFile} />
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20, marginBottom: 20 }}>
+            <label className="form-label">
+              Logo for light backgrounds <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(used on the white mobile sign-in screen)</span>
+            </label>
+            <div style={{ fontSize: 12, color: "#9CA3AF", margin: "0 0 10px" }}>The main logo above sits on a dark background. Upload a dark-coloured version here so it stays visible on the white mobile login. If empty, the portal name is shown instead.</div>
+            {logoDark && (
+              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={logoDark} alt="Light-background logo"
+                  style={{ maxHeight: 48, maxWidth: 180, objectFit: "contain", border: "1px solid var(--border)", borderRadius: 8, padding: 6, background: "white" }} />
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setLogoDark("")}><Trash2 /> Remove</button>
+              </div>
+            )}
+            <input className="form-control" type="file" accept="image/*" onChange={onLogoDark} />
           </div>
 
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20, marginBottom: 20 }}>

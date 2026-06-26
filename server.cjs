@@ -1642,6 +1642,8 @@ app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
     company: b.company === undefined ? cur.company : String(b.company),
     name: b.name === undefined ? cur.name : String(b.name),
     logo: b.logo === undefined ? cur.logo : String(b.logo),
+    // Dark logo for light backgrounds (e.g. the white mobile sign-in screen).
+    logoDark: b.logoDark === undefined ? (cur.logoDark || "") : String(b.logoDark),
     loginIntro: b.loginIntro === undefined ? (cur.loginIntro || "") : sanitizeHtml(b.loginIntro),
     emailLogo,
     // Browser tab favicon: a small WebP/PNG/JPG data URL (empty clears it).
