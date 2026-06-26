@@ -472,22 +472,22 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
       <div className="card-subtitle" style={{ marginTop: 0 }}>Saving applies it to every student enrolled in {batchLabel}, and anyone who enrols in this batch later follows it automatically. You then record each student's payments on their own Payments tab.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
 
+      <div className="form-group"><label className="form-label">Total fee (Rs.)</label>
+        <input className="form-control" type="number" min="0" value={plan.total_fee} onChange={set("total_fee")} placeholder="45000" /></div>
       <div className="field-row">
-        <div className="form-group"><label className="form-label">Total fee (Rs.)</label>
-          <input className="form-control" type="number" min="0" value={plan.total_fee} onChange={set("total_fee")} placeholder="45000" /></div>
         <div className="form-group"><label className="form-label">Registration fee (Rs.)</label>
           <input className="form-control" type="number" min="0" value={plan.reg_fee} onChange={set("reg_fee")} placeholder="5000" /></div>
-      </div>
-      <div className="field-row">
         <div className="form-group"><label className="form-label">Number of installments</label>
           <input className="form-control" type="number" min="0" max="36" value={plan.installments} onChange={set("installments")} placeholder="4" /></div>
+      </div>
+      <div className="field-row">
         <div className="form-group"><label className="form-label">First payment / start date</label>
           <input className="form-control" type="date" value={plan.start_date} onChange={set("start_date")} /></div>
+        <div className="form-group"><label className="form-label">Complete all payments by <span className="req">*</span></label>
+          <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
       </div>
-      <div className="form-group" style={{ maxWidth: 320 }}><label className="form-label">Complete all payments by <span className="req">*</span></label>
-        <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
 
-      <div className="form-group" style={{ maxWidth: 360 }}><label className="form-label">Unlock exams</label>
+      <div className="form-group"><label className="form-label">Unlock exams</label>
         <select className="form-control" value={plan.exam_unlock ?? -1} onChange={(e) => setPlan((p) => ({ ...p, exam_unlock: Number(e.target.value) }))}>
           {examOpts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
         </select>
