@@ -19,9 +19,17 @@ export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments, certificates, downloadCertificate, requestCertRedownload } = useStore();
-  const [tab, setTab] = useState("description");
+  const [tab, setTab] = useState("recordings");
+  const [showDesc, setShowDesc] = useState(false);
   // Start every tab at the top of the page (long content can leave you scrolled down).
   useEffect(() => { window.scrollTo(0, 0); }, [tab]);
+  // Close the description popup with Escape.
+  useEffect(() => {
+    if (!showDesc) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setShowDesc(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showDesc]);
 
   // Guard: never render a course the student isn't enrolled in.
   if (!currentUser.enrolled.includes(id)) return <Navigate to="/" replace />;
@@ -32,7 +40,6 @@ export default function CourseDetail() {
   const myCert = (certificates || []).find((c2) => c2.course_id === id) || null;
 
   const tabs = [
-    { k: "description", label: "Description", icon: Info, n: null },
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
@@ -49,7 +56,15 @@ export default function CourseDetail() {
 
       <div className="page-hero">
         {/* Course code hidden for now: <div className="ph-code">{c.code}</div> */}
-        <h1>{c.title}</h1>
+        <h1 style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {c.title}
+          {c.blurb && (
+            <button type="button" className="icon-btn-plain" title="About this course" onClick={() => setShowDesc(true)}
+              style={{ color: "var(--primary)", verticalAlign: "middle" }}>
+              <Info style={{ width: 20, height: 20 }} />
+            </button>
+          )}
+        </h1>
       </div>
 
       {isLocked && (
@@ -68,12 +83,6 @@ export default function CourseDetail() {
             </button>
           ))}
         </div>
-
-        {tab === "description" && (
-          c.blurb
-            ? <div className="course-blurb" dangerouslySetInnerHTML={{ __html: c.blurb }} />
-            : <div className="empty-state"><div className="empty-icon"><Info /></div><p>No description has been added for this course yet.</p></div>
-        )}
 
         {tab === "recordings" && (
           c.recordings.length === 0
@@ -141,6 +150,22 @@ export default function CourseDetail() {
           );
         })}
       </div>
+      )}
+
+      {showDesc && (
+        <div className="popup-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowDesc(false); }}>
+          <div className="popup-card" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
+            <div className="popup-head">
+              <span className="popup-icon info"><Info /></span>
+              <div className="popup-title">{c.title}</div>
+            </div>
+            <div className="course-blurb" style={{ marginBottom: 18, maxHeight: "60vh", overflowY: "auto" }}
+              dangerouslySetInnerHTML={{ __html: c.blurb || "No description has been added for this course yet." }} />
+            <div className="popup-actions">
+              <button className="btn btn-primary" onClick={() => setShowDesc(false)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </Layout>
   );
