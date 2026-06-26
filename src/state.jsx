@@ -391,7 +391,7 @@ export function StoreProvider({ children }) {
   const loadStudentExams = useCallback((id) => api(`/admin/students/${id}/exams`, { token }).then((d) => d.attempts || []), [token]);
 
   /* ---- exams (student) ---- */
-  const startExam = useCallback((id) => api(`/exams/${id}/start`, { method: "POST", token }), [token]);
+  const startExam = useCallback((id, opts) => api(`/exams/${id}/start`, { method: "POST", token, body: { retake: !!(opts && opts.retake) } }), [token]);
   const submitExam = useCallback(async (id, answers) => {
     const d = await api(`/exams/${id}/submit`, { method: "POST", token, body: { answers } });
     setExams((xs) => xs.map((x) => (x.id === id ? { ...x, attempt: { ...(x.attempt || {}), finished_at: 1, score: d.score, total: d.total } } : x)));

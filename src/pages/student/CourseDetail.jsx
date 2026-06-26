@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet,
+  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet, RotateCcw,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
@@ -100,6 +100,7 @@ export default function CourseDetail() {
         {tab === "exam" && myExams.map((x) => {
           const served = x.question_count > 0 ? Math.min(x.question_count, x.bankSize) : x.bankSize;
           const done = x.attempt && x.attempt.finished_at;
+          const canRetake = done && (Number(x.attempt_limit ?? 0) === 0 || (x.attemptsUsed || 0) < Number(x.attempt_limit));
           return (
             <div key={x.id} className="media-row">
               <div className="mr-icon"><FileQuestion /></div>
@@ -111,7 +112,14 @@ export default function CourseDetail() {
                 </div>
               </div>
               {done
-                ? <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
+                ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
+                    {canRetake && (
+                      <button className="btn btn-outline btn-sm" onClick={() => navigate(`/exams/${x.id}`)}><RotateCcw style={{ width: 14, height: 14 }} /> Retake</button>
+                    )}
+                  </div>
+                )
                 : (
                   <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
                     <Play /> {x.attempt ? "Resume" : "Start exam"}

@@ -72,7 +72,8 @@ export default function ExamManage() {
         <p>
           {exam.questions.length} question{exam.questions.length === 1 ? "" : "s"} in the bank ·
           serves {exam.question_count > 0 ? Math.min(exam.question_count, exam.questions.length) || exam.question_count : "all"} per attempt ·
-          {exam.time_limit > 0 ? ` ${exam.time_limit} min limit` : " no time limit"}
+          {exam.time_limit > 0 ? ` ${exam.time_limit} min limit` : " no time limit"} ·
+          {Number(exam.attempt_limit ?? 0) === 0 ? " unlimited retakes" : ` ${exam.attempt_limit} attempt${exam.attempt_limit === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -99,12 +100,13 @@ function SettingsTab({ exam, setExam, store, navigate }) {
   const [courseId, setCourseId] = useState(exam.course_id || "all");
   const [questionCount, setQuestionCount] = useState(exam.question_count ?? 0);
   const [timeLimit, setTimeLimit] = useState(exam.time_limit ?? 0);
+  const [attemptLimit, setAttemptLimit] = useState(exam.attempt_limit ?? 0);
   const [msg, setMsg] = useState(null);
 
   const save = async () => {
     const r = await store.updateExam(exam.id, {
       title, courseId: courseId === "all" ? "" : courseId,
-      questionCount, timeLimit,
+      questionCount, timeLimit, attemptLimit,
     });
     setMsg(r);
     if (r.ok && r.exam) setExam(r.exam);
@@ -133,7 +135,10 @@ function SettingsTab({ exam, setExam, store, navigate }) {
           <input className="form-control" type="number" min="0" value={timeLimit} onChange={(e) => setTimeLimit(e.target.value)} />
           <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>0 means no time limit.</div></div>
       </div>
-      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Answer order is always shuffled per attempt; each student can take the exam once. Checkbox questions earn partial marks but never below zero.</div>
+      <div className="form-group" style={{ maxWidth: 320 }}><label className="form-label">Attempts allowed</label>
+        <input className="form-control" type="number" min="0" value={attemptLimit} onChange={(e) => setAttemptLimit(e.target.value)} />
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}><strong>0 = unlimited retakes</strong> (students can rewrite as many times as they like). 1 = a single attempt. Each retake draws a fresh random set of questions.</div></div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Answer order is always shuffled per attempt. Checkbox questions earn partial marks but never below zero.</div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save settings</Button>
         <Button className="btn btn-danger" onClick={remove}><Trash2 /> Delete exam</Button>

@@ -102,6 +102,7 @@ const TABLES = [
      title VARCHAR(255) NOT NULL,
      question_count INT DEFAULT 0,
      time_limit INT DEFAULT 0,
+     attempt_limit INT DEFAULT 0,
      created_at BIGINT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS exam_questions (
@@ -263,6 +264,9 @@ async function init() {
   // Content items can be gated behind a payment stage: 0 = everyone, 1 = reg fee,
   // 2 = Installment 1, 3 = Installment 2... (matches the schedule line seq).
   for (const t of ["recordings", "links", "materials"]) await ensureColumn(t, "installment_seq", "INT DEFAULT 0");
+  // How many times a student may sit an exam: 0 = unlimited retakes (default),
+  // 1 = a single attempt, N = up to N attempts.
+  await ensureColumn("exams", "attempt_limit", "INT DEFAULT 0");
   await migrateBatches();
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
@@ -934,7 +938,7 @@ async function runScript(sql) {
 
 /* ---- exams ---- */
 async function examsList() {
-  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit, e.created_at,
+  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit, e.attempt_limit, e.created_at,
       co.title AS courseTitle, co.code AS courseCode,
       (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id=e.id) AS bankSize,
       (SELECT COUNT(*) FROM exam_attempts ea WHERE ea.exam_id=e.id AND ea.finished_at IS NOT NULL) AS attempts
@@ -988,6 +992,10 @@ async function latestAttempt(examId, userId) {
   const [[a]] = await q("SELECT * FROM exam_attempts WHERE exam_id=? AND user_id=? ORDER BY id DESC LIMIT 1", [examId, userId]);
   return a || null;
 }
+async function finishedAttemptCount(examId, userId) {
+  const [[c]] = await q("SELECT COUNT(*) AS n FROM exam_attempts WHERE exam_id=? AND user_id=? AND finished_at IS NOT NULL", [examId, userId]);
+  return c.n;
+}
 async function createAttempt(examId, userId, when, snapshot) {
   const [r] = await q("INSERT INTO exam_attempts (exam_id,user_id,started_at,snapshot) VALUES (?,?,?,?)", [examId, userId, when, snapshot]);
   return { id: r.insertId, started_at: when, snapshot };
@@ -1010,7 +1018,7 @@ async function studentAttemptsAdmin(userId) {
 async function studentExams(userId) {
   const ids = await enrolledIds(userId);
   if (ids.length === 0) return [];
-  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit,
+  const [rows] = await q(`SELECT e.id, e.course_id, e.title, e.question_count, e.time_limit, e.attempt_limit,
       co.title AS courseTitle, co.code AS courseCode,
       (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id=e.id) AS bankSize
     FROM exams e JOIN courses co ON co.id=e.course_id WHERE e.course_id IN (?) ORDER BY e.id DESC`, [ids]);
@@ -1018,7 +1026,8 @@ async function studentExams(userId) {
   for (const r of rows) {
     if (!r.bankSize) continue;
     const [[a]] = await q("SELECT id, started_at, finished_at, score, total FROM exam_attempts WHERE exam_id=? AND user_id=? ORDER BY id DESC LIMIT 1", [r.id, userId]);
-    out.push({ ...r, attempt: a || null });
+    const attemptsUsed = await finishedAttemptCount(r.id, userId);
+    out.push({ ...r, attempt: a || null, attemptsUsed });
   }
   return out;
 }
@@ -1245,7 +1254,7 @@ module.exports = {
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
   logActivity, listActivity, clearActivity,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
-  latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
+  latestAttempt, finishedAttemptCount, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, getBrandPublic, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getCaptcha, getCaptchaForClient, setCaptcha,

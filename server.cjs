@@ -1098,7 +1098,11 @@ app.put("/api/admin/exams/:id", auth, adminOnly, wrap(async (req, res) => {
   }
   const questionCount = Math.max(0, Number.parseInt(req.body?.questionCount, 10) || 0);
   const timeLimit = Math.max(0, Number.parseInt(req.body?.timeLimit, 10) || 0);
-  await q("UPDATE exams SET title=?, course_id=?, question_count=?, time_limit=? WHERE id=?", [title, courseId, questionCount, timeLimit, id]);
+  // 0 = unlimited retakes; a positive number caps the attempts. Invalid/missing
+  // keeps the safe default of unlimited.
+  let attemptLimit = Number.parseInt(req.body?.attemptLimit, 10);
+  if (!Number.isInteger(attemptLimit) || attemptLimit < 0) attemptLimit = 0;
+  await q("UPDATE exams SET title=?, course_id=?, question_count=?, time_limit=?, attempt_limit=? WHERE id=?", [title, courseId, questionCount, timeLimit, attemptLimit, id]);
   res.json({ exam: await dbmod.examFull(id), ...(await adminState()) });
 }));
 
@@ -1194,7 +1198,14 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
   }
   const meta = { title: exam.title, courseId: exam.course_id, courseTitle: exam.courseTitle, courseCode: exam.courseCode };
   if (attempt && attempt.finished_at) {
-    return res.json({ finished: true, score: attempt.score, total: attempt.total, ...meta });
+    // Retakes: attempt_limit 0 means unlimited; a positive number caps attempts.
+    const limit = Number(exam.attempt_limit ?? 0);
+    const used = await dbmod.finishedAttemptCount(eid, req.user.id);
+    const canRetake = limit === 0 || used < limit;
+    if (!(req.body?.retake && canRetake)) {
+      return res.json({ finished: true, score: attempt.score, total: attempt.total, attemptLimit: limit, attemptsUsed: used, canRetake, ...meta });
+    }
+    attempt = null; // retake requested and allowed -> start a fresh attempt below
   }
 
   let snap;

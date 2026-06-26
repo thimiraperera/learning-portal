@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock, CheckCircle, AlertTriangle, Send, Award } from "lucide-react";
+import { ArrowLeft, Clock, CheckCircle, AlertTriangle, Send, Award, RotateCcw } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
@@ -40,6 +40,18 @@ export default function ExamTake() {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [timed]);
+
+  const retake = async () => {
+    submittedRef.current = false;
+    setErr(null);
+    setState(null);
+    setAnswers([]);
+    try {
+      const d = await startExam(eid, { retake: true });
+      setState(d);
+      setAnswers(new Array((d.questions || []).length).fill(null));
+    } catch (e) { setErr(e.message); }
+  };
 
   const doSubmit = useCallback(async (auto = false) => {
     if (submittedRef.current) return;
@@ -93,7 +105,13 @@ export default function ExamTake() {
             {fmtScore(state.score)}/{state.total}
           </div>
           <div style={{ color: "#6B7280", fontWeight: 600, marginBottom: 20 }}>{pct}% correct</div>
-          <button className="btn btn-primary" onClick={() => navigate(`/courses/${state.courseId}`)}>Back to course</button>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            {state.canRetake && <Button className="btn btn-primary" onClick={retake}><RotateCcw style={{ width: 16, height: 16 }} /> Retake exam</Button>}
+            <button className={"btn " + (state.canRetake ? "btn-outline" : "btn-primary")} onClick={() => navigate(`/courses/${state.courseId}`)}>Back to course</button>
+          </div>
+          {state.canRetake && state.attemptLimit > 0 && (
+            <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 12 }}>Attempt {state.attemptsUsed} of {state.attemptLimit} used.</div>
+          )}
         </div>
       </Layout>
     );
