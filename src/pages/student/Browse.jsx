@@ -3,11 +3,12 @@ import { BookOpen, Send, Clock, Search, CheckCircle, AlertTriangle } from "lucid
 import Layout from "../../components/Layout.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
+import { previewWords } from "../../lib/text.js";
 
 /* Courses the student is NOT enrolled in. They can request enrolment;
    an admin approves it. */
 export default function Browse() {
-  const { locked, requests, requestCourse } = useStore();
+  const { locked, requests, requestCourse, brand } = useStore();
   const [qy, setQy] = useState("");
   const [msg, setMsg] = useState(null);
   const requested = new Set(requests);
@@ -49,7 +50,7 @@ export default function Browse() {
                   <span className="cc-sessions">{c.sessions} sessions</span>
                 </div>
                 <h3>{c.title}</h3>
-                <div className="cc-blurb">{c.blurb}</div>
+                <div className="cc-blurb">{previewWords(c.blurb, brand.courseCardWords)}</div>
                 <div className="cc-foot" style={{ justifyContent: "flex-end" }}>
                   {requested.has(c.id)
                     ? <span className="badge badge-pending"><Clock style={{ width: 13, height: 13, verticalAlign: "-2px", marginRight: 4 }} />Requested</span>

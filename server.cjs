@@ -698,7 +698,7 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   // and appears on certificates). Auto-generate one when the form omits it.
   let code = String(req.body?.code || "").trim().toUpperCase();
   if (!title) return res.status(400).json({ error: "Enter a course title." });
-  const blurb = String(req.body?.blurb || "").trim() || "Newly created course.";
+  const blurb = sanitizeHtml(req.body?.blurb || "").trim() || "Newly created course.";
   const sessions = Number.parseInt(req.body?.sessions, 10) || 0;
   // An unknown / removed template id just falls back to the default.
   let certTemplate = String(req.body?.certTemplate || "");
@@ -731,7 +731,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   await dbmod.updateCourse(id, {
     code, title, certTemplate,
     instructor: String(req.body?.instructor || ""),
-    blurb: String(req.body?.blurb || ""),
+    blurb: sanitizeHtml(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
   });
   res.json(await adminState());
@@ -1615,6 +1615,8 @@ app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
     logo: b.logo === undefined ? cur.logo : String(b.logo),
     loginIntro: b.loginIntro === undefined ? (cur.loginIntro || "") : sanitizeHtml(b.loginIntro),
     emailLogo,
+    // Word cap for the course description shown on course cards (1-200).
+    courseCardWords: b.courseCardWords === undefined ? (cur.courseCardWords ?? 30) : Math.max(1, Math.min(200, Number.parseInt(b.courseCardWords, 10) || 30)),
   };
   res.json(await dbmod.setBrandValue(brand));
 }));

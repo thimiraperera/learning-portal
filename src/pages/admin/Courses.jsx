@@ -5,12 +5,14 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
 import Button from "../../components/Button.jsx";
+import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
+import { previewWords } from "../../lib/text.js";
 
 const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [], batchNumber: "1" };
 
 export default function Courses() {
-  const { courses, users, instructors, addCourse, fetchCertTemplates, previewCertTemplate } = useStore();
+  const { courses, users, instructors, addCourse, fetchCertTemplates, previewCertTemplate, brand } = useStore();
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState({}); // { title, code, instructors }
@@ -107,7 +109,7 @@ export default function Courses() {
         */}
 
         <div className="form-group"><label className="form-label">Description</label>
-          <textarea className="form-control" rows="2" placeholder="What this course covers." value={form.blurb} onChange={set("blurb")} /></div>
+          <RichTextEditor value={form.blurb} onChange={(html) => { setForm((f) => ({ ...f, blurb: html })); setErrors((er) => ({ ...er, blurb: undefined })); }} placeholder="What this course covers. Use the toolbar for bold, lists, and links..." /></div>
 
         <div className="form-group" style={{ maxWidth: 240 }}>
           <label className="form-label">Starting batch number</label>
@@ -178,7 +180,7 @@ export default function Courses() {
                     <span className="cc-sessions">Batch {cur ? cur.number : 1}{cur && cur.status === "ended" ? " (ended)" : ""}</span>
                   </div>
                   <h3>{c.title}</h3>
-                  <div className="cc-blurb">{c.blurb}</div>
+                  <div className="cc-blurb">{previewWords(c.blurb, brand.courseCardWords)}</div>
                   <div className="cc-foot">
                     <span className="cc-stat"><PlayCircle /> {c.recordings.length}</span>
                     <span className="cc-stat"><Link2 /> {c.links.length}</span>

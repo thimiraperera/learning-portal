@@ -49,7 +49,7 @@ export default function CourseDetail() {
       <div className="page-hero">
         {/* Course code hidden for now: <div className="ph-code">{c.code}</div> */}
         <h1>{c.title}</h1>
-        <p>{c.blurb}</p>
+        <div className="course-blurb" dangerouslySetInnerHTML={{ __html: c.blurb || "" }} />
       </div>
 
       {isLocked && (

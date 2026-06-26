@@ -317,6 +317,13 @@ select.form-control { cursor: pointer; }
 .page-hero .ph-code { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--primary); text-transform: uppercase; }
 .page-hero h1 { font-size: 28px; font-weight: 800; color: var(--title); margin: 6px 0 6px; letter-spacing: -0.5px; }
 .page-hero p { font-size: 14.5px; color: #6B7280; }
+/* Rendered HTML course description (full view). Cards show a plain truncated preview. */
+.course-blurb { font-size: 14.5px; color: #6B7280; line-height: 1.6; }
+.course-blurb p { margin: 0 0 10px; }
+.course-blurb > :last-child { margin-bottom: 0; }
+.course-blurb ul, .course-blurb ol { margin: 8px 0; padding-left: 22px; }
+.course-blurb a { color: var(--primary); text-decoration: underline; }
+.course-blurb b, .course-blurb strong { font-weight: 700; }
 .batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 .back-link {
   display: inline-flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer;

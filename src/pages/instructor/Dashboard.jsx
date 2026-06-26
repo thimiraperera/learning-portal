@@ -2,9 +2,10 @@ import { useNavigate } from "react-router-dom";
 import { BookOpen, PlayCircle, Link2, FileDown, ChevronRight } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
+import { previewWords } from "../../lib/text.js";
 
 export default function InstructorDashboard() {
-  const { currentUser, courses } = useStore();
+  const { currentUser, courses, brand } = useStore();
   const navigate = useNavigate();
   const entries = Object.entries(courses);
   const greeting = currentUser.firstName || currentUser.nickname || currentUser.name.split(" ")[0];
@@ -32,7 +33,7 @@ export default function InstructorDashboard() {
                 <span className="cc-sessions">{c.sessions} sessions</span>
               </div>
               <h3>{c.title}</h3>
-              <div className="cc-blurb">{c.blurb}</div>
+              <div className="cc-blurb">{previewWords(c.blurb, brand.courseCardWords)}</div>
               <div className="cc-foot">
                 <span className="cc-stat"><PlayCircle /> {c.recordings.length}</span>
                 <span className="cc-stat"><Link2 /> {c.links.length}</span>

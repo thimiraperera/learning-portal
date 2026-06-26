@@ -16,6 +16,7 @@ import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
+import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
@@ -174,7 +175,7 @@ function DetailsTab({ id, c, store, navigate }) {
       <div className="form-group"><label className="form-label">Title</label>
         <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
       <div className="form-group"><label className="form-label">Description</label>
-        <textarea className="form-control" rows="3" value={blurb} onChange={(e) => setBlurb(e.target.value)} /></div>
+        <RichTextEditor value={blurb} onChange={setBlurb} placeholder="Describe what this course covers. Use the toolbar for bold, lists, and links..." /></div>
       <div className="form-group"><label className="form-label">Certificate template</label>
         <div style={{ display: "flex", gap: 10 }}>
           <select className="form-control" style={{ maxWidth: 300 }} value={certValue} onChange={(e) => setCertTemplate(e.target.value)}>

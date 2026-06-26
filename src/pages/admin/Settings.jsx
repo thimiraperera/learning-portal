@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn, LayoutGrid } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
@@ -138,6 +138,7 @@ export default function Settings() {
         <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
         <LoginPageCard brand={brand} setBrand={setBrand} />
+        <CourseCardsCard brand={brand} setBrand={setBrand} />
         <TwoFactor />
         <AdminsCard currentUser={currentUser} fetchAdmins={fetchAdmins} addAdmin={addAdmin} deleteAdmin={deleteAdmin} />
         <BackupCard downloadBackup={downloadBackup} restoreBackup={restoreBackup} />
@@ -218,6 +219,44 @@ function LoginPageCard({ brand, setBrand }) {
       </div>
 
       <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save description</Button>
+    </div>
+  );
+}
+
+function CourseCardsCard({ brand, setBrand }) {
+  const [words, setWords] = useState(brand.courseCardWords ?? 30);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { setWords(brand.courseCardWords ?? 30); }, [brand.courseCardWords]);
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const n = Math.max(1, Math.min(200, parseInt(words, 10) || 30));
+    try {
+      await setBrand({ courseCardWords: n });
+      setWords(n);
+      setMsg({ ok: true, text: `Course cards now show up to ${n} words of the description.` });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || "Could not save." });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><LayoutGrid style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Course cards</div>
+      <div className="card-subtitle">How many words of the course description to show on course cards. Keeps cards a consistent height. The full description still shows on the course page.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="form-group" style={{ maxWidth: 240 }}>
+        <label className="form-label">Description word limit</label>
+        <input className="form-control" type="number" min="1" max="200" value={words} onChange={(e) => setWords(e.target.value)} />
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Between 1 and 200 words. Default is 30.</div>
+      </div>
+
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save</Button>
     </div>
   );
 }

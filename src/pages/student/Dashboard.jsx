@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
+import { previewWords } from "../../lib/text.js";
 
 const RECENT_COUNT = 6;
 
@@ -117,6 +118,7 @@ function CertificatesSection({ certificates, download }) {
 }
 
 export function CourseCard({ c, onClick }) {
+  const { brand } = useStore();
   return (
     <button className="course-card" onClick={onClick}>
       <div className="cc-top">
@@ -124,7 +126,7 @@ export function CourseCard({ c, onClick }) {
         <span className="cc-sessions">{c.sessions} sessions</span>
       </div>
       <h3>{c.title}</h3>
-      <div className="cc-blurb">{c.blurb}</div>
+      <div className="cc-blurb">{previewWords(c.blurb, brand.courseCardWords)}</div>
       <div className="cc-foot">
         <span className="cc-stat"><PlayCircle /> {c.recordings.length}</span>
         <span className="cc-stat"><Link2 /> {c.links.length}</span>
