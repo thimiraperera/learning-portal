@@ -130,6 +130,7 @@ export default function CourseDetail() {
                 <div className="mr-meta">
                   {served} question{served === 1 ? "" : "s"}
                   {x.time_limit > 0 && <><span className="dot" /> <Clock /> {x.time_limit} min</>}
+                  {x.paymentLocked && !done && <><span className="dot" /> <Lock style={{ width: 12, height: 12 }} /> {x.lockReason}</>}
                 </div>
               </div>
               <div className="mr-actions">
@@ -137,16 +138,18 @@ export default function CourseDetail() {
                   ? (
                     <>
                       <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
-                      {canRetake && (
+                      {canRetake && !x.paymentLocked && (
                         <button className="btn btn-outline btn-sm" onClick={() => navigate(`/exams/${x.id}`)}><RotateCcw style={{ width: 14, height: 14 }} /> Retake</button>
                       )}
                     </>
                   )
-                  : (
-                    <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
-                      <Play /> {x.attempt ? "Resume" : "Start exam"}
-                    </button>
-                  )}
+                  : x.paymentLocked
+                    ? <span className="badge badge-muted" title={x.lockReason}><Lock style={{ width: 13, height: 13, verticalAlign: "-2px", marginRight: 4 }} /> Locked</span>
+                    : (
+                      <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
+                        <Play /> {x.attempt ? "Resume" : "Start exam"}
+                      </button>
+                    )}
               </div>
             </div>
           );

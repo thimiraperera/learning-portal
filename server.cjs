@@ -104,6 +104,17 @@ function installmentLabel(seq) {
   return `Installment ${n - 1}`;
 }
 
+/* Whether a student may take a batch's exams, given that batch's exam unlock
+   level: -1 = fully paid (default), 0 = everyone, N = after installment stage N.
+   Returns null when allowed, or a short reason string when still locked. */
+function examLockReason(unlock, plan, paidSeqs) {
+  const lvl = Number(unlock);
+  if (lvl === 0) return null;       // everyone
+  if (!plan) return null;           // no fees for this batch -> open
+  if (lvl === -1) return plan.remaining > 0.009 ? "Complete all course payments to unlock this exam." : null;
+  return (paidSeqs && paidSeqs.has(lvl)) ? null : `Unlocks after ${installmentLabel(lvl)} is paid.`;
+}
+
 /* Send mail via the stored SMTP settings. Returns {sent, reason}. */
 async function sendMail(to, subject, html, attachments) {
   const s = await dbmod.getSmtp();
@@ -425,12 +436,14 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     res.json({ currentUser: await publicUser(u), courses: ins ? await dbmod.coursesForInstructor(ins.id) : {}, brand: await dbmod.getBrandPublic() });
   } else {
     const ids = await dbmod.enrolledIds(u.id);
-    const courses = await dbmod.coursesMap(ids, await dbmod.enrolledBatches(u.id));
+    const batchByCourse = await dbmod.enrolledBatches(u.id);
+    const courses = await dbmod.coursesMap(ids, batchByCourse);
     const paymentLocked = await dbmod.lockedCourseIds(u.id);
     const plans = await dbmod.studentPlans(u.id);
     // Which installment seqs the student has paid, per course (for content gating).
     const paidByCourse = {};
-    for (const p of plans) paidByCourse[p.course_id] = new Set((p.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq)));
+    const planByCourse = {};
+    for (const p of plans) { paidByCourse[p.course_id] = new Set((p.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq))); planByCourse[p.course_id] = p; }
     // Locked courses stay visible but their content is withheld until unlocked.
     for (const cid of paymentLocked) {
       if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [] });
@@ -451,7 +464,16 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
           });
       }
     }
-    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams: await dbmod.studentExams(u.id), requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
+    // Exams unlock by payment level (per the student's batch): -1 fully paid
+    // (default), 0 everyone, N after that installment stage is paid.
+    const exams = await dbmod.studentExams(u.id);
+    const examUnlock = await dbmod.examUnlocksForBatches(Object.values(batchByCourse));
+    for (const ex of exams) {
+      ex.paymentLocked = false;
+      const reason = examLockReason(examUnlock[batchByCourse[ex.course_id]] ?? -1, planByCourse[ex.course_id], paidByCourse[ex.course_id]);
+      if (reason) { ex.paymentLocked = true; ex.lockReason = reason; }
+    }
+    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams, requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
   }
 }));
 
@@ -1200,6 +1222,13 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
   const enrolled = await dbmod.enrolledIds(req.user.id);
   if (!enrolled.includes(exam.course_id)) return res.status(403).json({ error: "You are not enrolled in this course." });
   if (await dbmod.isCourseLocked(req.user.id, exam.course_id)) return res.status(403).json({ error: "Access to this course is locked." });
+  // Payment gate: the student's batch decides which payment level unlocks exams.
+  const [[en]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [req.user.id, exam.course_id]);
+  const unlock = en ? ((await dbmod.examUnlocksForBatches([en.batch_id]))[en.batch_id] ?? -1) : -1;
+  const gatePlan = (await dbmod.studentPlans(req.user.id)).find((p) => p.course_id === exam.course_id);
+  const gatePaid = gatePlan ? new Set((gatePlan.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq))) : new Set();
+  const lockMsg = examLockReason(unlock, gatePlan, gatePaid);
+  if (lockMsg) return res.status(403).json({ error: lockMsg });
   const [bank] = await q("SELECT id, question, options, correct, qtype, corrects FROM exam_questions WHERE exam_id=?", [eid]);
   if (bank.length === 0) return res.status(400).json({ error: "This exam has no questions yet." });
 

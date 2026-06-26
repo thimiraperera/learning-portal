@@ -150,7 +150,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS course_payment_plans (
      course_id VARCHAR(32) PRIMARY KEY,
      total_fee DECIMAL(12,2) DEFAULT 0, reg_fee DECIMAL(12,2) DEFAULT 0, installments INT DEFAULT 0,
-     start_date VARCHAR(20) DEFAULT '', completion_date VARCHAR(20) DEFAULT ''
+     start_date VARCHAR(20) DEFAULT '', completion_date VARCHAR(20) DEFAULT '', exam_unlock INT DEFAULT -1
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
 ];
 
@@ -254,6 +254,9 @@ async function init() {
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
   // Per-recording passcode for its link (e.g. a Zoom passcode); students copy it.
   await ensureColumn("recordings", "link_password", "VARCHAR(255) DEFAULT ''");
+  // Per-batch payment level that unlocks exams: -1 = fully paid (default),
+  // 0 = everyone, N = after installment stage N (1 = reg fee, 2 = installment 1...).
+  await ensureColumn("course_payment_plans", "exam_unlock", "INT DEFAULT -1");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
   await ensureColumn("exam_questions", "corrects", "TEXT");
   await ensureColumn("users", "totp_secret", "VARCHAR(64)");
@@ -606,17 +609,27 @@ async function overduePayments() {
 // enrolled students, which writes each student's own schedule.
 async function getCoursePlan(batchId) {
   const [[row]] = await q("SELECT * FROM course_payment_plans WHERE batch_id=?", [batchId]);
-  if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
-  return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "" };
+  if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1 };
+  return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "", exam_unlock: row.exam_unlock == null ? -1 : Number(row.exam_unlock) };
 }
 async function setCoursePlan(courseId, batchId, f) {
   const total = Math.max(0, Number(f.total_fee) || 0);
   const reg = Math.max(0, Number(f.reg_fee) || 0);
   const inst = Math.max(0, Math.min(36, Math.floor(Number(f.installments) || 0)));
-  await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date) VALUES (?,?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date)`,
-    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20)]);
+  // -1 (fully paid) | 0 (everyone) | 1..inst+1 (after that installment stage).
+  let unlock = Math.floor(Number(f.exam_unlock));
+  if (!Number.isInteger(unlock) || unlock < -1 || unlock > inst + 1) unlock = -1;
+  await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date,exam_unlock) VALUES (?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date), exam_unlock=VALUES(exam_unlock)`,
+    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20), unlock]);
   return getCoursePlan(batchId);
+}
+// Map of batchId -> exam_unlock level, for gating student exam access.
+async function examUnlocksForBatches(batchIds) {
+  const ids = [...new Set((batchIds || []).filter((x) => x != null).map(Number))];
+  if (!ids.length) return {};
+  const [rows] = await q(`SELECT batch_id, exam_unlock FROM course_payment_plans WHERE batch_id IN (${ids.map(() => "?").join(",")})`, ids);
+  const m = {}; for (const r of rows) m[r.batch_id] = r.exam_unlock == null ? -1 : Number(r.exam_unlock); return m;
 }
 
 async function usersMap() {
@@ -1257,7 +1270,7 @@ module.exports = {
   addMaterialFile, getMaterial, courseMaterialFiles, instructorTeaches, paidInstallmentSeqs,
   createRequest, studentRequestIds, pendingRequests, getRequest, deleteRequest, clearRequest,
   studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
-  getCoursePlan, setCoursePlan,
+  getCoursePlan, setCoursePlan, examUnlocksForBatches,
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,

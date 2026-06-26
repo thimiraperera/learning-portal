@@ -200,7 +200,6 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
-  const [enrolment, setEnrolment] = useState("enrolled"); // all | enrolled | not; default shows this batch's students
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -211,16 +210,17 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   const all = Object.entries(users).filter(([, u]) => u.role === "student");
   const enrolledCount = all.filter(([, s]) => inThisBatch(s)).length;
 
+  // Always scoped to the viewed batch; the enrolment dropdown was removed.
   const filtered = all
+    .filter(([, s]) => inThisBatch(s))
     .filter(([, s]) => status === "all" || s.status === status)
-    .filter(([, s]) => enrolment === "all" ? true : (enrolment === "enrolled" ? inThisBatch(s) : !inThisBatch(s)))
     .filter(([email, s]) => !ql || s.name.toLowerCase().includes(ql) || email.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
-  const activeFilters = (status !== "all") + (enrolment !== "enrolled") + (ql ? 1 : 0);
+  const activeFilters = (status !== "all") + (ql ? 1 : 0);
 
   return (
     <>
@@ -230,11 +230,6 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
           <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search by full name or email"
             value={qy} onChange={(e) => { setQy(e.target.value); resetPage(); }} />
         </div>
-        <select className="form-control" style={{ flex: "0 0 170px" }} value={enrolment} onChange={(e) => { setEnrolment(e.target.value); resetPage(); }}>
-          <option value="all">All students</option>
-          <option value="enrolled">In this batch</option>
-          <option value="not">Not in this batch</option>
-        </select>
         <select className="form-control" style={{ flex: "0 0 150px" }} value={status} onChange={(e) => { setStatus(e.target.value); resetPage(); }}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -242,7 +237,7 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
           <option value="invited">Invited</option>
         </select>
         {activeFilters > 0 && (
-          <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); setEnrolment("enrolled"); resetPage(); }}><X /> Clear</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setQy(""); setStatus("all"); resetPage(); }}><X /> Clear</button>
         )}
       </div>
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 12 }}>{enrolledCount} enrolled in Batch {batchNum} · {filtered.length} of {all.length} students shown</div>
@@ -436,7 +431,7 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
 
   useEffect(() => {
     let alive = true;
-    const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "" };
+    const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1 };
     setPlan(null);
     fetchCoursePlan(id, batchId)
       .then((d) => { if (alive) { setPlan(d.plan || blank); setPreview(d.preview || []); } })
@@ -463,6 +458,13 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
   };
 
   const previewTotal = preview.reduce((n, x) => n + Number(x.amount || 0), 0);
+  // Exam-unlock options derived from this batch's plan (reg fee + installments).
+  const examOpts = [
+    { v: -1, label: "After full payment (all installments)" },
+    { v: 0, label: "Available to everyone (no payment needed)" },
+    ...(Number(plan.reg_fee) > 0 ? [{ v: 1, label: "After registration fee" }] : []),
+    ...Array.from({ length: Math.max(0, Math.min(36, Number(plan.installments) || 0)) }, (_, i) => ({ v: i + 2, label: `After Installment ${i + 1}` })),
+  ];
 
   return (
     <div style={{ maxWidth: 680 }}>
@@ -484,6 +486,13 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
       </div>
       <div className="form-group" style={{ maxWidth: 320 }}><label className="form-label">Complete all payments by <span className="req">*</span></label>
         <input className="form-control" type="date" value={plan.completion_date} onChange={set("completion_date")} /></div>
+
+      <div className="form-group" style={{ maxWidth: 360 }}><label className="form-label">Unlock exams</label>
+        <select className="form-control" value={plan.exam_unlock ?? -1} onChange={(e) => setPlan((p) => ({ ...p, exam_unlock: Number(e.target.value) }))}>
+          {examOpts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+        </select>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>By default students must finish all payments before they can write exams. Choose "everyone" to allow exams without payment, or unlock from an earlier installment. This setting is for {batchLabel} only.</div>
+      </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
         <Button className="btn btn-primary" loading={busy} onClick={saveAndApply}><Save /> Save & apply to {batchLabel} students</Button>
