@@ -359,7 +359,7 @@ select.form-control { cursor: pointer; }
 .media-row {
   display: flex; align-items: center; gap: 14px; padding: 14px 16px;
   background: white; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s; flex-wrap: wrap;
 }
 .media-row:hover { background: #FAFCFF; border-color: #D8E2F0; }
 .media-row .mr-icon {
@@ -367,7 +367,12 @@ select.form-control { cursor: pointer; }
   background: var(--primary-light); display: flex; align-items: center; justify-content: center;
 }
 .media-row .mr-icon svg { width: 19px; height: 19px; color: var(--primary); }
-.media-row .mr-body { flex: 1; min-width: 0; }
+/* flex-basis keeps the title comfortably wide; when the action buttons no longer
+   fit beside it, the whole .mr-actions group wraps to its own line (right-aligned)
+   instead of overlapping. */
+.media-row .mr-body { flex: 1 1 130px; min-width: 0; }
+/* Action button group on a media row: stays right, wraps below when cramped. */
+.mr-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; margin-left: auto; justify-content: flex-end; }
 .media-row .mr-title { font-size: 14px; font-weight: 600; color: var(--title); margin-bottom: 3px; }
 .media-row .mr-meta { font-size: 12px; color: #9CA3AF; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .media-row .mr-meta svg { width: 12px; height: 12px; }

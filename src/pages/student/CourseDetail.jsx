@@ -132,20 +132,22 @@ export default function CourseDetail() {
                   {x.time_limit > 0 && <><span className="dot" /> <Clock /> {x.time_limit} min</>}
                 </div>
               </div>
-              {done
-                ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
-                    {canRetake && (
-                      <button className="btn btn-outline btn-sm" onClick={() => navigate(`/exams/${x.id}`)}><RotateCcw style={{ width: 14, height: 14 }} /> Retake</button>
-                    )}
-                  </div>
-                )
-                : (
-                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
-                    <Play /> {x.attempt ? "Resume" : "Start exam"}
-                  </button>
-                )}
+              <div className="mr-actions">
+                {done
+                  ? (
+                    <>
+                      <span className="badge badge-accepted">Score {parseFloat(Number(x.attempt.score).toFixed(2))}/{x.attempt.total}</span>
+                      {canRetake && (
+                        <button className="btn btn-outline btn-sm" onClick={() => navigate(`/exams/${x.id}`)}><RotateCcw style={{ width: 14, height: 14 }} /> Retake</button>
+                      )}
+                    </>
+                  )
+                  : (
+                    <button className="btn btn-primary btn-sm" onClick={() => navigate(`/exams/${x.id}`)}>
+                      <Play /> {x.attempt ? "Resume" : "Start exam"}
+                    </button>
+                  )}
+              </div>
             </div>
           );
         })}
@@ -252,7 +254,7 @@ function CertificateView({ cert, plan, download, requestRedownload }) {
           <div className="mr-title">Course certificate</div>
           <div className="mr-meta">Certificate {cert.cert_no} · issued {issued}</div>
         </div>
-        {canDownload && <Button className="btn btn-primary btn-sm" onClick={get}><Download style={{ width: 15, height: 15 }} /> Download</Button>}
+        {canDownload && <div className="mr-actions"><Button className="btn btn-primary btn-sm" onClick={get}><Download style={{ width: 15, height: 15 }} /> Download</Button></div>}
       </div>
 
       {!fullyPaid && (
@@ -291,9 +293,9 @@ function MediaRow({ icon: Icon, title, meta, action, onAction, locked, lockLabel
           : (meta && <div className="mr-meta">{meta}</div>)}
       </div>
       {locked
-        ? <span className="badge badge-muted">Locked</span>
+        ? <span className="badge badge-muted" style={{ marginLeft: "auto" }}>Locked</span>
         : (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <div className="mr-actions">
             {linkPassword ? <CopyPasswordButton password={linkPassword} /> : null}
             {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
           </div>

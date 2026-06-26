@@ -65,7 +65,7 @@ function Row({ icon: Icon, title, meta, action, onAction }) {
         <div className="mr-title">{title}</div>
         {meta && <div className="mr-meta">{meta}</div>}
       </div>
-      {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
+      {action && <div className="mr-actions"><button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button></div>}
     </div>
   );
 }

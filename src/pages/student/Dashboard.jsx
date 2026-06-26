@@ -107,9 +107,11 @@ function CertificatesSection({ certificates, download }) {
               <div className="mr-meta">Certificate {c.cert_no}{c.downloaded && !c.unlocked ? " · already downloaded" : ""}</div>
               {msg && msg.id === c.id && <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 4 }}><AlertTriangle style={{ width: 12, height: 12, verticalAlign: "-2px" }} /> {msg.text}</div>}
             </div>
-            {canDownload
-              ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
-              : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+            <div className="mr-actions">
+              {canDownload
+                ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
+                : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+            </div>
           </div>
         );
       })}
