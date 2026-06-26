@@ -48,7 +48,8 @@ const TABLES = [
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS courses (
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
-     instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0
+     instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0,
+     recording_password VARCHAR(255) DEFAULT ''
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS batches (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL,
@@ -252,6 +253,8 @@ async function init() {
   await ensureColumn("users", "reset_expires", "BIGINT");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
+  // Shared passcode for a course's recording links (e.g. a Zoom passcode); students copy it.
+  await ensureColumn("courses", "recording_password", "VARCHAR(255) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
   await ensureColumn("exam_questions", "corrects", "TEXT");
   await ensureColumn("users", "totp_secret", "VARCHAR(64)");
@@ -359,6 +362,7 @@ async function courseFull(id, batchId) {
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
     certTemplate: c.cert_template || "",
+    recordingPassword: c.recording_password || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials, groups: [],
     planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
@@ -671,8 +675,8 @@ async function updateStudentProfile(id, f) {
   }
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=? WHERE id=?",
-    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=?, recording_password=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", f.recordingPassword || "", id]);
 }
 
 async function instructorsList() {

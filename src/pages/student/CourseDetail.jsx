@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet, RotateCcw, Award, Download, CheckCircle, AlertTriangle,
+  ArrowLeft, PlayCircle, Link2, FileDown, Clock, FileQuestion, Play, Lock, Wallet, RotateCcw, Award, Download, CheckCircle, AlertTriangle, Info, Copy, Check,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Button from "../../components/Button.jsx";
@@ -19,7 +19,7 @@ export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments, certificates, downloadCertificate, requestCertRedownload } = useStore();
-  const [tab, setTab] = useState("recordings");
+  const [tab, setTab] = useState("description");
   // Start every tab at the top of the page (long content can leave you scrolled down).
   useEffect(() => { window.scrollTo(0, 0); }, [tab]);
 
@@ -32,6 +32,7 @@ export default function CourseDetail() {
   const myCert = (certificates || []).find((c2) => c2.course_id === id) || null;
 
   const tabs = [
+    { k: "description", label: "Description", icon: Info, n: null },
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
@@ -49,7 +50,6 @@ export default function CourseDetail() {
       <div className="page-hero">
         {/* Course code hidden for now: <div className="ph-code">{c.code}</div> */}
         <h1>{c.title}</h1>
-        <div className="course-blurb" dangerouslySetInnerHTML={{ __html: c.blurb || "" }} />
       </div>
 
       {isLocked && (
@@ -64,17 +64,24 @@ export default function CourseDetail() {
         <div className="tabs">
           {tabs.map((t) => (
             <button key={t.k} className={"tab-btn" + (tab === t.k ? " on" : "")} onClick={() => setTab(t.k)}>
-              <t.icon /> <span className="tab-label">{t.label}</span> <span className="tab-count">{t.n}</span>
+              <t.icon /> <span className="tab-label">{t.label}</span> {t.n != null && <span className="tab-count">{t.n}</span>}
             </button>
           ))}
         </div>
+
+        {tab === "description" && (
+          c.blurb
+            ? <div className="course-blurb" dangerouslySetInnerHTML={{ __html: c.blurb }} />
+            : <div className="empty-state"><div className="empty-icon"><Info /></div><p>No description has been added for this course yet.</p></div>
+        )}
 
         {tab === "recordings" && (
           c.recordings.length === 0
             ? <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No recordings have been published yet.</p></div>
             : c.recordings.map((r) => (
                 <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
-                  action={r.u ? "Watch" : null} onAction={r.u ? () => { logActivity("recording", r.t); openUrl(r.u); } : null} />
+                  action={r.u ? "Watch" : null} onAction={r.u ? () => { logActivity("recording", r.t); openUrl(r.u); } : null}
+                  linkPassword={c.recordingPassword} />
               ))
         )}
 
@@ -248,7 +255,7 @@ function CertificateView({ cert, plan, download, requestRedownload }) {
   );
 }
 
-function MediaRow({ icon: Icon, title, meta, action, onAction, locked, lockLabel }) {
+function MediaRow({ icon: Icon, title, meta, action, onAction, locked, lockLabel, linkPassword }) {
   return (
     <div className="media-row">
       <div className="mr-icon"><Icon /></div>
@@ -260,7 +267,40 @@ function MediaRow({ icon: Icon, title, meta, action, onAction, locked, lockLabel
       </div>
       {locked
         ? <span className="badge badge-muted">Locked</span>
-        : (action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>)}
+        : (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {linkPassword ? <CopyPasswordButton password={linkPassword} /> : null}
+            {action && <button className="btn btn-outline btn-sm" onClick={onAction || undefined}>{action}</button>}
+          </div>
+        )}
     </div>
+  );
+}
+
+/* Copies the course's recording link password to the clipboard so the student
+   can paste it after opening the link, with a brief "Copied" indicator. The
+   password itself is never displayed. */
+function CopyPasswordButton({ password }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = password; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand("copy"); } catch { /* clipboard unavailable */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button className={"btn btn-sm " + (copied ? "btn-primary" : "btn-outline")} onClick={copy}
+      title="Copy the link password to paste after opening the link">
+      {copied
+        ? <><Check style={{ width: 14, height: 14 }} /> Copied</>
+        : <><Copy style={{ width: 14, height: 14 }} /> Copy Link Password</>}
+    </button>
   );
 }

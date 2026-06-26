@@ -433,7 +433,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     for (const p of plans) paidByCourse[p.course_id] = new Set((p.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq)));
     // Locked courses stay visible but their content is withheld until unlocked.
     for (const cid of paymentLocked) {
-      if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [] });
+      if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [], recordingPassword: "" });
     }
     // Installment-gated items stay visible but locked (no URL/file) until paid.
     for (const cid of Object.keys(courses)) {
@@ -733,6 +733,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
     instructor: String(req.body?.instructor || ""),
     blurb: sanitizeHtml(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
+    recordingPassword: String(req.body?.recordingPassword || "").slice(0, 255),
   });
   res.json(await adminState());
 }));

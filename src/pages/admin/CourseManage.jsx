@@ -135,6 +135,8 @@ function DetailsTab({ id, c, store, navigate }) {
   const [title, setTitle] = useState(c.title);
   const [blurb, setBlurb] = useState(c.blurb || "");
   const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
+  const [recordingPassword, setRecordingPassword] = useState(c.recordingPassword || "");
+  const [showPw, setShowPw] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [defaultId, setDefaultId] = useState("");
   const [msg, setMsg] = useState(null);
@@ -157,7 +159,7 @@ function DetailsTab({ id, c, store, navigate }) {
     if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue }));
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, recordingPassword }));
   const remove = async () => {
     if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
@@ -185,6 +187,14 @@ function DetailsTab({ id, c, store, navigate }) {
           <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
+      </div>
+      <div className="form-group" style={{ maxWidth: 360 }}><label className="form-label">Recording link password</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="form-control" type={showPw ? "text" : "password"} value={recordingPassword} autoComplete="off"
+            placeholder="e.g. Zoom passcode" onChange={(e) => setRecordingPassword(e.target.value)} />
+          <button className="btn btn-outline" type="button" title={showPw ? "Hide" : "Show"} onClick={() => setShowPw((s) => !s)}>{showPw ? <EyeOff /> : <Eye />}</button>
+        </div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The passcode for this course's recording links (e.g. a Zoom passcode). Students get a "Copy Link Password" button on each recording; the password itself is never shown to them.</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>
