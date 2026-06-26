@@ -2,11 +2,9 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   BookOpen, PlayCircle, FileDown, Link2, ChevronRight, Lock, ArrowRight, Award, Download, AlertTriangle,
-  Wallet,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, instBadge } from "../../lib/payments.js";
 
 const RECENT_COUNT = 6;
 
@@ -36,7 +34,7 @@ export default function Dashboard() {
 
       {missedTotal > 0 && (
         <div className="alert alert-danger" style={{ marginBottom: 18 }}>
-          <AlertTriangle /> You have {missedTotal} missed installment{missedTotal === 1 ? "" : "s"}. Please settle to keep your course access active{lockedCount > 0 ? `; ${lockedCount} course${lockedCount === 1 ? " is" : "s are"} currently locked.` : "."} See "My payments" below.
+          <AlertTriangle /> You have {missedTotal} missed installment{missedTotal === 1 ? "" : "s"}. Please settle to keep your course access active{lockedCount > 0 ? `; ${lockedCount} course${lockedCount === 1 ? " is" : "s are"} currently locked.` : "."} Open a course and check its Payments tab for the schedule.
         </div>
       )}
 
@@ -69,8 +67,6 @@ export default function Dashboard() {
           </div>
         </>
       )}
-
-      {payments && payments.length > 0 && <PaymentsSection plans={payments} />}
 
       {certificates.length > 0 && <CertificatesSection certificates={certificates} download={downloadCertificate} />}
 
@@ -113,50 +109,6 @@ function CertificatesSection({ certificates, download }) {
             {canDownload
               ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
               : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PaymentsSection({ plans }) {
-  return (
-    <div className="card" style={{ marginTop: 28 }}>
-      <div className="card-title"><Wallet style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />My payments</div>
-      <div className="card-subtitle">Your registration fee and installment schedule for each course.</div>
-      {plans.map((p) => {
-        const pb = planBadge(p.status);
-        const line = p.remaining <= 0
-          ? "Fully paid. Thank you."
-          : `You have ${rs(p.remaining)} remaining${p.nextDue ? `, next due on ${fmtDate(p.nextDue.due_date)}` : ""}.${p.missedCount > 0 ? ` ${p.missedCount} installment${p.missedCount === 1 ? " is" : "s are"} overdue.` : ""}`;
-        return (
-          <div key={p.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 700 }}>{p.courseTitle} <span className="cc-code" style={{ marginLeft: 4 }}>{p.courseCode}</span> <span className={"badge " + pb.cls} style={{ marginLeft: 6 }}>{pb.label}</span></div>
-              <div style={{ fontSize: 12.5, color: "#6B7280" }}>Total {rs(p.total)} · Paid {rs(p.paid)} · Remaining {rs(p.remaining)}</div>
-            </div>
-            <div style={{ fontSize: 13, color: p.missedCount > 0 ? "var(--danger)" : "#6B7280", marginTop: 8, fontWeight: p.missedCount > 0 ? 600 : 400 }}>{line}</div>
-            {p.installments.length > 0 && (
-              <div className="table-wrap" style={{ marginTop: 12 }}>
-                <table>
-                  <thead><tr><th>Installment</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {p.installments.map((it) => {
-                      const ib = instBadge(it.status);
-                      return (
-                        <tr key={it.id}>
-                          <td>{it.label}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>{rs(it.amount)}{it.status === "partial" ? ` (${rs(it.covered)} paid)` : ""}</td>
-                          <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(it.due_date)}</td>
-                          <td><span className={"badge " + ib.cls}>{ib.label}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         );
       })}
