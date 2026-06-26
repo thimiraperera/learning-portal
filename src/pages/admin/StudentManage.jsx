@@ -487,6 +487,32 @@ function PaymentHistoryTab({ id, store }) {
 /* Record-only view: the schedule comes from the course's payment plan (applied
    to enrolled students). The admin records payments here; the waterfall fills
    the registration fee and installments in order automatically. */
+/* Allocate the flat payment pool across the schedule the same way the server
+   does (a waterfall: fill each installment in order before money flows to the
+   next). This lets each installment row show the exact payment line(s) that
+   funded it. A single lump payment can span several installments, so it is
+   split into "slices" that each keep the original payment id; deleting any
+   slice removes the whole payment and the schedule reflows. Anything paid
+   beyond the last installment (legacy overpayments) lands in `over`. */
+function allocatePayments(installments, payments) {
+  const cents = (v) => Math.round(Number(v) * 100);
+  const rows = installments.map((it) => ({ inst: it, slices: [], remainC: cents(it.amount) }));
+  const over = [];
+  let ri = 0;
+  for (const p of payments) {
+    let leftC = cents(p.amount);
+    while (leftC > 0 && ri < rows.length) {
+      if (rows[ri].remainC <= 0) { ri++; continue; }
+      const useC = Math.min(leftC, rows[ri].remainC);
+      rows[ri].slices.push({ id: p.id, amount: useC / 100, note: p.note, paid_at: p.paid_at });
+      rows[ri].remainC -= useC;
+      leftC -= useC;
+    }
+    if (leftC > 0) over.push({ id: p.id, amount: leftC / 100, note: p.note, paid_at: p.paid_at });
+  }
+  return { rows, over };
+}
+
 function PlanCard({ course, plan, store, onApply }) {
   const { addPayment, removePayment } = store;
   const [amount, setAmount] = useState("");
@@ -513,7 +539,18 @@ function PlanCard({ course, plan, store, onApply }) {
   const delPay = async (payId) => onApply(await removePayment(payId));
 
   const pb = plan ? planBadge(plan.status) : null;
-  const faded = { background: "#FAFBFC" };
+  const alloc = plan ? allocatePayments(plan.installments, plan.payments) : null;
+  const dstr = (ms) => fmtDate(new Date(Number(ms)).toISOString().slice(0, 10));
+  // Stack one line per payment-slice inside a cell, keeping every column's
+  // lines the same height so the four payment columns stay aligned.
+  const lines = (slices, render) => slices.length === 0
+    ? <span style={{ color: "#C4C9D2" }}>-</span>
+    : slices.map((s, i) => (
+        <div key={`${s.id}-${i}`} title={typeof render(s) === "string" ? render(s) : undefined}
+          style={{ height: 26, lineHeight: "26px", display: "flex", alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderTop: i ? "1px solid #EFF1F4" : "none", marginTop: i ? 5 : 0, paddingTop: i ? 5 : 0 }}>
+          {render(s)}
+        </div>
+      ));
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
@@ -543,37 +580,49 @@ function PlanCard({ course, plan, store, onApply }) {
                 <span className="badge badge-muted">Total {rs(plan.total)}</span>
               </div>
 
-              {/* One combined table: the installment schedule, then the payments
-                  received (delete only removes a payment, never the schedule). */}
+              {/* One table, one row per installment. Each row shows the payment
+                  line(s) that funded it inside the Payment date / Note / Amount
+                  cells; if an installment took two or more payments they stack
+                  in the cell. Deleting a payment line removes that payment and
+                  the schedule reflows (the installments themselves come from the
+                  course plan and are never deleted here). */}
               <div className="table-wrap" style={{ marginBottom: 12 }}>
                 <table>
-                  <thead><tr><th>Installment</th><th>Amount</th><th>Due</th><th>Payment date</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+                  <thead><tr><th>Installment</th><th>Amount</th><th>Due</th><th>Payment date</th><th>Note</th><th>Paid</th><th></th></tr></thead>
                   <tbody>
-                    {plan.installments.map((it) => {
+                    {alloc.rows.map(({ inst: it, slices }) => {
                       const ib = instBadge(it.status);
                       return (
                         <tr key={`i${it.id}`}>
-                          <td>{it.label} <span className={"badge " + ib.cls} style={{ marginLeft: 4 }}>{ib.label}</span></td>
-                          <td style={{ whiteSpace: "nowrap" }}>{rs(it.amount)}{it.status === "partial" ? ` (${rs(it.covered)} paid)` : ""}</td>
-                          <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(it.due_date)}</td>
-                          <td colSpan={4} style={faded}></td>
+                          <td style={{ verticalAlign: "top" }}>{it.label} <span className={"badge " + ib.cls} style={{ marginLeft: 4 }}>{ib.label}</span></td>
+                          <td style={{ whiteSpace: "nowrap", verticalAlign: "top" }}>{rs(it.amount)}</td>
+                          <td style={{ color: "#6B7280", whiteSpace: "nowrap", verticalAlign: "top" }}>{fmtDate(it.due_date)}</td>
+                          <td style={{ color: "#6B7280", whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(slices, (s) => dstr(s.paid_at))}</td>
+                          <td style={{ color: "#6B7280", verticalAlign: "top" }}>{lines(slices, (s) => s.note || "-")}</td>
+                          <td style={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(slices, (s) => rs(s.amount))}</td>
+                          <td style={{ textAlign: "right", verticalAlign: "top" }}>
+                            {lines(slices, (s) => (
+                              <button className="icon-btn-plain" title="Delete this payment (the schedule reflows automatically; it does not remove the installment)" onClick={() => delPay(s.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
+                            ))}
+                          </td>
                         </tr>
                       );
                     })}
-                    {plan.payments.length > 0 && (
-                      <tr><td colSpan={7} style={{ background: "#F8FAFD", color: "#9CA3AF", fontSize: 11, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Payments received</td></tr>
-                    )}
-                    {plan.payments.map((p) => (
-                      <tr key={`p${p.id}`}>
-                        <td colSpan={3} style={faded}></td>
-                        <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(new Date(Number(p.paid_at)).toISOString().slice(0, 10))}</td>
-                        <td style={{ color: "#6B7280" }}>{p.note || "-"}</td>
-                        <td style={{ fontWeight: 600 }}>{rs(p.amount)}</td>
-                        <td style={{ textAlign: "right" }}>
-                          <button className="icon-btn-plain" title="Delete this payment (does not change the schedule)" onClick={() => delPay(p.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
+                    {alloc.over.length > 0 && (
+                      <tr>
+                        <td style={{ color: "#B45309", fontStyle: "italic", verticalAlign: "top" }}>Unallocated (overpaid)</td>
+                        <td style={{ verticalAlign: "top" }}></td>
+                        <td style={{ verticalAlign: "top" }}></td>
+                        <td style={{ color: "#6B7280", whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(alloc.over, (s) => dstr(s.paid_at))}</td>
+                        <td style={{ color: "#6B7280", verticalAlign: "top" }}>{lines(alloc.over, (s) => s.note || "-")}</td>
+                        <td style={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(alloc.over, (s) => rs(s.amount))}</td>
+                        <td style={{ textAlign: "right", verticalAlign: "top" }}>
+                          {lines(alloc.over, (s) => (
+                            <button className="icon-btn-plain" title="Delete this payment (the schedule reflows automatically)" onClick={() => delPay(s.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
+                          ))}
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
