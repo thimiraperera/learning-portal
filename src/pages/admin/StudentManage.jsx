@@ -346,7 +346,7 @@ function CoursesTab({ id, email, s, store, navigate }) {
             const pb = planBadge(plan ? plan.status : "empty");
             const curNum = s.enrolledBatch ? s.enrolledBatch[cid] : null;
             const curBatch = (c.batches || []).find((b) => b.number === curNum);
-            const batchOptions = (c.batches || []).map((b) => ({ value: String(b.id), label: `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}` }));
+            const batchOptions = (c.batches || []).map((b) => ({ value: String(b.id), label: `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${b.number === curNum ? " - current" : ""}` }));
             return (
               <div key={cid} className="assigned-row">
                 <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
@@ -368,8 +368,11 @@ function CoursesTab({ id, email, s, store, navigate }) {
                   </span>
                 </button>
                 {batchOptions.length > 0 && (
-                  <SearchSelect style={{ flex: "0 0 150px" }} value={curBatch ? String(curBatch.id) : ""} placeholder="Set batch..." showAll={false}
-                    options={batchOptions} onChange={(v) => moveBatch(cid, c, v)} />
+                  <div className="stage-select" style={{ flex: "0 0 250px" }}>
+                    <span className="stage-select-label">Batch</span>
+                    <SearchSelect style={{ flex: "1 1 auto", minWidth: 0 }} value={curBatch ? String(curBatch.id) : ""} placeholder="Set batch..." showAll={false}
+                      options={batchOptions} onChange={(v) => moveBatch(cid, c, v)} />
+                  </div>
                 )}
                 <button className={"btn btn-sm " + (locked ? "btn-outline" : "btn-ghost")} title={locked ? "Unlock access" : "Lock access (e.g. unpaid)"}
                   onClick={() => setCourseLock(id, cid, !locked)}>
