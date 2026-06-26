@@ -16,7 +16,7 @@ export function openUrl(u) {
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses, exams, downloadMaterial, paymentLocked } = useStore();
+  const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity } = useStore();
   const [tab, setTab] = useState("recordings");
 
   // Guard: never render a course the student isn't enrolled in.
@@ -66,7 +66,7 @@ export default function CourseDetail() {
             ? <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No recordings have been published yet.</p></div>
             : c.recordings.map((r) => (
                 <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
-                  action={r.u ? "Watch" : null} onAction={r.u ? () => openUrl(r.u) : null} />
+                  action={r.u ? "Watch" : null} onAction={r.u ? () => { logActivity("recording", r.t); openUrl(r.u); } : null} />
               ))
         )}
 
@@ -75,7 +75,7 @@ export default function CourseDetail() {
             ? <div className="empty-state"><div className="empty-icon"><Link2 /></div><p>No course links have been added yet.</p></div>
             : c.links.map((r) => (
                 <MediaRow key={`l${r.id}`} icon={Link2} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
-                  action={r.u ? "Open" : null} onAction={r.u ? () => openUrl(r.u) : null} />
+                  action={r.u ? "Open" : null} onAction={r.u ? () => { logActivity("link", r.t); openUrl(r.u); } : null} />
               ))
         )}
 
@@ -85,7 +85,7 @@ export default function CourseDetail() {
             : c.materials.map((r) => (
                 <MediaRow key={`m${r.id}`} icon={FileDown} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
                   action={r.filename ? "Download" : (r.u ? "Open" : null)}
-                  onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => openUrl(r.u) : null)}
+                  onAction={r.filename ? () => downloadMaterial(r.id, r.t) : (r.u ? () => { logActivity("material_link", r.t); openUrl(r.u); } : null)}
                   meta={r.filename ? <><span className="ext-tag">{r.ext}</span> {r.size}</> : null} />
               ))
         )}

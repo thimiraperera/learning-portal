@@ -86,6 +86,11 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS sessions (
      token VARCHAR(64) PRIMARY KEY, user_id INT NOT NULL, created_at BIGINT, expires_at BIGINT
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
+  `CREATE TABLE IF NOT EXISTS activity_log (
+     id INT AUTO_INCREMENT PRIMARY KEY, user_id INT NOT NULL,
+     action VARCHAR(40) NOT NULL, detail VARCHAR(512) DEFAULT '', created_at BIGINT,
+     KEY idx_activity_user (user_id, id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS certificates (
      id INT AUTO_INCREMENT PRIMARY KEY, cert_no VARCHAR(40) NOT NULL UNIQUE,
      student_id INT NOT NULL, course_id VARCHAR(32) NOT NULL, issued_at BIGINT,
@@ -857,6 +862,21 @@ async function studentCertificates(studentId) {
 async function markCertDownloaded(id) { await q("UPDATE certificates SET downloaded=1, unlocked=0 WHERE id=?", [id]); }
 async function unlockCertificate(id) { await q("UPDATE certificates SET unlocked=1 WHERE id=?", [id]); }
 
+/* ---- student activity log (admin-visible audit trail) ---- */
+async function logActivity(userId, action, detail) {
+  if (!userId) return;
+  await q("INSERT INTO activity_log (user_id, action, detail, created_at) VALUES (?,?,?,?)",
+    [Number(userId), String(action || "").slice(0, 40), String(detail || "").slice(0, 512), Date.now()]);
+}
+async function listActivity(userId, limit = 300) {
+  const lim = Math.min(2000, Math.max(1, Number(limit) || 300));
+  const [rows] = await q(
+    "SELECT id, action, detail, created_at FROM activity_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+    [Number(userId), lim]); // newest first
+  return rows;
+}
+async function clearActivity(userId) { await q("DELETE FROM activity_log WHERE user_id=?", [Number(userId)]); }
+
 /* ---- backup / restore (data only; schema is recreated by init()) ---- */
 async function dumpDatabase() {
   const [tables] = await q("SHOW TABLES");
@@ -1223,6 +1243,7 @@ module.exports = {
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript, purgeData,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, markCertDownloaded, unlockCertificate,
+  logActivity, listActivity, clearActivity,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
   getBrand, getBrandPublic, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,

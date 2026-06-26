@@ -188,7 +188,7 @@ function DetailsTab({ id, c, store, navigate }) {
 }
 
 function StudentsTab({ id, batchId, batchNum, store, navigate }) {
-  const { users, toggleEnrol, plans } = store;
+  const { users, plans } = store;
   const planByUser = {};
   (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
   const [qy, setQy] = useState("");
@@ -214,18 +214,6 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
   const activeFilters = (status !== "all") + (enrolment !== "enrolled") + (ql ? 1 : 0);
-
-  // Add to / move into / remove from the viewed batch. Moving asks first, since
-  // it switches the student onto this batch's fee schedule.
-  const onToggle = async (email, s) => {
-    const inThis = inThisBatch(s);
-    const other = otherBatch(s);
-    if (!inThis && other != null) {
-      if (!(await popup.confirm(`Move ${s.name} from Batch ${other} to Batch ${batchNum}? Their fee schedule switches to Batch ${batchNum}'s plan (recorded payments are kept).`, { title: "Move to this batch", confirmText: `Move to Batch ${batchNum}` }))) return;
-    }
-    await toggleEnrol(email, id, batchId);
-    popup.toast(inThis ? "Removed from this batch" : (other != null ? `Moved to Batch ${batchNum}` : `Added to Batch ${batchNum}`));
-  };
 
   return (
     <>
@@ -280,9 +268,6 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
                   </div>
                 </div>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)}><Eye /> View</button>
-                {isEnrolled
-                  ? <Button className="btn btn-ghost btn-sm" onClick={() => onToggle(email, s)}><UserMinus /> Remove</Button>
-                  : <Button className="btn btn-primary btn-sm" onClick={() => onToggle(email, s)}><UserPlus /> {inOther != null ? `Move to Batch ${batchNum}` : `Add to Batch ${batchNum}`}</Button>}
               </div>
             );
           })}

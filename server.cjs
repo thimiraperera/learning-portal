@@ -302,6 +302,7 @@ app.post("/api/login", wrap(async (req, res) => {
   // "Remember me" keeps the session for 30 days; otherwise it lapses in a day.
   const expires = now + (remember ? 30 : 1) * 24 * 60 * 60 * 1000;
   await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, u.id, now, expires]);
+  if (u.role === "student") dbmod.logActivity(u.id, "login", "").catch(() => {});
   res.json({ token, user: await publicUser(u) });
 }));
 
@@ -363,6 +364,8 @@ app.post("/api/register/:token", wrap(async (req, res) => {
   }
   try {
     await dbmod.completeRegistration(req.params.token, { name, firstName, lastName, phone, gender, username }, bcrypt.hashSync(password, 10));
+    const nu = await dbmod.findLoginUser(username);
+    if (nu) dbmod.logActivity(nu.id, "register", "Completed registration").catch(() => {});
   } catch (e) {
     if (e && e.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "That username is already taken. Please choose another." });
     throw e;
@@ -520,6 +523,10 @@ app.delete("/api/admin/students", auth, adminOnly, wrap(async (req, res) => {
     await q("DELETE FROM payments WHERE plan_id IN (SELECT id FROM payment_plans WHERE user_id=?)", [u.id]);
     await q("DELETE FROM payment_installments WHERE plan_id IN (SELECT id FROM payment_plans WHERE user_id=?)", [u.id]);
     await q("DELETE FROM payment_plans WHERE user_id=?", [u.id]);
+    await q("DELETE FROM certificates WHERE student_id=?", [u.id]);
+    await q("DELETE FROM course_requests WHERE user_id=?", [u.id]);
+    await q("DELETE FROM activity_log WHERE user_id=?", [u.id]);
+    await q("DELETE FROM sessions WHERE user_id=?", [u.id]);
     await q("DELETE FROM users WHERE id=?", [u.id]);
   }
   res.json(await adminState());
@@ -605,6 +612,16 @@ app.post("/api/admin/plans/:planId/payments", auth, adminOnly, wrap(async (req, 
   if (!plan) return res.status(404).json({ error: "Payment plan not found." });
   const amount = Number(req.body?.amount);
   if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "Enter a payment amount greater than zero." });
+  // Over-payment cap: total recorded payments may not exceed the course fee.
+  // Compare in integer cents (the schedule waterfall works in cents too).
+  const enriched = (await dbmod.studentPlans(plan.user_id)).find((pl) => pl.id === planId);
+  if (enriched) {
+    const remainingC = Math.round(enriched.total * 100) - Math.round(enriched.paid * 100);
+    if (Math.round(amount * 100) > remainingC) {
+      const rem = (Math.max(0, remainingC) / 100);
+      return res.status(400).json({ error: `That payment is more than the student owes. Outstanding balance is Rs. ${rem.toLocaleString("en-US")} (course fee Rs. ${enriched.total.toLocaleString("en-US")}, already paid Rs. ${enriched.paid.toLocaleString("en-US")}).` });
+    }
+  }
   const note = String(req.body?.note || "").slice(0, 255);
   const paidAt = Number(req.body?.paidAt) || Date.now();
   await dbmod.addPayment(planId, amount, note, paidAt);
@@ -912,9 +929,22 @@ app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   if (cert.downloaded && !cert.unlocked) return res.status(403).json({ error: "You have already downloaded this certificate. Ask your administrator to unlock it if you need it again." });
   const pdf = await certPdf(cert);
   await dbmod.markCertDownloaded(cert.id);
+  dbmod.logActivity(req.user.id, "certificate", `Downloaded certificate ${cert.cert_no}${cert.courseTitle ? ` (${cert.courseTitle})` : ""}`).catch(() => {});
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${cert.cert_no}.pdf"`);
   res.send(pdf);
+}));
+
+/* Log a client-side student action (opening an external recording/link/material
+   URL that has no other server call). Whitelisted actions only. */
+app.post("/api/activity/log", auth, wrap(async (req, res) => {
+  if (req.user.role !== "student") return res.json({ ok: true }); // only students are audited
+  const ALLOWED = { recording: "Opened recording", link: "Opened link", material_link: "Opened material link" };
+  const action = String(req.body?.action || "");
+  if (!ALLOWED[action]) return res.status(400).json({ error: "Unknown action." });
+  const title = String(req.body?.title || "").slice(0, 300);
+  await dbmod.logActivity(req.user.id, action, title ? `${ALLOWED[action]}: "${title}"` : ALLOWED[action]);
+  res.json({ ok: true });
 }));
 
 /* ---- certificate templates (admin) ---- */
@@ -1128,6 +1158,15 @@ app.get("/api/admin/students/:id/exams", auth, adminOnly, wrap(async (req, res) 
   res.json({ attempts: await dbmod.studentAttemptsAdmin(Number(req.params.id)) });
 }));
 
+/* ---- student activity log (admin-only view + clear) ---- */
+app.get("/api/admin/students/:id/activity", auth, adminOnly, wrap(async (req, res) => {
+  res.json({ activity: await dbmod.listActivity(Number(req.params.id), Number(req.query.limit) || 300) });
+}));
+app.delete("/api/admin/students/:id/activity", auth, adminOnly, wrap(async (req, res) => {
+  await dbmod.clearActivity(Number(req.params.id));
+  res.json({ activity: [] });
+}));
+
 /* ---- exams (student) ---- */
 app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
   const eid = Number(req.params.id);
@@ -1172,6 +1211,7 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
     });
     snap = { questions: qs };
     attempt = await dbmod.createAttempt(eid, req.user.id, Date.now(), JSON.stringify(snap));
+    dbmod.logActivity(req.user.id, "exam_start", `Started exam "${exam.title}"`).catch(() => {});
   }
   res.json({
     ...meta,
@@ -1194,6 +1234,7 @@ app.post("/api/exams/:id/submit", auth, wrap(async (req, res) => {
   const answers = expired ? [] : (Array.isArray(req.body?.answers) ? req.body.answers : []);
   const score = gradeAttempt(snap.questions, answers);
   await dbmod.finishAttempt(attempt.id, score, snap.questions.length, answers);
+  dbmod.logActivity(req.user.id, "exam_submit", `Submitted "${exam.title}" - scored ${score}/${snap.questions.length}`).catch(() => {});
   res.json({ finished: true, score, total: snap.questions.length });
 }));
 
@@ -1302,6 +1343,7 @@ app.get("/api/materials/:id/file", auth, wrap(async (req, res) => {
   }
   const abs = path.join(STORAGE, m.filename);
   if (!abs.startsWith(STORAGE) || !fs.existsSync(abs)) return res.status(404).json({ error: "File not found." });
+  if (req.user.role === "student") dbmod.logActivity(req.user.id, "material", `Downloaded "${m.title}"`).catch(() => {});
   res.download(abs, m.title || path.basename(abs));
 }));
 

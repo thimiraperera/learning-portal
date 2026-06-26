@@ -282,6 +282,14 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const downloadMaterial = useCallback((id, name) => fetchBlobDownload(`/materials/${id}/file`, name || "file"), [token]);
+  // Fire-and-forget: log a student opening an external recording/link/material URL.
+  const logActivity = useCallback((action, title) =>
+    api("/activity/log", { method: "POST", token, body: { action, title } }).catch(() => {}), [token]);
+  // Admin: load / clear a student's activity log (lazy, returns the rows).
+  const fetchStudentActivity = useCallback((id, limit = 300) =>
+    api(`/admin/students/${id}/activity${limit ? `?limit=${limit}` : ""}`, { token }).then((d) => d.activity || []), [token]);
+  const clearStudentActivity = useCallback((id) =>
+    api(`/admin/students/${id}/activity`, { method: "DELETE", token }).then((d) => d.activity || []), [token]);
 
   /* ---- administrator users ---- */
   const fetchAdmins = useCallback(() => api("/admin/admins", { token }).then((d) => d.admins || []), [token]);
@@ -526,6 +534,7 @@ export function StoreProvider({ children }) {
     toggleEnrol, addStudent, removeStudent, updateStudent,
     addCourse, updateCourse, deleteCourse, addItem, removeItem, reorderItems, setItemInstallment, updateItem,
     uploadMaterial, downloadMaterial, downloadBackup, restoreBackup,
+    logActivity, fetchStudentActivity, clearStudentActivity,
     fetchAdmins, addAdmin, deleteAdmin,
     addGroup, renameGroup, deleteGroup, reorderGroups,
     requestCourse, approveRequest, declineRequest,

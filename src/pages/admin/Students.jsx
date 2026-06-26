@@ -7,7 +7,7 @@ import SearchSelect from "../../components/SearchSelect.jsx";
 import Button from "../../components/Button.jsx";
 import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
-import { payFilterBucket } from "../../lib/payments.js";
+import { payFilterBucket, buildDeleteWarning } from "../../lib/payments.js";
 
 /* Build a sensible username suggestion from the full name: lowercase, strip
    accents, and join words with a hyphen ("John Doe" becomes "john-doe").
@@ -236,7 +236,7 @@ export default function Students() {
                           <Eye /> View
                         </button>
                         <button className="icon-btn-plain" title="Remove"
-                          onClick={async () => { if (await popup.confirm(`Remove ${s.name}? This deletes the account and its enrolments. This cannot be undone.`, { title: "Remove student", confirmText: "Remove", danger: true })) removeStudent(email); }}>
+                          onClick={async () => { if (await popup.confirm(buildDeleteWarning(s.name, plans.filter((p) => p.user_id === s.id)), { title: "Delete this student permanently?", confirmText: "Delete permanently", danger: true })) removeStudent(email); }}>
                           <Trash2 style={{ width: 16, height: 16 }} />
                         </button>
                       </td>

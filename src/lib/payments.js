@@ -4,6 +4,23 @@
 
 export const rs = (n) => "Rs. " + Number(n || 0).toLocaleString("en-US");
 
+/* Strong, shared warning text for deleting a student (used by the list and the
+   manage page). sPlans = that student's payment plans (each has paid/remaining). */
+export function buildDeleteWarning(name, sPlans) {
+  const totalPaid = (sPlans || []).reduce((n, p) => n + (p.paid || 0), 0);
+  const totalOwed = (sPlans || []).reduce((n, p) => n + (p.remaining || 0), 0);
+  const lines = [
+    `Deleting "${name}" permanently erases their entire record. This cannot be undone, and is NOT recommended.`,
+    "",
+    "It removes: the login account, all course enrolments, the payment plan and every recorded payment, all certificates, exam history, and the activity log.",
+    "",
+    totalOwed > 0 ? `Payments on file: ${rs(totalPaid)} paid, ${rs(totalOwed)} still owed.` : `Payments on file: ${rs(totalPaid)} paid.`,
+  ];
+  if (totalPaid > 0) lines.push("", `The student has already paid ${rs(totalPaid)}. Settle or refund any balance before you delete this record.`);
+  lines.push("", "Tip: to keep all history, set the account to Inactive instead of deleting.");
+  return lines.join("\n");
+}
+
 export function fmtDate(d) {
   if (!d) return "";
   const dt = new Date(d + "T00:00:00");
