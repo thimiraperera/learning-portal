@@ -48,8 +48,7 @@ const TABLES = [
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS courses (
      id VARCHAR(32) PRIMARY KEY, code VARCHAR(40) NOT NULL, title VARCHAR(255) NOT NULL,
-     instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0,
-     recording_password VARCHAR(255) DEFAULT ''
+     instructor VARCHAR(255), instructor_id INT, blurb TEXT, sessions INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS batches (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL,
@@ -70,7 +69,7 @@ const TABLES = [
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, title VARCHAR(255) NOT NULL, position INT DEFAULT 0
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS recordings (
-     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0
+     id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, date VARCHAR(64), length VARCHAR(64), position INT DEFAULT 0, link_password VARCHAR(255) DEFAULT ''
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`,
   `CREATE TABLE IF NOT EXISTS links (
      id INT AUTO_INCREMENT PRIMARY KEY, course_id VARCHAR(32) NOT NULL, group_id INT DEFAULT 0, title VARCHAR(255) NOT NULL, url TEXT, position INT DEFAULT 0
@@ -253,8 +252,8 @@ async function init() {
   await ensureColumn("users", "reset_expires", "BIGINT");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
-  // Shared passcode for a course's recording links (e.g. a Zoom passcode); students copy it.
-  await ensureColumn("courses", "recording_password", "VARCHAR(255) DEFAULT ''");
+  // Per-recording passcode for its link (e.g. a Zoom passcode); students copy it.
+  await ensureColumn("recordings", "link_password", "VARCHAR(255) DEFAULT ''");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
   await ensureColumn("exam_questions", "corrects", "TEXT");
   await ensureColumn("users", "totp_secret", "VARCHAR(64)");
@@ -355,14 +354,13 @@ async function courseFull(id, batchId) {
   }
   const [instructors] = await q(
     "SELECT i.id, i.name, i.title FROM course_instructors ci JOIN instructors i ON i.id=ci.instructor_id WHERE ci.course_id=? AND ci.batch_id=? ORDER BY i.name", [id, bid]);
-  const [recordings] = await q("SELECT id, title AS t, url AS u, installment_seq AS seq FROM recordings WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
+  const [recordings] = await q("SELECT id, title AS t, url AS u, installment_seq AS seq, link_password AS pw FROM recordings WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
   const [links] = await q("SELECT id, title AS t, url AS u, installment_seq AS seq FROM links WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
   const [materials] = await q("SELECT id, title AS t, size, ext, filename, url AS u, installment_seq AS seq FROM materials WHERE course_id=? AND batch_id=? ORDER BY position, id", [id, bid]);
   const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE batch_id=?", [bid]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
     certTemplate: c.cert_template || "",
-    recordingPassword: c.recording_password || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials, groups: [],
     planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
@@ -425,7 +423,7 @@ async function startNewBatch(courseId, { startDate = "", endDate = "", number } 
   const newId = r.insertId;
   if (prev) {
     await q("INSERT INTO course_instructors (course_id, instructor_id, batch_id) SELECT course_id, instructor_id, ? FROM course_instructors WHERE batch_id=?", [newId, prev.id]);
-    await q("INSERT INTO recordings (course_id, group_id, title, url, date, length, position, installment_seq, batch_id) SELECT course_id, group_id, title, url, date, length, position, installment_seq, ? FROM recordings WHERE batch_id=?", [newId, prev.id]);
+    await q("INSERT INTO recordings (course_id, group_id, title, url, date, length, position, installment_seq, batch_id, link_password) SELECT course_id, group_id, title, url, date, length, position, installment_seq, ?, link_password FROM recordings WHERE batch_id=?", [newId, prev.id]);
     await q("INSERT INTO links (course_id, group_id, title, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, url, position, installment_seq, ? FROM links WHERE batch_id=?", [newId, prev.id]);
     await q("INSERT INTO materials (course_id, group_id, title, size, ext, filename, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, size, ext, filename, url, position, installment_seq, ? FROM materials WHERE batch_id=?", [newId, prev.id]);
     await q("INSERT INTO course_payment_plans (course_id, total_fee, reg_fee, installments, start_date, completion_date, batch_id) SELECT course_id, total_fee, reg_fee, installments, start_date, completion_date, ? FROM course_payment_plans WHERE batch_id=?", [newId, prev.id]);
@@ -675,8 +673,8 @@ async function updateStudentProfile(id, f) {
   }
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=?, recording_password=? WHERE id=?",
-    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", f.recordingPassword || "", id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", id]);
 }
 
 async function instructorsList() {
@@ -746,7 +744,7 @@ async function deleteCourse(id) {
   await q("DELETE FROM courses WHERE id=?", [id]);
 }
 const ITEM_TABLE = { recordings: "recordings", links: "links", materials: "materials" };
-async function addCourseItem(courseId, batchId, bucket, title, url, seq) {
+async function addCourseItem(courseId, batchId, bucket, title, url, seq, password) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
   const bid = Number(batchId);
@@ -754,7 +752,7 @@ async function addCourseItem(courseId, batchId, bucket, title, url, seq) {
   const s = Math.max(-1, Number(seq) || 0); // -1 = None (hidden, admin only)
   // Position runs across the batch's bucket, so a new item lands at the bottom.
   const [[{ p }]] = await q(`SELECT COALESCE(MAX(position),-1)+1 AS p FROM ${t} WHERE course_id=? AND batch_id=?`, [courseId, bid]);
-  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq,batch_id) VALUES (?,0,?,?, '','', ?,?,?)", [courseId, title, u, p, s, bid]);
+  if (bucket === "recordings") await q("INSERT INTO recordings (course_id,group_id,title,url,date,length,position,installment_seq,batch_id,link_password) VALUES (?,0,?,?, '','', ?,?,?,?)", [courseId, title, u, p, s, bid, String(password || "").slice(0, 255)]);
   else if (bucket === "links") await q("INSERT INTO links (course_id,group_id,title,url,position,installment_seq,batch_id) VALUES (?,0,?,?, ?,?,?)", [courseId, title, u, p, s, bid]);
   else await q("INSERT INTO materials (course_id,group_id,title,url,size,ext,position,installment_seq,batch_id) VALUES (?,0,?,?, '','LINK', ?,?,?)", [courseId, title, u, p, s, bid]);
 }
@@ -770,12 +768,16 @@ async function removeCourseItem(courseId, bucket, itemId) {
 }
 // Edit an item's title (and URL for non-file items). Pass url=undefined to
 // leave the URL untouched (used for uploaded-file materials).
-async function updateCourseItem(courseId, bucket, itemId, title, url) {
+async function updateCourseItem(courseId, bucket, itemId, title, url, password) {
   const t = ITEM_TABLE[bucket];
   if (!t) return;
   const ttl = String(title || "").slice(0, 255);
-  if (url === undefined) await q(`UPDATE ${t} SET title=? WHERE id=? AND course_id=?`, [ttl, itemId, courseId]);
-  else await q(`UPDATE ${t} SET title=?, url=? WHERE id=? AND course_id=?`, [ttl, String(url || "").trim(), itemId, courseId]);
+  // Only recordings carry a per-item link password; pass undefined to leave it.
+  const setPw = bucket === "recordings" && password !== undefined;
+  const pwSet = setPw ? ", link_password=?" : "";
+  const pwArg = setPw ? [String(password || "").slice(0, 255)] : [];
+  if (url === undefined) await q(`UPDATE ${t} SET title=?${pwSet} WHERE id=? AND course_id=?`, [ttl, ...pwArg, itemId, courseId]);
+  else await q(`UPDATE ${t} SET title=?, url=?${pwSet} WHERE id=? AND course_id=?`, [ttl, String(url || "").trim(), ...pwArg, itemId, courseId]);
 }
 async function reorderItems(courseId, bucket, orderedIds) {
   const t = ITEM_TABLE[bucket];

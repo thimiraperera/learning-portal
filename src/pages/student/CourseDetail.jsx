@@ -81,7 +81,7 @@ export default function CourseDetail() {
             : c.recordings.map((r) => (
                 <MediaRow key={`r${r.id}`} icon={PlayCircle} title={r.t} locked={r.locked} lockLabel={r.lockLabel}
                   action={r.u ? "Watch" : null} onAction={r.u ? () => { logActivity("recording", r.t); openUrl(r.u); } : null}
-                  linkPassword={c.recordingPassword} />
+                  linkPassword={r.pw} />
               ))
         )}
 

@@ -135,8 +135,6 @@ function DetailsTab({ id, c, store, navigate }) {
   const [title, setTitle] = useState(c.title);
   const [blurb, setBlurb] = useState(c.blurb || "");
   const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
-  const [recordingPassword, setRecordingPassword] = useState(c.recordingPassword || "");
-  const [showPw, setShowPw] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [defaultId, setDefaultId] = useState("");
   const [msg, setMsg] = useState(null);
@@ -159,7 +157,7 @@ function DetailsTab({ id, c, store, navigate }) {
     if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, recordingPassword }));
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue }));
   const remove = async () => {
     if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
@@ -187,14 +185,6 @@ function DetailsTab({ id, c, store, navigate }) {
           <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
-      </div>
-      <div className="form-group" style={{ maxWidth: 360 }}><label className="form-label">Recording link password</label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input className="form-control" type={showPw ? "text" : "password"} value={recordingPassword} autoComplete="off"
-            placeholder="e.g. Zoom passcode" onChange={(e) => setRecordingPassword(e.target.value)} />
-          <button className="btn btn-outline" type="button" title={showPw ? "Hide" : "Show"} onClick={() => setShowPw((s) => !s)}>{showPw ? <EyeOff /> : <Eye />}</button>
-        </div>
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The passcode for this course's recording links (e.g. a Zoom passcode). Students get a "Copy Link Password" button on each recording; the password itself is never shown to them.</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>
@@ -585,26 +575,29 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
   const { addItem, removeItem, uploadMaterial, setItemInstallment, reorderItems, updateItem } = store;
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
+  const [pw, setPw] = useState("");             // link password for a new recording
   const [seq, setSeq] = useState(0); // payment stage for newly added items
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [editId, setEditId] = useState(null);  // item being edited
   const [et, setEt] = useState("");             // edited title
   const [eu, setEu] = useState("");             // edited url
+  const [ep, setEp] = useState("");             // edited recording link password
 
   // The store refresh only carries the current batch, so re-fetch the viewed batch after each change.
   const removeItemB = async (b, itemId) => { await removeItem(id, b, itemId); await reload(); };
   const setItemInstallmentB = async (b, itemId, s) => { await setItemInstallment(id, b, itemId, s); await reload(); popup.toast("Visibility updated"); };
-  const beginEdit = (it) => { setEditId(it.id); setEt(it.t); setEu(it.u || ""); };
+  const beginEdit = (it) => { setEditId(it.id); setEt(it.t); setEu(it.u || ""); setEp(it.pw || ""); };
   const saveEdit = async (it) => {
     if (!et.trim()) return;
-    const r = await updateItem(id, bucket, it.id, et.trim(), it.filename ? undefined : eu.trim());
+    const r = await updateItem(id, bucket, it.id, et.trim(), it.filename ? undefined : eu.trim(), bucket === "recordings" ? ep : undefined);
     if (r.ok) { setEditId(null); await reload(); }
   };
   const dragIdRef = useRef(null);              // synchronous source of truth for the drag
   const [dragId, setDragId] = useState(null);  // mirror, only for the .dragging style
   const [overId, setOverId] = useState(null);
   const isMaterials = bucket === "materials";
+  const isRecordings = bucket === "recordings";
   const buckets = installmentBuckets(installments);
   const TINTS = {
     recordings: { bg: "#EFF6FF", color: "#2563EB" },
@@ -629,8 +622,8 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
   const add = async () => {
     if (!value.trim()) { setErr("Enter a title."); return; }
     setErr(null);
-    const r = await addItem(id, batchId, bucket, value.trim(), url.trim(), seq);
-    if (r.ok) { setValue(""); setUrl(""); await reload(); popup.toast(`Added to ${title}`); } else setErr(r.msg);
+    const r = await addItem(id, batchId, bucket, value.trim(), url.trim(), seq, isRecordings ? pw.trim() : undefined);
+    if (r.ok) { setValue(""); setUrl(""); setPw(""); await reload(); popup.toast(`Added to ${title}`); } else setErr(r.msg);
   };
 
   const onFile = async (e) => {
@@ -664,6 +657,8 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
                         onChange={(e) => setEt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it); if (e.key === "Escape") setEditId(null); }} autoFocus />
                       {!it.filename && <input className="form-control" value={eu} placeholder="URL (https://...)"
                         onChange={(e) => setEu(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it); if (e.key === "Escape") setEditId(null); }} />}
+                      {isRecordings && <input className="form-control" value={ep} placeholder="Link password (e.g. Zoom passcode)"
+                        onChange={(e) => setEp(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(it); if (e.key === "Escape") setEditId(null); }} />}
                     </div>
                     <button className="icon-btn-soft" title="Save" onClick={() => saveEdit(it)}><Check style={{ width: 16, height: 16 }} /></button>
                     <button className="icon-btn-plain" title="Cancel" onClick={() => setEditId(null)}><X style={{ width: 16, height: 16 }} /></button>
@@ -678,6 +673,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
                       <div className="mr-title" style={{ marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
                         {it.t}
                         {(Number(it.seq) || 0) < 0 && <span className="hidden-tag"><EyeOff style={{ width: 12, height: 12 }} /> Hidden</span>}
+                        {isRecordings && it.pw && <span className="hidden-tag" style={{ color: "#2563EB", background: "#EFF6FF" }}>Passcode set</span>}
                       </div>
                       {it.filename
                         ? <div className="mr-meta"><span className="ext-tag">{it.ext}</span> {it.size}</div>
@@ -701,6 +697,10 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
           onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
         <input className="form-control" style={{ flex: "1 1 180px" }} placeholder={isMaterials ? "Link URL (or upload a file)" : "URL (https://...)"} value={url}
           onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        {isRecordings && (
+          <input className="form-control" style={{ flex: "1 1 150px" }} placeholder="Link password (optional)" value={pw}
+            onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        )}
         <Button className="btn btn-ghost" onClick={add}><Plus /> Add</Button>
         {isMaterials && (
           <label className="btn btn-outline" style={{ cursor: busy ? "default" : "pointer" }}>

@@ -235,16 +235,16 @@ export function StoreProvider({ children }) {
     applyAdmin(await api(`/admin/instructors/${id}`, { method: "DELETE", token }));
   }, [token]);
 
-  const addItem = useCallback(async (cid, batchId, bucket, title, url, installmentSeq = 0) => {
-    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, batchId, bucket, title, url, installmentSeq } })); return { ok: true }; }
+  const addItem = useCallback(async (cid, batchId, bucket, title, url, installmentSeq = 0, password) => {
+    try { applyAdmin(await api("/admin/items", { method: "POST", token, body: { courseId: cid, batchId, bucket, title, url, installmentSeq, password } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const setItemInstallment = useCallback(async (cid, bucket, itemId, installmentSeq) => {
     try { applyAdmin(await api("/admin/items/installment", { method: "POST", token, body: { courseId: cid, bucket, itemId, installmentSeq } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  const updateItem = useCallback(async (cid, bucket, itemId, title, url) => {
-    try { applyAdmin(await api("/admin/items/update", { method: "POST", token, body: { courseId: cid, bucket, itemId, title, url } })); return { ok: true }; }
+  const updateItem = useCallback(async (cid, bucket, itemId, title, url, password) => {
+    try { applyAdmin(await api("/admin/items/update", { method: "POST", token, body: { courseId: cid, bucket, itemId, title, url, password } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 

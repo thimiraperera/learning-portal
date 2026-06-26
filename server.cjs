@@ -433,7 +433,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     for (const p of plans) paidByCourse[p.course_id] = new Set((p.installments || []).filter((i) => i.status === "paid").map((i) => Number(i.seq)));
     // Locked courses stay visible but their content is withheld until unlocked.
     for (const cid of paymentLocked) {
-      if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [], recordingPassword: "" });
+      if (courses[cid]) Object.assign(courses[cid], { recordings: [], links: [], materials: [], groups: [] });
     }
     // Installment-gated items stay visible but locked (no URL/file) until paid.
     for (const cid of Object.keys(courses)) {
@@ -446,7 +446,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
           .map((it) => {
             const seq = Number(it.seq) || 0;
             if (seq <= 0 || paid.has(seq)) return { ...it, locked: false };
-            const { u: _url, filename: _f, ...rest } = it;
+            const { u: _url, filename: _f, pw: _pw, ...rest } = it;
             return { ...rest, locked: true, lockLabel: installmentLabel(seq) };
           });
       }
@@ -733,7 +733,6 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
     instructor: String(req.body?.instructor || ""),
     blurb: sanitizeHtml(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
-    recordingPassword: String(req.body?.recordingPassword || "").slice(0, 255),
   });
   res.json(await adminState());
 }));
@@ -1311,20 +1310,20 @@ async function removeFiles(relPaths) {
 
 const BUCKET = { recordings: "recordings", links: "links", materials: "materials" };
 app.post("/api/admin/items", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, batchId, bucket, title, url, installmentSeq } = req.body || {};
+  const { courseId, batchId, bucket, title, url, installmentSeq, password } = req.body || {};
   const t = String(title || "").trim();
   if (!BUCKET[bucket] || !t) return res.status(400).json({ error: "Enter a title." });
   const bid = Number(batchId) || await dbmod.currentBatchId(courseId);
-  await dbmod.addCourseItem(courseId, bid, bucket, t, String(url || "").trim(), Number(installmentSeq) || 0);
+  await dbmod.addCourseItem(courseId, bid, bucket, t, String(url || "").trim(), Number(installmentSeq) || 0, String(password || ""));
   res.json(await adminState());
 }));
 
 /* Edit a content item's title (and URL for non-file items). */
 app.post("/api/admin/items/update", auth, adminOnly, wrap(async (req, res) => {
-  const { courseId, bucket, itemId, title, url } = req.body || {};
+  const { courseId, bucket, itemId, title, url, password } = req.body || {};
   if (!BUCKET[bucket]) return res.status(400).json({ error: "Invalid bucket." });
   if (!String(title || "").trim()) return res.status(400).json({ error: "Enter a title." });
-  await dbmod.updateCourseItem(courseId, bucket, Number(itemId), String(title).trim(), url === undefined ? undefined : String(url || ""));
+  await dbmod.updateCourseItem(courseId, bucket, Number(itemId), String(title).trim(), url === undefined ? undefined : String(url || ""), password);
   res.json(await adminState());
 }));
 
