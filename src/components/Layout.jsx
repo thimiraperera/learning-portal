@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, Award, FileQuestion, Inbox, Compass, Wallet, Menu, Database,
+  LayoutDashboard, BookOpen, Users, Settings, LogOut, GraduationCap, UserCog, ChevronDown, Presentation, FileQuestion, Inbox, Compass, Wallet, Menu, Database,
 } from "lucide-react";
 import { useStore } from "../state.jsx";
 
@@ -35,7 +35,6 @@ export default function Layout({ title, children }) {
     { to: "/admin/instructors", label: "Instructors", icon: Presentation },
     { to: "/admin/requests", label: "Requests", icon: Inbox, count: (requests || []).length },
     { to: "/admin/exams", label: "Exams", icon: FileQuestion },
-    { to: "/admin/certificates", label: "Certificates", icon: Award },
     { to: "/admin/payments", label: "Payments", icon: Wallet, count: (overdue || []).length },
     // Local admins get a Backup tab (super admins use Settings -> Backup & restore).
     ...(isAdmin && !isSuper ? [{ to: "/admin/backup", label: "Backup", icon: Database }] : []),

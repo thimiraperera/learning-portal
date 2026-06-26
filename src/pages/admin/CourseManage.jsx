@@ -3,6 +3,7 @@ import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
   CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, EyeOff, GripVertical, Upload, Wallet, Pencil, Check, Layers,
+  Award, Send, Download, LockOpen,
 } from "lucide-react";
 
 // "Batch 2 · ongoing" style label for the batch dropdown / cards.
@@ -22,7 +23,7 @@ export default function CourseManage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const store = useStore();
-  const { courses, users, fetchCourseBatch, startNewBatch } = store;
+  const { courses, users, certificates, fetchCourseBatch, startNewBatch } = store;
   const c = courses[id];
   const [tab, setTab] = useState("details"); // open on Course details (first tab)
   const [viewBatchId, setViewBatchId] = useState(null); // null = current
@@ -47,6 +48,8 @@ export default function CourseManage() {
   const viewedNum = viewedBatch ? viewedBatch.number : null;
   const inBatch = (u) => u.enrolled.includes(id) && (u.enrolledBatch ? u.enrolledBatch[id] === viewedNum : true);
   const enrolledCount = Object.values(users).filter(inBatch).length;
+  // Certificates issued for this course in the viewed batch only.
+  const issuedCount = (certificates || []).filter((c) => c.course_id === id && (viewedNum == null || c.batchNumber === viewedNum)).length;
 
   const tabs = [
     { k: "details", label: "Course details", icon: SettingsIcon },
@@ -56,6 +59,7 @@ export default function CourseManage() {
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: data.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: data.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: data.materials.length },
+    { k: "certificates", label: "Certificates", icon: Award, n: issuedCount },
   ];
 
   const onStartNewBatch = async () => {
@@ -116,6 +120,7 @@ export default function CourseManage() {
         {tab === "links" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="links" title="Course links" Icon={Link2} items={data.links} placeholder="Link title" installments={data.planInstallments} />}
         {tab === "materials" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="materials" title="Materials" Icon={FileDown} items={data.materials} placeholder="Material title" installments={data.planInstallments} />}
         {tab === "students" && <StudentsTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} navigate={navigate} />}
+        {tab === "certificates" && <CertificatesTab id={id} batchNum={viewedNum} courseTitle={c.title} store={store} />}
         {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} batchId={activeBatchId} c={data} reload={reload} store={store} navigate={navigate} />}
       </div>
@@ -276,6 +281,146 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
         </>
       )}
     </>
+  );
+}
+
+function fmtCertDate(ts) { return new Date(Number(ts) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
+
+/* Issue and manage certificates for THIS course and THIS batch only. Scoping
+   the list to the viewed batch is what stops an accidental "issue to everyone":
+   only students enrolled in this course's selected batch can be ticked. */
+function CertificatesTab({ id, batchNum, courseTitle, store }) {
+  const { users, certificates, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
+  const [statusF, setStatusF] = useState("all");
+  const [qy, setQy] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [msg, setMsg] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const batchTag = batchNum != null ? `Batch ${batchNum}` : "this course";
+
+  // One row per student enrolled in THIS course's viewed batch, plus any
+  // certificate already issued for this course+batch (in case a student moved).
+  const rows = [];
+  const seen = new Set();
+  for (const u of Object.values(users)) {
+    if (u.role !== "student" || !u.enrolled.includes(id)) continue;
+    const stuBatch = u.enrolledBatch ? u.enrolledBatch[id] : null;
+    if (batchNum != null && stuBatch !== batchNum) continue;
+    const cert = certificates.find((c) => c.student_id === u.id && c.course_id === id) || null;
+    rows.push({ key: String(u.id), studentId: u.id, name: u.name, email: u.email, batchNumber: stuBatch, cert });
+    seen.add(String(u.id));
+  }
+  for (const c of certificates) {
+    if (c.course_id !== id || (batchNum != null && c.batchNumber !== batchNum) || seen.has(String(c.student_id))) continue;
+    rows.push({ key: String(c.student_id), studentId: c.student_id, name: c.studentName, email: c.studentEmail, batchNumber: c.batchNumber, cert: c });
+  }
+
+  const ql = qy.trim().toLowerCase();
+  const filtered = rows
+    .filter((r) => statusF === "all" || (statusF === "issued" ? r.cert : !r.cert))
+    .filter((r) => !ql || r.name.toLowerCase().includes(ql) || (r.email || "").toLowerCase().includes(ql));
+
+  const selectableKeys = filtered.filter((r) => !r.cert).map((r) => r.key);
+  const allChecked = selectableKeys.length > 0 && selectableKeys.every((k) => selected.has(k));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const reset = () => setPage(1);
+
+  const toggle = (k) => setSelected((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleAll = () => setSelected((s) => {
+    const n = new Set(s);
+    if (allChecked) selectableKeys.forEach((k) => n.delete(k)); else selectableKeys.forEach((k) => n.add(k));
+    return n;
+  });
+
+  const issue = async () => {
+    const pairs = filtered.filter((r) => !r.cert && selected.has(r.key)).map((r) => ({ studentId: r.studentId, courseId: id }));
+    if (pairs.length === 0) { setMsg({ ok: false, msg: "Tick at least one student to certify." }); return; }
+    if (!(await popup.confirm(
+      `Issue ${pairs.length} certificate${pairs.length === 1 ? "" : "s"} for "${courseTitle}" (${batchTag})? Each selected student gets a certificate for this course and an email. This only affects the students ticked below.`,
+      { title: "Issue certificates", confirmText: `Issue ${pairs.length}` }))) return;
+    const r = await issueManyCertificates(pairs);
+    setMsg(r);
+    if (r.ok) setSelected(new Set());
+  };
+
+  const act = async (fn) => { try { const r = await fn(); if (r) setMsg(r); } catch (e) { setMsg({ ok: false, msg: e.message }); } };
+  const statusBadge = (cert) => {
+    if (!cert) return <span className="badge badge-pending">Not issued</span>;
+    if (cert.unlocked) return <span className="badge badge-verify">Unlocked</span>;
+    if (cert.downloaded) return <span className="badge badge-muted">Downloaded</span>;
+    return <span className="badge badge-accepted">Available</span>;
+  };
+
+  return (
+    <div>
+      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Issuing is limited to <strong>{batchTag}</strong> of this course. Switch the batch selector above to certify a different batch. Only the students you tick are certified.</span></div>
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+
+      <div className="toolbar" style={{ marginBottom: 14 }}>
+        <select className="form-control" style={{ flex: "0 0 150px" }} value={statusF} onChange={(e) => { setStatusF(e.target.value); reset(); }}>
+          <option value="all">All statuses</option>
+          <option value="issued">Issued</option>
+          <option value="notissued">Not issued</option>
+        </select>
+        <div style={{ position: "relative", flex: "1 1 200px" }}>
+          <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
+          <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student name or email" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
+        </div>
+        <Button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
+          <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
+        </Button>
+      </div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 14 }}>{filtered.length} student{filtered.length === 1 ? "" : "s"} in {batchTag}</div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-state"><div className="empty-icon"><Award /></div><p>No students in {batchTag} match these filters.</p></div>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 44, textAlign: "center" }}>
+                    <input type="checkbox" checked={allChecked} disabled={selectableKeys.length === 0} onChange={toggleAll}
+                      style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: selectableKeys.length ? "pointer" : "default" }} />
+                  </th>
+                  <th>Student</th><th>Batch</th><th>Status</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {slice.map((r) => (
+                  <tr key={r.key} style={{ opacity: r.cert ? 0.85 : 1 }}>
+                    <td style={{ textAlign: "center" }}>
+                      {r.cert
+                        ? <CheckCircle style={{ width: 15, height: 15, color: "#16A34A" }} />
+                        : <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: "pointer" }} />}
+                    </td>
+                    <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
+                    <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
+                    <td>{statusBadge(r.cert)}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmtCertDate(r.cert.issued_at)}</div>}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {r.cert && <>
+                        <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(r.cert.id))}><Eye style={{ width: 16, height: 16 }} /></button>
+                        <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(r.cert.id, r.cert.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
+                        <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(r.cert.id))}><Send style={{ width: 16, height: 16 }} /></button>
+                        {r.cert.downloaded && !r.cert.unlocked && (
+                          <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(r.cert.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
+                        )}
+                      </>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={safePage} pageCount={pageCount} onChange={setPage}
+            pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }} total={filtered.length} />
+        </>
+      )}
+    </div>
   );
 }
 
