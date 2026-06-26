@@ -17,8 +17,32 @@ export function buildDeleteWarning(name, sPlans) {
     totalOwed > 0 ? `Payments on file: ${rs(totalPaid)} paid, ${rs(totalOwed)} still owed.` : `Payments on file: ${rs(totalPaid)} paid.`,
   ];
   if (totalPaid > 0) lines.push("", `The student has already paid ${rs(totalPaid)}. Settle or refund any balance before you delete this record.`);
-  lines.push("", "Tip: to keep all history, set the account to Inactive instead of deleting.");
+  lines.push("", "Recommended instead: Lock the account (set it to Inactive). The student can no longer sign in, but every record - payments, certificates, and history - is kept.");
   return lines.join("\n");
+}
+
+/* Allocate a plan's flat payment pool across its installments the same way the
+   server's waterfall does, so each installment row can show the payment line(s)
+   that funded it. A lump payment that spans several installments is split into
+   "slices" that each keep the original payment id; anything paid beyond the last
+   installment lands in `over`. Shared by the admin and student payment tables. */
+export function allocatePayments(installments, payments) {
+  const cents = (v) => Math.round(Number(v) * 100);
+  const rows = (installments || []).map((it) => ({ inst: it, slices: [], remainC: cents(it.amount) }));
+  const over = [];
+  let ri = 0;
+  for (const p of (payments || [])) {
+    let leftC = cents(p.amount);
+    while (leftC > 0 && ri < rows.length) {
+      if (rows[ri].remainC <= 0) { ri++; continue; }
+      const useC = Math.min(leftC, rows[ri].remainC);
+      rows[ri].slices.push({ id: p.id, amount: useC / 100, note: p.note, paid_at: p.paid_at });
+      rows[ri].remainC -= useC;
+      leftC -= useC;
+    }
+    if (leftC > 0) over.push({ id: p.id, amount: leftC / 100, note: p.note, paid_at: p.paid_at });
+  }
+  return { rows, over };
 }
 
 export function fmtDate(d) {

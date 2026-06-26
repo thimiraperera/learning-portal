@@ -670,12 +670,17 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
     const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
     const [[e0]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
     if (e0 && Number(e0.batch_id) === bid) {
-      // Already in this batch -> unenrol (toggle off).
+      // Already in this batch -> unenrol (toggle off). Removing the course also
+      // deletes that one course's payment plan + recorded payments (only this
+      // course; the student's other courses are untouched).
       await q("DELETE FROM enrolments WHERE user_id=? AND course_id=?", [u.id, cid]);
+      await dbmod.deletePlan(u.id, cid);
     } else if (e0) {
-      // Enrolled in a different batch -> move them to this batch and apply its fee.
+      // Enrolled in a different batch -> move them to this batch. By default we
+      // re-apply the new batch's fee, but keepFee leaves their existing schedule
+      // and recorded payments alone so they keep their old batch's price.
       await q("UPDATE enrolments SET batch_id=? WHERE user_id=? AND course_id=?", [bid, u.id, cid]);
-      await applyCoursePlanToStudent(u.id, cid);
+      if (!req.body?.keepFee) await applyCoursePlanToStudent(u.id, cid);
     } else {
       // Not enrolled -> enrol into this batch and apply its fee.
       await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?)", [u.id, cid, bid]);

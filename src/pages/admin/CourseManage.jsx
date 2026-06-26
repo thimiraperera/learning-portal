@@ -40,6 +40,7 @@ export default function CourseManage() {
     try { setBc(await fetchCourseBatch(id, activeBatchId)); } catch { /* keep last */ }
   }, [id, activeBatchId, c, fetchCourseBatch]);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { window.scrollTo(0, 0); }, [tab]); // each tab starts at the top
 
   if (!c) return <Navigate to="/admin/courses" replace />;
 

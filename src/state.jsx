@@ -179,8 +179,8 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   /* ---- admin mutations (each returns the fresh admin state) ---- */
-  const toggleEnrol = useCallback(async (email, cid, batchId) => {
-    applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid, batchId } }));
+  const toggleEnrol = useCallback(async (email, cid, batchId, keepFee) => {
+    applyAdmin(await api("/admin/enrol", { method: "POST", token, body: { email, courseId: cid, batchId, keepFee: !!keepFee } }));
   }, [token]);
 
   const addStudent = useCallback(async (name, email, username) => {

@@ -11,7 +11,7 @@ import PhoneInput from "../../components/PhoneInput.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, instBadge, buildDeleteWarning } from "../../lib/payments.js";
+import { rs, fmtDate, planBadge, instBadge, buildDeleteWarning, allocatePayments } from "../../lib/payments.js";
 
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
 const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -35,6 +35,7 @@ export default function StudentManage() {
   const store = useStore();
   const entry = Object.entries(store.users).find(([, u]) => u.id === sid);
   const [tab, setTab] = useState("courses"); // courses is the default open tab
+  useEffect(() => { window.scrollTo(0, 0); }, [tab]); // each tab starts at the top
 
   if (!entry) return <Navigate to="/admin/students" replace />;
   const [email, s] = entry;
@@ -324,15 +325,32 @@ function CoursesTab({ id, email, s, store, navigate }) {
   const add = async () => { if (sel) { await toggleEnrol(email, sel); setSel(""); } };
 
   // Move the student to a different batch of a course they are already in.
+  // We keep their existing schedule and recorded payments, so the student stays
+  // on the price they signed up for (their old batch's fee), not the new batch's.
   const moveBatch = async (cid, c, newBatchId) => {
     const curNum = s.enrolledBatch ? s.enrolledBatch[cid] : null;
     const cur = (c.batches || []).find((b) => b.number === curNum);
     const target = (c.batches || []).find((b) => String(b.id) === String(newBatchId));
     if (!target || (cur && String(cur.id) === String(newBatchId))) return; // same batch / unknown -> no-op
-    if (!(await popup.confirm(`Move ${s.name} to Batch ${target.number} of "${c.title}"? Their fee schedule switches to Batch ${target.number}'s plan (recorded payments are kept).`,
+    const fromTxt = cur ? `Batch ${cur.number}` : "their current batch";
+    if (!(await popup.confirm(
+      `Move ${s.name} to Batch ${target.number} of "${c.title}"?\n\nThe student keeps their ${fromTxt} fee schedule and all recorded payments - they will still see the ${fromTxt} price, NOT Batch ${target.number}'s price. If you want to charge Batch ${target.number}'s fee, re-apply that batch's payment plan afterwards.`,
       { title: "Move to batch", confirmText: `Move to Batch ${target.number}` }))) return;
-    await toggleEnrol(email, cid, newBatchId);
+    await toggleEnrol(email, cid, newBatchId, true); // keepFee: do not re-price
     popup.toast(`Moved to Batch ${target.number}`);
+  };
+
+  // Remove a course from the student. This also deletes that one course's
+  // payment plan and every recorded payment for it (nothing else is touched).
+  const removeCourse = async (cid, c) => {
+    const plan = planByCourse[cid];
+    const paidTxt = plan && plan.paid > 0
+      ? `\n\nThis also deletes this course's payment plan and the ${rs(plan.paid)} of recorded payments for it. Other courses are not affected. This cannot be undone.`
+      : `\n\nThis also deletes this course's payment plan and any recorded payments for it. Other courses are not affected. This cannot be undone.`;
+    if (!(await popup.confirm(`Remove ${s.name} from "${c.title}"?${paidTxt}`,
+      { title: "Remove from course", confirmText: "Remove course", danger: true }))) return;
+    await toggleEnrol(email, cid);
+    popup.toast(`Removed from ${c.title}`);
   };
 
   return (
@@ -378,7 +396,7 @@ function CoursesTab({ id, email, s, store, navigate }) {
                   onClick={() => setCourseLock(id, cid, !locked)}>
                   {locked ? <><Unlock /> Unlock</> : <><Lock /> Lock</>}
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => toggleEnrol(email, cid)}><UserMinus /> Remove</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => removeCourse(cid, c)}><UserMinus /> Remove</button>
               </div>
             );
           })}
@@ -490,32 +508,6 @@ function PaymentHistoryTab({ id, store }) {
 /* Record-only view: the schedule comes from the course's payment plan (applied
    to enrolled students). The admin records payments here; the waterfall fills
    the registration fee and installments in order automatically. */
-/* Allocate the flat payment pool across the schedule the same way the server
-   does (a waterfall: fill each installment in order before money flows to the
-   next). This lets each installment row show the exact payment line(s) that
-   funded it. A single lump payment can span several installments, so it is
-   split into "slices" that each keep the original payment id; deleting any
-   slice removes the whole payment and the schedule reflows. Anything paid
-   beyond the last installment (legacy overpayments) lands in `over`. */
-function allocatePayments(installments, payments) {
-  const cents = (v) => Math.round(Number(v) * 100);
-  const rows = installments.map((it) => ({ inst: it, slices: [], remainC: cents(it.amount) }));
-  const over = [];
-  let ri = 0;
-  for (const p of payments) {
-    let leftC = cents(p.amount);
-    while (leftC > 0 && ri < rows.length) {
-      if (rows[ri].remainC <= 0) { ri++; continue; }
-      const useC = Math.min(leftC, rows[ri].remainC);
-      rows[ri].slices.push({ id: p.id, amount: useC / 100, note: p.note, paid_at: p.paid_at });
-      rows[ri].remainC -= useC;
-      leftC -= useC;
-    }
-    if (leftC > 0) over.push({ id: p.id, amount: leftC / 100, note: p.note, paid_at: p.paid_at });
-  }
-  return { rows, over };
-}
-
 function PlanCard({ course, plan, store, onApply }) {
   const { addPayment, removePayment } = store;
   const [amount, setAmount] = useState("");
