@@ -11,7 +11,7 @@ import PhoneInput from "../../components/PhoneInput.jsx";
 import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, instBadge, buildDeleteWarning, allocatePayments } from "../../lib/payments.js";
+import { rs, fmtDate, fmtDateMs, planBadge, instBadge, buildDeleteWarning, allocatePayments } from "../../lib/payments.js";
 
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
 const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -403,13 +403,13 @@ function CoursesTab({ id, email, s, store, navigate }) {
         </div>
       )}
 
-      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROL IN A COURSE</div>
+      <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROLL IN A COURSE</div>
       <div className="toolbar" style={{ marginBottom: 0 }}>
         <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
           emptyText="Enrolled in every course already."
           options={available.map(([cid, c]) => ({ value: cid, label: c.title }))}
           onChange={setSel} />
-        <Button className="btn btn-primary" onClick={add} disabled={available.length === 0}><Plus /> Enrol</Button>
+        <Button className="btn btn-primary" onClick={add} disabled={available.length === 0}><Plus /> Enroll</Button>
       </div>
     </div>
   );
@@ -440,7 +440,7 @@ function PaymentsTab({ id, s, store }) {
       <div className="card-subtitle" style={{ marginTop: 0 }}>The schedule for each course comes from that course's payment plan. Record what the student pays and it fills the registration fee and installments in order automatically.</div>
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
       {enrolled.length === 0 ? (
-        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enrol the student in a course first.</p>
+        <p style={{ color: "#9CA3AF", fontSize: 13 }}>Enroll the student in a course first.</p>
       ) : (
         enrolled.map(([cid, c]) => (
           <PlanCard key={cid} course={c} plan={planByCourse[cid]} store={store} onApply={apply} />
@@ -488,7 +488,7 @@ function PaymentHistoryTab({ id, store }) {
               <tbody>
                 {slice.map((pay) => (
                   <tr key={pay.id}>
-                    <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(new Date(Number(pay.paid_at)).toISOString().slice(0, 10))}</td>
+                    <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateMs(pay.paid_at)}</td>
                     <td style={{ color: "#6B7280" }}>{pay.courseTitle}</td>
                     <td style={{ color: "#6B7280" }}>{pay.note || "-"}</td>
                     <td style={{ fontWeight: 600 }}>{rs(pay.amount)}</td>
@@ -535,7 +535,7 @@ function PlanCard({ course, plan, store, onApply }) {
 
   const pb = plan ? planBadge(plan.status) : null;
   const alloc = plan ? allocatePayments(plan.installments, plan.payments) : null;
-  const dstr = (ms) => fmtDate(new Date(Number(ms)).toISOString().slice(0, 10));
+  const dstr = (ms) => fmtDateMs(ms);
   // Stack one line per payment-slice inside a cell, keeping every column's
   // lines the same height so the four payment columns stay aligned.
   const lines = (slices, render) => slices.length === 0

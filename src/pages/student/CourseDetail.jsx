@@ -6,7 +6,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, instBadge, allocatePayments } from "../../lib/payments.js";
+import { rs, fmtDate, fmtDateMs, instBadge, allocatePayments } from "../../lib/payments.js";
 
 /* Open a user-entered URL safely in a new tab, adding https:// if missing. */
 export function openUrl(u) {
@@ -181,7 +181,7 @@ export default function CourseDetail() {
 function PaymentsView({ plan }) {
   if (!plan) return <div className="empty-state"><div className="empty-icon"><Wallet /></div><p>No payment plan has been set for this course yet.</p></div>;
   const alloc = allocatePayments(plan.installments, plan.payments);
-  const dstr = (ms) => fmtDate(new Date(Number(ms)).toISOString().slice(0, 10));
+  const dstr = (ms) => fmtDateMs(ms);
   const lines = (slices, render) => slices.length === 0
     ? <span style={{ color: "#C4C9D2" }}>-</span>
     : slices.map((s, i) => (

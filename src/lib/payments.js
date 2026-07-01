@@ -51,6 +51,14 @@ export function fmtDate(d) {
   return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+// Format a millisecond timestamp as a LOCAL calendar date. Payments are stored
+// as the local-midnight timestamp of the chosen day, so we format in local time
+// (not UTC via toISOString) to avoid an off-by-one for timezones ahead of UTC.
+export function fmtDateMs(ms) {
+  const dt = new Date(Number(ms));
+  return isNaN(dt) ? "" : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
 // Plan-level badge (shown in lists). `status` comes from the server, or null
 // when the student has no plan for the course.
 const PLAN_BADGE = {
