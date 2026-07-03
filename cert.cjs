@@ -9,9 +9,9 @@ const PDFDocument = require("pdfkit");
 
 const TEMPLATE_DIR = path.join(__dirname, "cert-templates");
 
-function formatDate(ts) {
+function formatDate(ts, tz) {
   const d = new Date(Number(ts) || Date.now());
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: tz || undefined });
 }
 
 function loadTemplates() {
@@ -39,7 +39,7 @@ function defaultTemplateId() {
   return templates.professional ? "professional" : (Object.keys(templates)[0] || null);
 }
 
-function generateCertificate(data, templateId) {
+function generateCertificate(data, templateId, tz) {
   const t = templates[templateId] || templates[defaultTemplateId()];
   return new Promise((resolve, reject) => {
     if (!t) return reject(new Error("No certificate templates are installed."));
@@ -48,7 +48,7 @@ function generateCertificate(data, templateId) {
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    t.render(doc, { ...data, issuedText: formatDate(data.issuedAt) });
+    t.render(doc, { ...data, issuedText: formatDate(data.issuedAt, tz) });
     doc.end();
   });
 }

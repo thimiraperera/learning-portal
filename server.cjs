@@ -214,11 +214,12 @@ async function applyCoursePlanToStudent(userId, courseId) {
 
 async function certPdf(cert) {
   const brand = await dbmod.getBrand();
+  const { tz } = await dbmod.getTimezoneConfig();
   return generateCertificate({
     brandName: brand.name, studentName: cert.studentName,
     courseTitle: cert.courseTitle, courseCode: cert.courseCode,
     certNo: cert.cert_no, issuedAt: cert.issued_at,
-  }, cert.certTemplate);
+  }, cert.certTemplate, tz);
 }
 
 /* small async wrapper so thrown errors become 500s instead of hanging.
@@ -271,7 +272,10 @@ async function adminState() {
 
 /* ---- public ---- */
 app.get("/api/brand", wrap(async (_req, res) => res.json(await dbmod.getBrandPublic())));
-app.get("/api/auth-config", wrap(async (_req, res) => res.json({ captcha: await dbmod.getCaptchaForClient(), showcase: await dbmod.loginShowcase() })));
+app.get("/api/auth-config", wrap(async (_req, res) => res.json({
+  captcha: await dbmod.getCaptchaForClient(), showcase: await dbmod.loginShowcase(),
+  timezone: (await dbmod.getTimezoneConfig()).tz,
+})));
 
 /* ---- first-admin setup (only works while no admin exists) ---- */
 app.get("/api/setup/needed", wrap(async (_req, res) => res.json({ needed: !(await dbmod.hasAdmin()) })));
@@ -998,11 +1002,12 @@ app.get("/api/admin/cert-templates", auth, adminOnly, wrap(async (_req, res) => 
 app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (req, res) => {
   if (!templatesList().some((t) => t.id === req.params.id)) return res.status(404).json({ error: "Template not found." });
   const brand = await dbmod.getBrand();
+  const { tz } = await dbmod.getTimezoneConfig();
   const pdf = await generateCertificate({
     brandName: brand.name, studentName: "Student Name",
     courseTitle: "Sample Course Title", courseCode: "SC-100",
     certNo: "CERT-SAMPLE", issuedAt: Date.now(),
-  }, req.params.id);
+  }, req.params.id, tz);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="template-${req.params.id}.pdf"`);
   res.send(pdf);
@@ -1658,6 +1663,17 @@ app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
 app.get("/api/admin/regnum", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
 app.put("/api/admin/regnum", auth, superOnly, wrap(async (req, res) => {
   res.json(await dbmod.setRegConfig({ prefix: req.body?.prefix, width: req.body?.width }));
+}));
+
+/* ---- app timezone ---- */
+app.get("/api/admin/timezone", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getTimezoneConfig())));
+app.put("/api/admin/timezone", auth, superOnly, wrap(async (req, res) => {
+  const tz = String(req.body?.tz || "").trim();
+  if (!tz) return res.status(400).json({ error: "Choose a timezone." });
+  let saved;
+  try { saved = await dbmod.setTimezoneConfig({ tz }); }
+  catch { return res.status(400).json({ error: "Unknown timezone." }); }
+  res.json(saved);
 }));
 
 /* ---- overdue payment reminders ---- */

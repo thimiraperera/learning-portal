@@ -521,7 +521,8 @@ function buildPlan(p, insts, pays, today) {
 // Enrich plan rows with their schedule + payments using two batched queries.
 async function enrichPlans(planRows) {
   if (!planRows.length) return [];
-  const today = new Date().toISOString().slice(0, 10);
+  const { tz } = await getTimezoneConfig();
+  const today = todayInTz(tz);
   const ids = planRows.map((p) => p.id);
   const ph = ids.map(() => "?").join(",");
   const [insts] = await q(`SELECT id, plan_id, seq, label, amount, due_date FROM payment_installments WHERE plan_id IN (${ph}) ORDER BY seq, id`, ids);
@@ -1147,6 +1148,34 @@ async function assignRegNo(userId) {
   return regNo;
 }
 
+/* ---- app timezone ---- */
+// One IANA timezone for the whole app (super admin only). It is the single
+// source of truth for "what day is it today" (overdue/missed detection,
+// content/exam unlocking, certificate dates) so every user sees the same
+// calendar day for a given due date, regardless of the server's OS timezone
+// or any individual visitor's browser/device timezone.
+const TIMEZONE_DEFAULT = { tz: "UTC" };
+function isValidTimezone(tz) {
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; }
+  catch { return false; }
+}
+async function getTimezoneConfig() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='timezone'");
+  return row ? { ...TIMEZONE_DEFAULT, ...JSON.parse(row.v) } : { ...TIMEZONE_DEFAULT };
+}
+async function setTimezoneConfig(next) {
+  const tz = String(next?.tz || "").trim() || "UTC";
+  if (!isValidTimezone(tz)) throw new Error("Unknown timezone.");
+  await q("INSERT INTO settings (k,v) VALUES ('timezone',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify({ tz })]);
+  return { tz };
+}
+// Today's calendar date (YYYY-MM-DD) as seen in the given timezone. en-CA
+// formats as ISO (year-month-day), which is what due_date/completion_date are
+// stored and compared as (plain text, lexicographically comparable).
+function todayInTz(tz) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz || "UTC" }).format(new Date());
+}
+
 /* ---- overdue payment reminders ---- */
 // Config holds whether daily reminders are on, plus a secret key the cron URL
 // uses to authenticate (so the daily job can run without a logged-in admin).
@@ -1273,6 +1302,7 @@ module.exports = {
   getCoursePlan, setCoursePlan, examUnlocksForBatches,
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
+  getTimezoneConfig, setTimezoneConfig,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript, purgeData,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, requestCertRedownload, markCertDownloaded, unlockCertificate,

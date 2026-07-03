@@ -45,18 +45,25 @@ export function allocatePayments(installments, payments) {
   return { rows, over };
 }
 
+// The app's configured timezone (admin Settings -> Timezone), applied here so
+// every visitor sees the same calendar date for a given due/payment date
+// regardless of their own device's timezone. Set once from the server config
+// (see state.jsx); falls back to the browser's local timezone until loaded.
+let APP_TZ = "";
+export function setAppTimezone(tz) { APP_TZ = tz || ""; }
+
 export function fmtDate(d) {
   if (!d) return "";
   const dt = new Date(d + "T00:00:00");
-  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: APP_TZ || undefined });
 }
 
-// Format a millisecond timestamp as a LOCAL calendar date. Payments are stored
-// as the local-midnight timestamp of the chosen day, so we format in local time
-// (not UTC via toISOString) to avoid an off-by-one for timezones ahead of UTC.
+// Format a millisecond timestamp as a calendar date in the app's configured
+// timezone (falls back to local time until that config loads), not UTC via
+// toISOString, to avoid an off-by-one for timezones ahead of UTC.
 export function fmtDateMs(ms) {
   const dt = new Date(Number(ms));
-  return isNaN(dt) ? "" : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return isNaN(dt) ? "" : dt.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: APP_TZ || undefined });
 }
 
 // Plan-level badge (shown in lists). `status` comes from the server, or null

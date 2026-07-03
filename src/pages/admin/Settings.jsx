@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn, LayoutGrid } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn, LayoutGrid, Clock } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
@@ -11,7 +11,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, timezone, saveTimezone, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin, purgeData } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -189,6 +189,7 @@ export default function Settings() {
         <SmtpCard smtp={smtp} saveSmtp={saveSmtp} sendTestMail={sendTestMail} />
         <CaptchaCard captcha={captcha} saveCaptcha={saveCaptcha} />
         <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
+        <TimezoneCard timezone={timezone} saveTimezone={saveTimezone} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
         <LoginPageCard brand={brand} setBrand={setBrand} />
         <CourseCardsCard brand={brand} setBrand={setBrand} />
@@ -593,6 +594,55 @@ function RegNumberCard({ regnum, saveRegnum }) {
       <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Example: <strong style={{ color: "#374151" }}>{example}</strong></div>
 
       <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save format</Button>
+    </div>
+  );
+}
+
+// One timezone for the whole app. It decides "what day is it today" for
+// overdue/missed installments, content/exam unlocking and certificate dates,
+// so every student and admin sees the same calendar day no matter where they
+// (or the server) happen to be.
+const TIMEZONE_OPTIONS = (() => {
+  // Intl's list does not include the plain "UTC" name (it has "Etc/UTC"
+  // instead), but "UTC" is the config default, so make sure it is selectable.
+  try { return ["UTC", ...Intl.supportedValuesOf("timeZone")]; }
+  catch { return ["UTC", "Asia/Colombo", "Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York", "America/Los_Angeles"]; }
+})();
+
+function TimezoneCard({ timezone, saveTimezone }) {
+  const [tz, setTz] = useState(timezone || "UTC");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { setTz(timezone || "UTC"); }, [timezone]);
+
+  const example = (() => {
+    try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, dateStyle: "medium", timeStyle: "short" }).format(new Date()); }
+    catch { return ""; }
+  })();
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    setMsg(await saveTimezone(tz));
+    setBusy(false);
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><Clock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Timezone</div>
+      <div className="card-subtitle">Used to decide overdue/missed payments, when content and exams unlock, and certificate dates, so every student and admin sees the same calendar day. If students keep reporting a date being off by one, set this to your organization's timezone.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
+
+      <div className="form-group">
+        <label className="form-label">Timezone</label>
+        <select className="form-control" value={tz} onChange={(e) => setTz(e.target.value)}>
+          {TIMEZONE_OPTIONS.map((z) => <option key={z} value={z}>{z}</option>)}
+        </select>
+      </div>
+      {example && <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Right now there: <strong style={{ color: "#374151" }}>{example}</strong></div>}
+
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save timezone</Button>
     </div>
   );
 }

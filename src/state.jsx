@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { setAppTimezone } from "./lib/payments.js";
 
 /* Store backed by the server API (see server.cjs / db.cjs).
    Data is no longer hard-coded in the browser; it lives in the SQLite
@@ -56,6 +57,7 @@ export function StoreProvider({ children }) {
   const [captcha, setCaptchaLocal] = useState({ provider: "none", siteKey: "", hasSecretKey: false, enabled: false });
   const [showcase, setShowcaseLocal] = useState(null); // login-page floating cards
   const [regnum, setRegnumLocal] = useState({ prefix: "", width: 4 });
+  const [timezone, setTimezoneLocal] = useState("UTC");
   const [ready, setReady] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -111,6 +113,11 @@ export function StoreProvider({ children }) {
     }
   }
 
+  // Apply the app's configured timezone to the shared date formatters (see
+  // src/lib/payments.js) so due dates/payment dates render the same calendar
+  // day for every visitor, regardless of their own device's timezone.
+  useEffect(() => { setAppTimezone(timezone); }, [timezone]);
+
   // Reflect the brand favicon into the browser tab whenever it changes.
   useEffect(() => {
     if (!brand.favicon) return;
@@ -125,7 +132,7 @@ export function StoreProvider({ children }) {
     let alive = true;
     (async () => {
       try { const b = await api("/brand"); if (alive) setBrandLocal({ ...DEFAULT_BRAND, ...b }); } catch { /* ignore */ }
-      try { const cfg = await api("/auth-config"); if (alive) { if (cfg.captcha) setCaptchaLocal(cfg.captcha); setShowcaseLocal(cfg.showcase || null); } } catch { /* ignore */ }
+      try { const cfg = await api("/auth-config"); if (alive) { if (cfg.captcha) setCaptchaLocal(cfg.captcha); setShowcaseLocal(cfg.showcase || null); if (cfg.timezone) setTimezoneLocal(cfg.timezone); } } catch { /* ignore */ }
       if (token) {
         try {
           const data = await api("/bootstrap", { token });
@@ -470,6 +477,13 @@ export function StoreProvider({ children }) {
       return { ok: true, msg: "Registration number format saved. It applies to new numbers only." };
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const saveTimezone = useCallback(async (tz) => {
+    try {
+      const saved = await api("/admin/timezone", { method: "PUT", token, body: { tz } });
+      setTimezoneLocal(saved.tz);
+      return { ok: true, msg: "Timezone saved." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   const sendTestMail = useCallback(async (to) => {
     try {
@@ -544,7 +558,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum, timezone,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -559,7 +573,7 @@ export function StoreProvider({ children }) {
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
-    updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum,
+    updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum, saveTimezone,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
