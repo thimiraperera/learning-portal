@@ -1,15 +1,27 @@
 /* Professional certificate (Ceylon Exchange Mentoring navy/gold design).
-   Full-page decorative border background, with the logo, headings, seal and
-   all dynamic fields drawn on top with pdfkit.
+   Ported 1:1 from the supplied certificate.html/CSS: exact fonts (Libre
+   Baskerville, embedded), exact colors, exact positions - measured directly
+   off a browser-accurate reference render (see project notes). Only the
+   recipient name, program name, signer name/title/image, and the date are
+   dynamic; every other position/size/color is a literal constant from the
+   source design.
    d = { studentName, courseTitle, certProgramName, certNo, issuedText,
          signerName, signerTitle, signatureImage } */
 const path = require("path");
 const BG = path.join(__dirname, "assets", "professional-bg.png");
 const LOGO = path.join(__dirname, "assets", "professional-logo.png");
 const SEAL = path.join(__dirname, "assets", "professional-seal.png");
+const FONT_REGULAR = path.join(__dirname, "assets", "fonts", "LibreBaskerville-Regular.ttf");
+const FONT_ITALIC = path.join(__dirname, "assets", "fonts", "LibreBaskerville-Italic.ttf");
 
 const GOLD = "#725b31";
-const INK = "#111111";
+const INK = "#010101";
+// Measured on this font: pdfkit's text() y-parameter is the top of the line;
+// the rendered baseline sits ~0.97x the font size below that top. Used to
+// convert the reference design's exact baseline positions into pdfkit's
+// top-anchored y-parameter.
+const ASCENT_RATIO = 0.97;
+const topY = (baseline, size) => baseline - ASCENT_RATIO * size;
 
 // Largest font size (down to minSize) at which text fits on one line.
 function fitSize(doc, text, font, maxSize, minSize, maxWidth) {
@@ -24,116 +36,104 @@ module.exports = {
   render(doc, d) {
     const W = doc.page.width;  // 842
     const H = doc.page.height; // 595
-    const padSide = 99.21;
-    const contentX = padSide;
-    const contentW = W - padSide * 2;
-    const cx = W / 2;
+    const cx = W / 2;          // 421
+
+    doc.registerFont("LB-Regular", FONT_REGULAR);
+    doc.registerFont("LB-Italic", FONT_ITALIC);
 
     doc.image(BG, 0, 0, { width: W, height: H });
-
-    let y = 54;
-
-    // Logo (centered, fixed height, aspect-correct width).
-    const logoH = 54;
-    const logoW = logoH * (669 / 238);
-    doc.image(LOGO, cx - logoW / 2, y, { width: logoW, height: logoH });
-    y += logoH + 13;
+    doc.image(LOGO, 341.25, 57.0, { width: 159, height: 56.25 });
 
     // Title.
-    doc.font("Times-Roman").fontSize(41).fillColor(GOLD);
-    doc.text("Professional Certificate", contentX, y, { width: contentW, align: "center", lineBreak: false });
-    y += doc.currentLineHeight() + 8;
+    doc.font("LB-Regular").fontSize(48.75).fillColor(GOLD)
+      .text("Professional Certificate", 0, topY(174.75, 48.75), { width: W, align: "center", lineBreak: false });
 
-    // Subtitle, with short decorative rules hugging either side of the text.
-    const subtitle = "In Stock Market Investments";
-    doc.font("Times-Roman").fontSize(21).fillColor(INK);
-    const subH = doc.currentLineHeight();
-    const subW = doc.widthOfString(subtitle);
-    doc.text(subtitle, contentX, y, { width: contentW, align: "center", lineBreak: false });
-    const lineY = y + subH / 2;
-    const subGap = 16, subLineLen = 46;
-    doc.save().lineWidth(1.4).strokeColor(GOLD)
-      .moveTo(cx - subW / 2 - subGap - subLineLen, lineY).lineTo(cx - subW / 2 - subGap, lineY).stroke()
-      .moveTo(cx + subW / 2 + subGap, lineY).lineTo(cx + subW / 2 + subGap + subLineLen, lineY).stroke()
+    // Subtitle, with fixed decorative gold rules either side (exact positions
+    // from the source design - these do not move with subtitle text length).
+    doc.font("LB-Regular").fontSize(23.25).fillColor(INK)
+      .text("In Stock Market Investments", 0, topY(221.25, 23.25), { width: W, align: "center", lineBreak: false });
+    doc.save().lineWidth(1.5).strokeColor(GOLD)
+      .moveTo(171.75, 213.75).lineTo(236.25, 213.75).stroke()
+      .moveTo(606.0, 213.75).lineTo(669.75, 213.75).stroke()
       .restore();
-    y += subH + 13;
 
     // "This is to certify that"
-    doc.font("Times-Roman").fontSize(14).fillColor(INK);
-    doc.text("This is to certify that", contentX, y, { width: contentW, align: "center", lineBreak: false });
-    y += doc.currentLineHeight() + 10;
+    doc.font("LB-Regular").fontSize(16.91).fillColor(INK)
+      .text("This is to certify that", 0, topY(260.25, 16.91), { width: W, align: "center", lineBreak: false });
 
-    // Recipient name, shrunk to fit one line, with a bottom rule sized to the
-    // text itself (at least as wide as the "Recipient Name" sample slot).
+    // Recipient name, shrunk to fit one line only if it would overflow, with
+    // a gold rule sized to the design's fixed 90mm minimum (grows for a name
+    // wider than that, exactly like the source design's flex min-width).
     const name = d.studentName || "";
-    const nameSize = fitSize(doc, name, "Times-Roman", 22, 13, contentW * 0.85);
-    doc.font("Times-Roman").fontSize(nameSize).fillColor(INK);
-    const nameH = doc.currentLineHeight();
-    const nameW = Math.max(180, doc.widthOfString(name) + 24);
-    doc.text(name, contentX, y, { width: contentW, align: "center", lineBreak: false });
-    const nameLineY = y + nameH + 4;
-    doc.save().lineWidth(1.2).strokeColor(GOLD)
-      .moveTo(cx - nameW / 2, nameLineY).lineTo(cx + nameW / 2, nameLineY).stroke().restore();
-    y = nameLineY + 12;
+    const nameSize = fitSize(doc, name, "LB-Regular", 16.91, 10, W * 0.85);
+    doc.font("LB-Regular").fontSize(nameSize).fillColor(INK)
+      .text(name, 0, topY(291.75, nameSize), { width: W, align: "center", lineBreak: false });
+    const nameLineW = Math.max(255.1, doc.widthOfString(name));
+    doc.save().lineWidth(1.5).strokeColor(GOLD)
+      .moveTo(cx - nameLineW / 2, 303.0).lineTo(cx + nameLineW / 2, 303.0).stroke().restore();
 
-    // "has successfully completed..." (wraps if needed).
-    doc.font("Times-Roman").fontSize(14).fillColor(INK);
-    const line2 = "has successfully completed and met the required standards in the";
-    doc.text(line2, contentX, y, { width: contentW, align: "center" });
-    y += doc.heightOfString(line2, { width: contentW, align: "center" }) + 8;
+    // "has successfully completed and met the required standards in the"
+    doc.font("LB-Regular").fontSize(16.91).fillColor(INK)
+      .text("has successfully completed and met the required standards in the", 0, topY(330.75, 16.91), { width: W, align: "center", lineBreak: false });
 
     // Program name (course title, or the admin override), shrunk to fit one line.
     const program = d.certProgramName || d.courseTitle || "";
-    const programSize = fitSize(doc, program, "Times-Roman", 19, 12, contentW * 0.85);
-    doc.font("Times-Roman").fontSize(programSize).fillColor(INK);
-    doc.text(program, contentX, y, { width: contentW, align: "center", lineBreak: false });
-    y += doc.currentLineHeight() + 12;
+    const programSize = fitSize(doc, program, "LB-Regular", 22.62, 12, W * 0.9);
+    doc.font("LB-Regular").fontSize(programSize).fillColor(INK)
+      .text(program, 0, topY(364.5, programSize), { width: W, align: "center", lineBreak: false });
 
-    // Assessment line, italic, above a gold rule, shrunk to fit one line.
-    const assessText = "Including assessment and evaluation of investment knowledge and practical understanding";
-    doc.save().lineWidth(1.2).strokeColor(GOLD).moveTo(contentX, y).lineTo(contentX + contentW, y).stroke().restore();
-    y += 10;
-    const assessSize = fitSize(doc, assessText, "Times-Italic", 13, 9, contentW);
-    doc.font("Times-Italic").fontSize(assessSize).fillColor(INK);
-    doc.text(assessText, contentX, y, { width: contentW, align: "center", lineBreak: false });
+    // Assessment line, italic, above a full-width gold rule.
+    doc.save().lineWidth(1.5).strokeColor(GOLD).moveTo(98.25, 383.25).lineTo(743.25, 383.25).stroke().restore();
+    doc.font("LB-Italic").fontSize(15.45).fillColor(INK)
+      .text("Including assessment and evaluation of investment knowledge and practical understanding", 0, topY(409.5, 15.45), { width: W, align: "center", lineBreak: false });
 
-    // ---- Signature row, anchored to the bottom of the page ----
-    const blockW = 164;
-    const gap = 42;
-    const rowX = cx - (blockW * 2 + gap) / 2;
-    const leftX = rowX, rightX = rowX + blockW + gap;
-    const borderY = 478;
+    // ---- Signature row: two blocks, each sized to its own content (min
+    // 58mm/164.25pt, exactly like the source design), row centered on the page. ----
+    const signerName = d.signerName || "";
+    const signerTitle = d.signerTitle || "";
+    const issuedText = d.issuedText || "";
+    const GAP = 42.75;
+    doc.font("LB-Regular").fontSize(13.99);
+    const nameW = doc.widthOfString(signerName);
+    doc.font("LB-Italic").fontSize(12.0);
+    const titleW = doc.widthOfString(signerTitle);
+    doc.font("LB-Regular").fontSize(13.99);
+    const dateW = doc.widthOfString(issuedText);
 
-    // Signature image sits just above the left block's rule, if configured.
+    const leftBlockW = Math.max(164.25, nameW, titleW);
+    const rightBlockW = Math.max(164.25, dateW);
+    const rowX0 = cx - (leftBlockW + GAP + rightBlockW) / 2;
+    const leftX = rowX0, leftCenter = leftX + leftBlockW / 2;
+    const rightX = leftX + leftBlockW + GAP, rightCenter = rightX + rightBlockW / 2;
+    const lineY = 477.75; // exact center of the source design's signature rules
+
+    // Signature image sits on top of the line, just like a pen signature
+    // would (mirrored below for the date, per instruction).
     if (d.signatureImage) {
       const sigH = 32;
       try {
-        doc.image(d.signatureImage, leftX, borderY - sigH - 4, { fit: [blockW, sigH], align: "center" });
+        doc.image(d.signatureImage, leftCenter - leftBlockW / 2, lineY - 1.5 - sigH - 3, { fit: [leftBlockW, sigH], align: "center" });
       } catch { /* bad/unreadable image data: skip it rather than fail the whole PDF */ }
     }
+    // The date sits on top of its line the same way (no "Date of Issue" caption).
+    doc.font("LB-Regular").fontSize(13.99).fillColor(INK)
+      .text(issuedText, rightX, topY(lineY - 1.5 - 8, 13.99), { width: rightBlockW, align: "center", lineBreak: false });
 
-    doc.save().lineWidth(1.2).strokeColor(INK)
-      .moveTo(leftX, borderY).lineTo(leftX + blockW, borderY).stroke()
-      .moveTo(rightX, borderY).lineTo(rightX + blockW, borderY).stroke()
+    doc.save().lineWidth(1.5).strokeColor(INK)
+      .moveTo(leftX, lineY).lineTo(leftX + leftBlockW, lineY).stroke()
+      .moveTo(rightX, lineY).lineTo(rightX + rightBlockW, lineY).stroke()
       .restore();
 
-    const signerName = d.signerName || "";
-    const signerTitle = d.signerTitle || "";
-    doc.font("Times-Roman").fontSize(12).fillColor(INK)
-      .text(signerName, leftX, borderY + 7, { width: blockW, align: "center", lineBreak: false });
-    doc.font("Times-Italic").fontSize(10).fillColor(INK)
-      .text(signerTitle, leftX, borderY + 7 + doc.currentLineHeight(), { width: blockW, align: "center", lineBreak: false });
+    doc.font("LB-Regular").fontSize(13.99).fillColor(INK)
+      .text(signerName, leftX, topY(499.5, 13.99), { width: leftBlockW, align: "center", lineBreak: false });
+    doc.font("LB-Italic").fontSize(12.0).fillColor(INK)
+      .text(signerTitle, leftX, topY(513.0, 12.0), { width: leftBlockW, align: "center", lineBreak: false });
 
-    doc.font("Times-Roman").fontSize(12).fillColor(INK)
-      .text(d.issuedText || "", rightX, borderY + 7, { width: blockW, align: "center", lineBreak: false });
+    // Seal.
+    doc.image(SEAL, 660.75, 426.0, { width: 124.5, height: 123.75 });
 
-    // Seal, bottom-right corner.
-    const sealW = 108;
-    const sealH = sealW * (544 / 546);
-    doc.image(SEAL, W - 50 - sealW, H - 40 - sealH, { width: sealW, height: sealH });
-
-    // Certificate number, subtle, bottom-centre.
-    doc.fillColor("#9a9a9a").font("Times-Roman").fontSize(8)
+    // Certificate number, subtle, bottom-centre (app metadata, not part of the source design).
+    doc.fillColor("#9a9a9a").font("LB-Regular").fontSize(8)
       .text(`Certificate No: ${d.certNo || ""}`, 0, H - 22, { width: W, align: "center" });
   },
 };
