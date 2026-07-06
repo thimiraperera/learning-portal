@@ -381,7 +381,13 @@ export function StoreProvider({ children }) {
 
   /* ---- certificate templates ---- */
   const fetchCertTemplates = useCallback(() => api("/admin/cert-templates", { token }), [token]);
-  const previewCertTemplate = useCallback((id) => fetchBlobOpen(`/admin/cert-templates/${id}/preview`), [token]);
+  const previewCertTemplate = useCallback((id, sample = {}) => {
+    const qs = new URLSearchParams();
+    if (sample.courseTitle) qs.set("courseTitle", sample.courseTitle);
+    if (sample.certProgramName) qs.set("certProgramName", sample.certProgramName);
+    const q = qs.toString();
+    return fetchBlobOpen(`/admin/cert-templates/${id}/preview${q ? `?${q}` : ""}`);
+  }, [token]);
 
   /* ---- exams (admin) ---- */
   const createExam = useCallback(async (title, courseId) => {

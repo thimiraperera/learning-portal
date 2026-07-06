@@ -163,7 +163,7 @@ export default function CourseManage() {
         {tab === "links" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="links" title="Course links" Icon={Link2} items={data.links} placeholder="Link title" installments={data.planInstallments} />}
         {tab === "materials" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="materials" title="Materials" Icon={FileDown} items={data.materials} placeholder="Material title" installments={data.planInstallments} />}
         {tab === "students" && <StudentsTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} navigate={navigate} />}
-        {tab === "certificates" && <CertificatesTab id={id} batchNum={viewedNum} courseTitle={c.title} store={store} />}
+        {tab === "certificates" && <CertificatesTab id={id} batchNum={viewedNum} courseTitle={c.title} certProgramName={c.certProgramName} store={store} />}
         {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} batchId={activeBatchId} c={data} reload={reload} store={store} navigate={navigate} />}
       </div>
@@ -196,7 +196,7 @@ function DetailsTab({ id, c, store, navigate }) {
   const certValue = knownTemplate ? certTemplate : "";
   const preview = async () => {
     const tid = certValue || defaultId;
-    if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+    if (tid) { try { await store.previewCertTemplate(tid, { courseTitle: title, certProgramName }); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
   const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName }));
@@ -228,9 +228,9 @@ function DetailsTab({ id, c, store, navigate }) {
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
       </div>
-      <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span></label>
-        <input className="form-control" value={certProgramName} placeholder={title || "Defaults to the course title"} onChange={(e) => setCertProgramName(e.target.value)} />
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The program name printed on the certificate. Leave blank to print the course title above.</div>
+      <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#EF4444" }}>*</span></label>
+        <input className="form-control" value={certProgramName} placeholder="e.g. Stock Market Certificate Program" onChange={(e) => setCertProgramName(e.target.value)} />
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The course title printed on the certificate. Required - certificates cannot be issued for this course until this is set.</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>
@@ -332,7 +332,7 @@ function fmtCertDate(ts) { return new Date(Number(ts) || Date.now()).toLocaleDat
 /* Issue and manage certificates for THIS course and THIS batch only. Scoping
    the list to the viewed batch is what stops an accidental "issue to everyone":
    only students enrolled in this course's selected batch can be ticked. */
-function CertificatesTab({ id, batchNum, courseTitle, store }) {
+function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) {
   const { users, certificates, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
   const [statusF, setStatusF] = useState("all");
   const [qy, setQy] = useState("");
@@ -378,7 +378,10 @@ function CertificatesTab({ id, batchNum, courseTitle, store }) {
     return n;
   });
 
+  const missingProgramName = !certProgramName || !certProgramName.trim();
+
   const issue = async () => {
+    if (missingProgramName) { setMsg({ ok: false, msg: "Set a Certificate program name on the Course details tab before issuing certificates." }); return; }
     const pairs = filtered.filter((r) => !r.cert && selected.has(r.key)).map((r) => ({ studentId: r.studentId, courseId: id }));
     if (pairs.length === 0) { setMsg({ ok: false, msg: "Tick at least one student to certify." }); return; }
     if (!(await popup.confirm(
@@ -400,6 +403,9 @@ function CertificatesTab({ id, batchNum, courseTitle, store }) {
   return (
     <div>
       <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Issuing is limited to <strong>{batchTag}</strong> of this course. Switch the batch selector above to certify a different batch. Only the students you tick are certified.</span></div>
+      {missingProgramName && (
+        <div className="alert alert-danger" style={{ marginBottom: 14 }}><AlertTriangle /> <span>No Certificate program name is set for this course. Set one on the Course details tab before certificates can be issued.</span></div>
+      )}
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
       <div className="toolbar" style={{ marginBottom: 14 }}>
@@ -412,7 +418,7 @@ function CertificatesTab({ id, batchNum, courseTitle, store }) {
           <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
           <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student name or email" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
         </div>
-        <Button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0}>
+        <Button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0 || missingProgramName}>
           <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
         </Button>
       </div>

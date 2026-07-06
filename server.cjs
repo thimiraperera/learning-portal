@@ -922,12 +922,16 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
 app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req, res) => {
   const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
   let issued = 0;
+  const missingProgramName = new Set();
   for (const p of pairs) {
     const sid = Number(p.studentId);
     const cid = String(p.courseId || "");
     const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [sid]);
     const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
     if (!stu || !course || await dbmod.certExists(sid, cid)) continue;
+    // The certificate prints this instead of the internal course title, so it
+    // must be set before a certificate for this course can be issued at all.
+    if (!String(course.cert_program_name || "").trim()) { missingProgramName.add(course.title); continue; }
     // First issue for a course locks in the default template so future
     // certificates for that course keep using the same design.
     if (!course.cert_template && defaultTemplateId()) {
@@ -944,7 +948,12 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     await sendMail(stu.email, "Your certificate has been issued", html);
     issued++;
   }
-  res.json({ ok: true, msg: `Issued ${issued} certificate${issued === 1 ? "" : "s"}.`, ...(await adminState()) });
+  if (issued === 0 && missingProgramName.size) {
+    return res.status(400).json({ error: `Set a Certificate program name on the Course details tab before issuing certificates for: ${[...missingProgramName].join(", ")}.` });
+  }
+  let msg = `Issued ${issued} certificate${issued === 1 ? "" : "s"}.`;
+  if (missingProgramName.size) msg += ` Skipped for ${[...missingProgramName].join(", ")} - set a Certificate program name on the Course details tab first.`;
+  res.json({ ok: true, msg, ...(await adminState()) });
 }));
 
 app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res) => {
@@ -1025,10 +1034,15 @@ app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (re
   const brand = await dbmod.getBrand();
   const { tz } = await dbmod.getTimezoneConfig();
   const sig = await dbmod.getCertSignature();
+  // Preview can be called from a specific course's Details tab with its
+  // current (even unsaved) title / certProgramName, so the admin sees
+  // exactly what that course's certificate will say.
+  const courseTitle = String(req.query?.courseTitle || "").trim() || "Sample Course Title";
+  const certProgramName = String(req.query?.certProgramName || "").trim() || courseTitle;
   const pdf = await generateCertificate({
     brandName: brand.name, studentName: "Student Name",
-    courseTitle: "Sample Course Title", courseCode: "SC-100",
-    certProgramName: "Sample Course Title",
+    courseTitle, courseCode: "SC-100",
+    certProgramName,
     certNo: "CERT-SAMPLE", issuedText: formatCertIssuedAt(Date.now(), tz),
     signerName: sig.name, signerTitle: sig.title, signatureImage: sig.image,
   }, req.params.id);
