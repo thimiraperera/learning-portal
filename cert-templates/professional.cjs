@@ -115,7 +115,7 @@ module.exports = {
         doc.image(d.signatureImage, leftCenter - leftBlockW / 2, lineY - 1.5 - sigH - 3, { fit: [leftBlockW, sigH], align: "center" });
       } catch { /* bad/unreadable image data: skip it rather than fail the whole PDF */ }
     }
-    // The date sits on top of its line the same way (no "Date of Issue" caption).
+    // The date sits on top of its line, the same way a signature does.
     doc.font("LB-Regular").fontSize(13.99).fillColor(INK)
       .text(issuedText, rightX, topY(lineY - 1.5 - 8, 13.99), { width: rightBlockW, align: "center", lineBreak: false });
 
@@ -128,6 +128,9 @@ module.exports = {
       .text(signerName, leftX, topY(499.5, 13.99), { width: leftBlockW, align: "center", lineBreak: false });
     doc.font("LB-Italic").fontSize(12.0).fillColor(INK)
       .text(signerTitle, leftX, topY(513.0, 12.0), { width: leftBlockW, align: "center", lineBreak: false });
+    // "Date of Issue" caption below the line, mirroring the signer name/title caption.
+    doc.font("LB-Regular").fontSize(13.99).fillColor(INK)
+      .text("Date of Issue", rightX, topY(499.5, 13.99), { width: rightBlockW, align: "center", lineBreak: false });
 
     // Seal.
     doc.image(SEAL, 660.75, 426.0, { width: 124.5, height: 123.75 });
