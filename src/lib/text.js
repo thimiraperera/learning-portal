@@ -16,11 +16,13 @@ export function htmlToText(html) {
     .trim();
 }
 
-// First `maxWords` words of the plain-text version, with a trailing "..." when cut.
+// First `maxWords` words of the plain-text version, with a trailing "..." when
+// cut. maxWords of 0 means unlimited: the full description, untruncated.
 export function previewWords(html, maxWords) {
   const text = htmlToText(html);
   if (!text) return "";
-  const n = Math.max(1, Number(maxWords) || 30);
+  if (Number(maxWords) === 0) return text;
+  const n = Math.max(1, Number(maxWords) || 60);
   const words = text.split(" ");
   if (words.length <= n) return text;
   return words.slice(0, n).join(" ") + "...";

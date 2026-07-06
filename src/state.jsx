@@ -9,7 +9,7 @@ const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
 const TOKEN_KEY = "lms_token";
-const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "", logoDark: "", loginIntro: "", favicon: "", courseCardWords: 30 };
+const DEFAULT_BRAND = { company: "", name: "Learning Portal", logo: "", logoDark: "", loginIntro: "", favicon: "", courseCardWords: 60 };
 
 /* "Remember me" stores the token in localStorage (survives browser restarts);
    otherwise sessionStorage (cleared when the browser/tab closes). */

@@ -1199,7 +1199,7 @@ async function markReminded(planIds, when) {
   await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
 }
 
-const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", logoDark: "", loginIntro: "", emailLogo: "", favicon: "", courseCardWords: 30 };
+const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", logoDark: "", loginIntro: "", emailLogo: "", favicon: "", courseCardWords: 60 };
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
   return row ? { ...BRAND_DEFAULT, ...JSON.parse(row.v) } : { ...BRAND_DEFAULT };

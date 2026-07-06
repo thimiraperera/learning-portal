@@ -278,19 +278,25 @@ function LoginPageCard({ brand, setBrand }) {
 }
 
 function CourseCardsCard({ brand, setBrand }) {
-  const [words, setWords] = useState(brand.courseCardWords ?? 30);
+  const cur = brand.courseCardWords ?? 60;
+  const [unlimited, setUnlimited] = useState(cur === 0);
+  const [words, setWords] = useState(cur === 0 ? 60 : cur);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { setWords(brand.courseCardWords ?? 30); }, [brand.courseCardWords]);
+  useEffect(() => {
+    const c = brand.courseCardWords ?? 60;
+    setUnlimited(c === 0);
+    if (c !== 0) setWords(c);
+  }, [brand.courseCardWords]);
 
   const save = async () => {
     setBusy(true); setMsg(null);
-    const n = Math.max(1, Math.min(200, parseInt(words, 10) || 30));
+    const n = unlimited ? 0 : Math.max(1, Math.min(200, parseInt(words, 10) || 60));
     try {
       await setBrand({ courseCardWords: n });
-      setWords(n);
-      setMsg({ ok: true, text: `Course cards now show up to ${n} words of the description.` });
+      if (!unlimited) setWords(n);
+      setMsg({ ok: true, text: unlimited ? "Course cards now show the full description." : `Course cards now show up to ${n} words of the description.` });
     } catch (e) {
       setMsg({ ok: false, text: e.message || "Could not save." });
     }
@@ -300,14 +306,25 @@ function CourseCardsCard({ brand, setBrand }) {
   return (
     <div className="card" style={{ marginTop: 24 }}>
       <div className="card-title"><LayoutGrid style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Course cards</div>
-      <div className="card-subtitle">How many words of the course description to show on course cards. Keeps cards a consistent height. The full description still shows on the course page.</div>
+      <div className="card-subtitle">How many words of the course description to show on course cards, or show it in full. A shorter limit keeps cards a consistent height; the full description always shows on the course page.</div>
 
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
 
-      <div className="form-group" style={{ maxWidth: 240 }}>
-        <label className="form-label">Description word limit</label>
-        <input className="form-control" type="number" min="1" max="200" value={words} onChange={(e) => setWords(e.target.value)} />
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Between 1 and 200 words. Default is 30.</div>
+      <div className="form-group" style={{ maxWidth: 280 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, cursor: "pointer", marginBottom: unlimited ? 4 : 14 }}>
+          <input type="checkbox" checked={unlimited} onChange={(e) => setUnlimited(e.target.checked)} />
+          No limit (show the full description)
+        </label>
+        {!unlimited && (
+          <>
+            <label className="form-label">Description word limit</label>
+            <input className="form-control" type="number" min="1" max="200" value={words} onChange={(e) => setWords(e.target.value)} />
+            <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Between 1 and 200 words. Default is 60.</div>
+          </>
+        )}
+        {unlimited && (
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 10 }}>Cards may vary in height if descriptions differ in length.</div>
+        )}
       </div>
 
       <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save</Button>
