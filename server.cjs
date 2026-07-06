@@ -212,14 +212,34 @@ async function applyCoursePlanToStudent(userId, courseId) {
   if (items.length && !items.some((it) => !it.dueDate)) await dbmod.setPlanSchedule(userId, courseId, items, bid);
 }
 
+const CERT_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// A batch's cert_date is a plain "YYYY-MM-DD" calendar date (like start/end
+// date), formatted directly with no timezone conversion at all, since there
+// is no time-of-day to interpret. This sidesteps timezone bugs entirely,
+// which a batch-wide printed date should never be subject to.
+function formatCertDateStr(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ""));
+  if (!m) return "";
+  return `${CERT_MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+}
+// Fallback when the batch has no explicit certificate date: the certificate's
+// actual issue timestamp, formatted in the app's configured timezone.
+function formatCertIssuedAt(ms, tz) {
+  return new Date(Number(ms) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: tz || undefined });
+}
+
 async function certPdf(cert) {
   const brand = await dbmod.getBrand();
   const { tz } = await dbmod.getTimezoneConfig();
+  const sig = await dbmod.getCertSignature();
+  const issuedText = cert.certDate ? formatCertDateStr(cert.certDate) : formatCertIssuedAt(cert.issued_at, tz);
   return generateCertificate({
     brandName: brand.name, studentName: cert.studentName,
     courseTitle: cert.courseTitle, courseCode: cert.courseCode,
-    certNo: cert.cert_no, issuedAt: cert.issued_at,
-  }, cert.certTemplate, tz);
+    certProgramName: cert.certProgramName || cert.courseTitle,
+    certNo: cert.cert_no, issuedText,
+    signerName: sig.name, signerTitle: sig.title, signatureImage: sig.image,
+  }, cert.certTemplate);
 }
 
 /* small async wrapper so thrown errors become 500s instead of hanging.
@@ -432,7 +452,7 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
   if (u.role === "admin") {
     // Settings config (and the reminder secret key) only go to super admins.
     const settings = u.super_admin
-      ? { smtp: await dbmod.getSmtpForClient(), captcha: await dbmod.getCaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig() }
+      ? { smtp: await dbmod.getSmtpForClient(), captcha: await dbmod.getCaptchaForClient(), regnum: await dbmod.getRegConfigForClient(), reminders: await dbmod.getRemindersConfig(), certSignature: await dbmod.getCertSignature() }
       : {};
     res.json({ currentUser: await publicUser(u), brand: await dbmod.getBrand(), ...settings, ...(await adminState()) });
   } else if (u.role === "instructor") {
@@ -759,6 +779,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
     instructor: String(req.body?.instructor || ""),
     blurb: sanitizeHtml(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
+    certProgramName: String(req.body?.certProgramName || "").trim(),
   });
   res.json(await adminState());
 }));
@@ -812,7 +833,7 @@ app.post("/api/admin/courses/:id/batches/:batchId/end", auth, adminOnly, wrap(as
 }));
 // Edit a batch's start/end dates.
 app.put("/api/admin/courses/:id/batches/:batchId", auth, adminOnly, wrap(async (req, res) => {
-  await dbmod.setBatchDates(Number(req.params.batchId), req.body?.startDate, req.body?.endDate);
+  await dbmod.setBatchDates(Number(req.params.batchId), req.body?.startDate, req.body?.endDate, req.body?.certDate);
   res.json(await adminState());
 }));
 
@@ -1003,11 +1024,14 @@ app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (re
   if (!templatesList().some((t) => t.id === req.params.id)) return res.status(404).json({ error: "Template not found." });
   const brand = await dbmod.getBrand();
   const { tz } = await dbmod.getTimezoneConfig();
+  const sig = await dbmod.getCertSignature();
   const pdf = await generateCertificate({
     brandName: brand.name, studentName: "Student Name",
     courseTitle: "Sample Course Title", courseCode: "SC-100",
-    certNo: "CERT-SAMPLE", issuedAt: Date.now(),
-  }, req.params.id, tz);
+    certProgramName: "Sample Course Title",
+    certNo: "CERT-SAMPLE", issuedText: formatCertIssuedAt(Date.now(), tz),
+    signerName: sig.name, signerTitle: sig.title, signatureImage: sig.image,
+  }, req.params.id);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="template-${req.params.id}.pdf"`);
   res.send(pdf);
@@ -1664,6 +1688,25 @@ app.put("/api/brand", auth, superOnly, wrap(async (req, res) => {
 app.get("/api/admin/regnum", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getRegConfigForClient())));
 app.put("/api/admin/regnum", auth, superOnly, wrap(async (req, res) => {
   res.json(await dbmod.setRegConfig({ prefix: req.body?.prefix, width: req.body?.width }));
+}));
+
+/* ---- certificate signature (name + title + optional signature image) ---- */
+app.get("/api/admin/cert-signature", auth, superOnly, wrap(async (_req, res) => res.json(await dbmod.getCertSignature())));
+app.put("/api/admin/cert-signature", auth, superOnly, wrap(async (req, res) => {
+  const image = req.body?.image;
+  if (image) {
+    const m = /^data:image\/(png|jpe?g|webp);base64,(.*)$/i.exec(String(image));
+    if (!m) return res.status(400).json({ error: "The signature must be a PNG, JPG or WebP image." });
+    if (Buffer.byteLength(String(image), "utf8") > 3 * 1024 * 1024) return res.status(400).json({ error: "Signature image is too large." });
+    // Decode and check the real magic bytes, not just the claimed data-URL prefix.
+    let bytes;
+    try { bytes = Buffer.from(m[2], "base64"); } catch { return res.status(400).json({ error: "The signature image is corrupt." }); }
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const isWebp = bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+    if (!isPng && !isJpeg && !isWebp) return res.status(400).json({ error: "The signature image is corrupt." });
+  }
+  res.json(await dbmod.setCertSignature({ name: req.body?.name, title: req.body?.title, image }));
 }));
 
 /* ---- app timezone ---- */

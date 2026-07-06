@@ -252,6 +252,12 @@ async function init() {
   await ensureColumn("users", "reset_expires", "BIGINT");
   await ensureColumn("courses", "instructor_id", "INT");
   await ensureColumn("courses", "cert_template", "VARCHAR(64) DEFAULT ''");
+  // Optional override for the program-name heading printed on the certificate
+  // (falls back to the course title when blank).
+  await ensureColumn("courses", "cert_program_name", "VARCHAR(255) DEFAULT ''");
+  // Per-batch date printed on every certificate issued for that batch (e.g. a
+  // graduation/completion date). Blank = use each certificate's actual issue date.
+  await ensureColumn("batches", "cert_date", "VARCHAR(20) DEFAULT ''");
   // Per-recording passcode for its link (e.g. a Zoom passcode); students copy it.
   await ensureColumn("recordings", "link_password", "VARCHAR(255) DEFAULT ''");
   // Per-batch payment level that unlocks exams: -1 = fully paid (default),
@@ -363,7 +369,7 @@ async function courseFull(id, batchId) {
   const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE batch_id=?", [bid]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
-    certTemplate: c.cert_template || "",
+    certTemplate: c.cert_template || "", certProgramName: c.cert_program_name || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials, groups: [],
     planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
@@ -390,12 +396,12 @@ async function enrolledBatches(userId) {
 
 /* ---- batches (course cohorts) ---- */
 async function listBatches(courseId) {
-  const [rows] = await q("SELECT id, number, status, start_date, end_date FROM batches WHERE course_id=? ORDER BY number", [courseId]);
+  const [rows] = await q("SELECT id, number, status, start_date, end_date, cert_date FROM batches WHERE course_id=? ORDER BY number", [courseId]);
   return rows;
 }
 // The batch an admin/student works in by default: the ongoing one (highest number), else the highest.
 async function currentBatch(courseId) {
-  const [[r]] = await q("SELECT id, number, status, start_date, end_date FROM batches WHERE course_id=? ORDER BY (status='ongoing') DESC, number DESC LIMIT 1", [courseId]);
+  const [[r]] = await q("SELECT id, number, status, start_date, end_date, cert_date FROM batches WHERE course_id=? ORDER BY (status='ongoing') DESC, number DESC LIMIT 1", [courseId]);
   return r || null;
 }
 async function currentBatchId(courseId) {
@@ -403,11 +409,15 @@ async function currentBatchId(courseId) {
   return b ? b.id : null;
 }
 async function batchById(batchId) {
-  const [[r]] = await q("SELECT id, course_id, number, status, start_date, end_date FROM batches WHERE id=?", [batchId]);
+  const [[r]] = await q("SELECT id, course_id, number, status, start_date, end_date, cert_date FROM batches WHERE id=?", [batchId]);
   return r || null;
 }
-async function setBatchDates(batchId, startDate, endDate) {
-  await q("UPDATE batches SET start_date=?, end_date=? WHERE id=?", [String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), batchId]);
+// certDate (optional): the date printed on every certificate issued for this
+// batch (e.g. a graduation date), independent of start/end. Blank clears it,
+// which falls back to each certificate's real issue date.
+async function setBatchDates(batchId, startDate, endDate, certDate) {
+  await q("UPDATE batches SET start_date=?, end_date=?, cert_date=? WHERE id=?",
+    [String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), String(certDate || "").slice(0, 20), batchId]);
 }
 async function endBatch(batchId) { await q("UPDATE batches SET status='ended' WHERE id=?", [batchId]); }
 // Start a new batch: end the current ongoing one, create the next number, and
@@ -687,8 +697,8 @@ async function updateStudentProfile(id, f) {
   }
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=? WHERE id=?",
-    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=?, cert_program_name=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", String(f.certProgramName || "").slice(0, 255), id]);
 }
 
 async function instructorsList() {
@@ -875,8 +885,10 @@ async function listCertificates() {
 }
 async function getCertificate(id) {
   const [[r]] = await q(`SELECT c.*, u.name AS studentName, u.email AS studentEmail,
-      co.title AS courseTitle, co.code AS courseCode, co.cert_template AS certTemplate
-    FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id WHERE c.id=?`, [id]);
+      co.title AS courseTitle, co.code AS courseCode, co.cert_template AS certTemplate,
+      co.cert_program_name AS certProgramName, bt.cert_date AS certDate
+    FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
+    LEFT JOIN batches bt ON bt.id=c.batch_id WHERE c.id=?`, [id]);
   return r || null;
 }
 async function studentCertificates(studentId) {
@@ -1199,6 +1211,26 @@ async function markReminded(planIds, when) {
   await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
 }
 
+/* ---- certificate signature ---- */
+// One signer (name + title + optional signature image) overlaid on every
+// certificate, set once by a super admin. Not white-label: this app's single
+// certificate design carries fixed organisation branding already (see cert-templates).
+const CERT_SIGNATURE_DEFAULT = { name: "", title: "", image: "" };
+async function getCertSignature() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='certSignature'");
+  return row ? { ...CERT_SIGNATURE_DEFAULT, ...JSON.parse(row.v) } : { ...CERT_SIGNATURE_DEFAULT };
+}
+async function setCertSignature(next) {
+  const cur = await getCertSignature();
+  const merged = {
+    name: next.name === undefined ? cur.name : String(next.name).slice(0, 120),
+    title: next.title === undefined ? cur.title : String(next.title).slice(0, 120),
+    image: next.image === undefined ? cur.image : String(next.image),
+  };
+  await q("INSERT INTO settings (k,v) VALUES ('certSignature',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(merged)]);
+  return merged;
+}
+
 const BRAND_DEFAULT = { company: "", name: "Learning Portal", logo: "", logoDark: "", loginIntro: "", emailLogo: "", favicon: "", courseCardWords: 60 };
 async function getBrand() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='brand'");
@@ -1303,6 +1335,7 @@ module.exports = {
   setCourseLock, lockedCourseIds, isCourseLocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   getTimezoneConfig, setTimezoneConfig,
+  getCertSignature, setCertSignature,
   addGroup, renameGroup, deleteGroup, reorderGroups, groupExists,
   dumpDatabase, runScript, purgeData,
   certExists, issueCertificate, listCertificates, getCertificate, studentCertificates, requestCertRedownload, markCertDownloaded, unlockCertificate,

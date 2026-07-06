@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Users, PlayCircle, Link2, FileDown, Save, Trash2, Plus, X,
   CheckCircle, AlertTriangle, Presentation, Settings as SettingsIcon, Search, UserPlus, UserMinus, Eye, EyeOff, GripVertical, Upload, Wallet, Pencil, Check, Layers,
-  Award, Send, Download, LockOpen,
+  Award, Send, Download, LockOpen, Calendar,
 } from "lucide-react";
 
 // "Batch 2 · ongoing" style label for the batch dropdown / cards.
@@ -20,16 +20,53 @@ import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
+function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
+  const [startDate, setStartDate] = useState(batch.start_date || "");
+  const [endDate, setEndDate] = useState(batch.end_date || "");
+  const [certDate, setCertDate] = useState(batch.cert_date || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const r = await setBatchDates(courseId, batch.id, { startDate, endDate, certDate });
+    setBusy(false);
+    if (r.ok) { popup.toast("Batch dates saved."); onDone(); }
+    else setMsg(r.msg || "Could not save dates.");
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 12, maxWidth: 700 }}>
+      <div className="card-title">Batch {batch.number} dates</div>
+      <div className="card-subtitle">The certificate date prints on every certificate issued for this batch (e.g. a graduation date). Leave it blank to print each certificate's actual issue date instead.</div>
+      {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div className="form-group"><label className="form-label">Start date</label>
+          <input className="form-control" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">End date</label>
+          <input className="form-control" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Certificate date</label>
+          <input className="form-control" type="date" value={certDate} onChange={(e) => setCertDate(e.target.value)} /></div>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save dates</Button>
+        <button className="btn btn-ghost" type="button" onClick={onDone}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 export default function CourseManage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const store = useStore();
-  const { courses, users, certificates, fetchCourseBatch, startNewBatch } = store;
+  const { courses, users, certificates, fetchCourseBatch, startNewBatch, setBatchDates } = store;
   const c = courses[id];
   const [tab, setTab] = useState("details"); // open on Course details (first tab)
   const [viewBatchId, setViewBatchId] = useState(null); // null = current
   const [bc, setBc] = useState(null);                   // viewed batch's content/instructors
   const [batchBusy, setBatchBusy] = useState(false);
+  const [datesOpen, setDatesOpen] = useState(false);
 
   const batches = c ? (c.batches || []) : [];
   const activeBatchId = viewBatchId || (c && c.batchId);
@@ -97,7 +134,11 @@ export default function CourseManage() {
             {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b)}</option>)}
           </select>
           <Button className="btn btn-outline" loading={batchBusy} onClick={onStartNewBatch}><Plus /> Start new batch</Button>
+          <button className="btn btn-outline" type="button" onClick={() => setDatesOpen((v) => !v)}><Calendar /> {datesOpen ? "Close dates" : "Edit dates"}</button>
         </div>
+        {datesOpen && viewedBatch && (
+          <BatchDatesEditor key={viewedBatch.id} batch={viewedBatch} courseId={id} setBatchDates={setBatchDates} onDone={() => setDatesOpen(false)} />
+        )}
       </div>
 
       <div className="stats-grid">
@@ -135,6 +176,7 @@ function DetailsTab({ id, c, store, navigate }) {
   const [title, setTitle] = useState(c.title);
   const [blurb, setBlurb] = useState(c.blurb || "");
   const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
+  const [certProgramName, setCertProgramName] = useState(c.certProgramName || "");
   const [templates, setTemplates] = useState([]);
   const [defaultId, setDefaultId] = useState("");
   const [msg, setMsg] = useState(null);
@@ -157,7 +199,7 @@ function DetailsTab({ id, c, store, navigate }) {
     if (tid) { try { await store.previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue }));
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName }));
   const remove = async () => {
     if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
@@ -185,6 +227,10 @@ function DetailsTab({ id, c, store, navigate }) {
           <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>
         </div>
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
+      </div>
+      <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span></label>
+        <input className="form-control" value={certProgramName} placeholder={title || "Defaults to the course title"} onChange={(e) => setCertProgramName(e.target.value)} />
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The program name printed on the certificate. Leave blank to print the course title above.</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>

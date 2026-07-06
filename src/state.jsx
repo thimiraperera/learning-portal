@@ -58,6 +58,7 @@ export function StoreProvider({ children }) {
   const [showcase, setShowcaseLocal] = useState(null); // login-page floating cards
   const [regnum, setRegnumLocal] = useState({ prefix: "", width: 4 });
   const [timezone, setTimezoneLocal] = useState("UTC");
+  const [certSignature, setCertSignatureLocal] = useState({ name: "", title: "", image: "" });
   const [ready, setReady] = useState(false);
 
   const applyBootstrap = (data) => {
@@ -78,6 +79,7 @@ export function StoreProvider({ children }) {
     if (data.smtp) setSmtpLocal(data.smtp);
     if (data.captcha) setCaptchaLocal(data.captcha);
     if (data.regnum) setRegnumLocal(data.regnum);
+    if (data.certSignature) setCertSignatureLocal(data.certSignature);
   };
   const applyAdmin = (data) => {
     if (data.courses) setCourses(data.courses);
@@ -484,6 +486,13 @@ export function StoreProvider({ children }) {
       return { ok: true, msg: "Timezone saved." };
     } catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const saveCertSignature = useCallback(async (fields) => {
+    try {
+      const saved = await api("/admin/cert-signature", { method: "PUT", token, body: fields });
+      setCertSignatureLocal(saved);
+      return { ok: true, msg: "Certificate signature saved." };
+    } catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
 
   const sendTestMail = useCallback(async (to) => {
     try {
@@ -558,7 +567,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum, timezone,
+    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum, timezone, certSignature,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -573,7 +582,7 @@ export function StoreProvider({ children }) {
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,
-    updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum, saveTimezone,
+    updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum, saveTimezone, saveCertSignature,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     fetchCourseBatch, startNewBatch, endBatch, setBatchDates,

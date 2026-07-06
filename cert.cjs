@@ -5,14 +5,10 @@
    A4 landscape page. Drop more files into the folder to add templates. */
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const PDFDocument = require("pdfkit");
 
 const TEMPLATE_DIR = path.join(__dirname, "cert-templates");
-
-function formatDate(ts, tz) {
-  const d = new Date(Number(ts) || Date.now());
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: tz || undefined });
-}
 
 function loadTemplates() {
   const map = {};
@@ -39,16 +35,36 @@ function defaultTemplateId() {
   return templates.professional ? "professional" : (Object.keys(templates)[0] || null);
 }
 
-function generateCertificate(data, templateId, tz) {
+// data.issuedText must already be a final display string (the caller decides
+// the date and formats it; see server.cjs certPdf()).
+function generateCertificate(data, templateId) {
   const t = templates[templateId] || templates[defaultTemplateId()];
   return new Promise((resolve, reject) => {
     if (!t) return reject(new Error("No certificate templates are installed."));
-    const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 0 });
+    const doc = new PDFDocument({
+      size: "A4", layout: "landscape", margin: 0,
+      // Locked so the PDF cannot be edited or have its content copied out
+      // (e.g. to alter the name/course) in compliant readers. No user
+      // password is set, so anyone can still open, view and print it; the
+      // owner password is only an internal key to enable these restrictions
+      // and is never shared with anyone.
+      ownerPassword: crypto.randomBytes(16).toString("hex"),
+      pdfVersion: "1.7ext3",
+      permissions: {
+        printing: "highResolution",
+        modifying: false,
+        copying: false,
+        annotating: false,
+        fillingForms: false,
+        contentAccessibility: true,
+        documentAssembly: false,
+      },
+    });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    t.render(doc, { ...data, issuedText: formatDate(data.issuedAt, tz) });
+    t.render(doc, data);
     doc.end();
   });
 }

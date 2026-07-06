@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn, LayoutGrid, Clock } from "lucide-react";
+import { Save, CheckCircle, AlertTriangle, Trash2, Image, Mail, ShieldCheck, Download, Upload, Database, UserCog, Plus, Hash, Bell, LogIn, LayoutGrid, Clock, PenTool } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import TwoFactor from "../../components/TwoFactor.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
@@ -11,7 +11,7 @@ import { useStore } from "../../state.jsx";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default function Settings() {
-  const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, timezone, saveTimezone, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
+  const { brand, setBrand, smtp, saveSmtp, sendTestMail, captcha, saveCaptcha, regnum, saveRegnum, timezone, saveTimezone, certSignature, saveCertSignature, reminders, saveReminders, sendRemindersNow, downloadBackup, restoreBackup,
     currentUser, fetchAdmins, addAdmin, deleteAdmin, purgeData } = useStore();
   const [company, setCompany] = useState(brand.company);
   const [name, setName] = useState(brand.name);
@@ -190,6 +190,7 @@ export default function Settings() {
         <CaptchaCard captcha={captcha} saveCaptcha={saveCaptcha} />
         <RegNumberCard regnum={regnum} saveRegnum={saveRegnum} />
         <TimezoneCard timezone={timezone} saveTimezone={saveTimezone} />
+        <CertSignatureCard certSignature={certSignature} saveCertSignature={saveCertSignature} />
         <RemindersCard reminders={reminders} saveReminders={saveReminders} sendRemindersNow={sendRemindersNow} />
         <LoginPageCard brand={brand} setBrand={setBrand} />
         <CourseCardsCard brand={brand} setBrand={setBrand} />
@@ -660,6 +661,65 @@ function TimezoneCard({ timezone, saveTimezone }) {
       {example && <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 16 }}>Right now there: <strong style={{ color: "#374151" }}>{example}</strong></div>}
 
       <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save timezone</Button>
+    </div>
+  );
+}
+
+function CertSignatureCard({ certSignature, saveCertSignature }) {
+  const [name, setName] = useState(certSignature.name || "");
+  const [title, setTitle] = useState(certSignature.title || "");
+  const [image, setImage] = useState(certSignature.image || "");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(certSignature.name || "");
+    setTitle(certSignature.title || "");
+    setImage(certSignature.image || "");
+  }, [certSignature.name, certSignature.title, certSignature.image]);
+
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try { setImage(await resizeToPng(f, 400)); setMsg(null); }
+    catch (err) { setMsg({ ok: false, text: err.message || "Could not read the image." }); }
+  };
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    setMsg(await saveCertSignature({ name: name.trim(), title: title.trim(), image }));
+    setBusy(false);
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title"><PenTool style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />Certificate signature</div>
+      <div className="card-subtitle">The signer name, title, and signature image printed on every certificate issued.</div>
+
+      {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.text}</div>}
+
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Signer name</label>
+          <input className="form-control" value={name} placeholder="e.g. Kavindu Herath" onChange={(e) => setName(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Signer title</label>
+          <input className="form-control" value={title} placeholder="e.g. Academic Director" onChange={(e) => setTitle(e.target.value)} /></div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label className="form-label">Signature image <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional, max 1 MB, PNG/JPG - a transparent PNG looks best)</span></label>
+        {image && (
+          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+            <img src={image} alt="Signature" style={{ maxHeight: 48, maxWidth: 180, objectFit: "contain", border: "1px solid var(--border)", borderRadius: 8, padding: 6, background: "white" }} />
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setImage("")}>
+              <Trash2 /> Remove
+            </button>
+          </div>
+        )}
+        <input className="form-control" type="file" accept="image/png,image/jpeg" onChange={onFile} />
+      </div>
+
+      <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save signature</Button>
     </div>
   );
 }
