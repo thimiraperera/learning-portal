@@ -529,11 +529,11 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
   };
 
   const previewTotal = preview.reduce((n, x) => n + Number(x.amount || 0), 0);
-  // Exam-unlock options derived from this batch's plan (reg fee + installments).
+  // Exam-unlock options derived from this batch's plan. Registration fees are
+  // no longer taken, so there is no "after registration fee" stage anymore.
   const examOpts = [
     { v: -1, label: "After full payment (all installments)" },
     { v: 0, label: "Available to everyone (no payment needed)" },
-    ...(Number(plan.reg_fee) > 0 ? [{ v: 1, label: "After registration fee" }] : []),
     ...Array.from({ length: Math.max(0, Math.min(36, Number(plan.installments) || 0)) }, (_, i) => ({ v: i + 2, label: `After Installment ${i + 1}` })),
   ];
 
@@ -545,12 +545,8 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
 
       <div className="form-group"><label className="form-label">Total fee (Rs.)</label>
         <input className="form-control" type="number" min="0" value={plan.total_fee} onChange={set("total_fee")} placeholder="45000" /></div>
-      <div className="field-row">
-        <div className="form-group"><label className="form-label">Registration fee (Rs.)</label>
-          <input className="form-control" type="number" min="0" value={plan.reg_fee} onChange={set("reg_fee")} placeholder="5000" /></div>
-        <div className="form-group"><label className="form-label">Number of installments</label>
-          <input className="form-control" type="number" min="0" max="36" value={plan.installments} onChange={set("installments")} placeholder="4" /></div>
-      </div>
+      <div className="form-group"><label className="form-label">Number of installments</label>
+        <input className="form-control" type="number" min="0" max="36" value={plan.installments} onChange={set("installments")} placeholder="4" /></div>
       <div className="field-row">
         <div className="form-group"><label className="form-label">First payment / start date</label>
           <input className="form-control" type="date" value={plan.start_date} onChange={set("start_date")} /></div>

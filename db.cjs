@@ -443,7 +443,8 @@ async function startNewBatch(courseId, { startDate = "", endDate = "", number } 
     await q("INSERT INTO recordings (course_id, group_id, title, url, date, length, position, installment_seq, batch_id, link_password) SELECT course_id, group_id, title, url, date, length, position, installment_seq, ?, link_password FROM recordings WHERE batch_id=?", [newId, prev.id]);
     await q("INSERT INTO links (course_id, group_id, title, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, url, position, installment_seq, ? FROM links WHERE batch_id=?", [newId, prev.id]);
     await q("INSERT INTO materials (course_id, group_id, title, size, ext, filename, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, size, ext, filename, url, position, installment_seq, ? FROM materials WHERE batch_id=?", [newId, prev.id]);
-    await q("INSERT INTO course_payment_plans (course_id, total_fee, reg_fee, installments, start_date, completion_date, batch_id) SELECT course_id, total_fee, reg_fee, installments, start_date, completion_date, ? FROM course_payment_plans WHERE batch_id=?", [newId, prev.id]);
+    // reg_fee is intentionally not copied (always 0): registration fees are no longer taken.
+    await q("INSERT INTO course_payment_plans (course_id, total_fee, reg_fee, installments, start_date, completion_date, batch_id) SELECT course_id, total_fee, 0, installments, start_date, completion_date, ? FROM course_payment_plans WHERE batch_id=?", [newId, prev.id]);
   }
   return newId;
 }
@@ -631,7 +632,10 @@ async function getCoursePlan(batchId) {
 }
 async function setCoursePlan(courseId, batchId, f) {
   const total = Math.max(0, Number(f.total_fee) || 0);
-  const reg = Math.max(0, Number(f.reg_fee) || 0);
+  // Registration fees are no longer taken (policy change): always 0, regardless
+  // of what a caller sends, so it can never come back via the API or a
+  // start-new-batch copy of an older batch's template.
+  const reg = 0;
   const inst = Math.max(0, Math.min(36, Math.floor(Number(f.installments) || 0)));
   // -1 (fully paid) | 0 (everyone) | 1..inst+1 (after that installment stage).
   let unlock = Math.floor(Number(f.exam_unlock));
