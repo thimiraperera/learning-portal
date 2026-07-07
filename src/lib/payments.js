@@ -124,13 +124,14 @@ export function installmentShort(seq) {
 }
 
 // The buckets an admin can assign content to, derived from a course's plan
-// (its number of installments). seq -1 = None (hidden from everyone but admins);
-// always offers "everyone" + registration fee.
+// (its number of installments). seq -1 = None (hidden from everyone but admins).
+// seq 1 (registration fee) is intentionally not offered: registration fees are
+// no longer taken, so it could never actually unlock. installmentLabel() still
+// recognizes seq 1 for any content configured with it before that change.
 export function installmentBuckets(installments) {
   const out = [
     { seq: -1, label: "None (hidden, admin only)" },
     { seq: 0, label: "Available to everyone" },
-    { seq: 1, label: "Registration fee" },
   ];
   for (let i = 1; i <= (Number(installments) || 0); i++) out.push({ seq: i + 1, label: `Installment ${i}` });
   return out;

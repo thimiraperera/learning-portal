@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import Captcha from "../components/Captcha.jsx";
 import Button from "../components/Button.jsx";
+import { popup } from "../components/Popup.jsx";
 
 const HOME = { admin: "/admin", instructor: "/instructor", student: "/" };
 
@@ -36,6 +37,9 @@ export default function Login() {
       setError(r.error || "Incorrect username or password.");
       if (r.twoFactor) setTwoFactor(true);
       return;
+    }
+    if (r.hasOverdue) {
+      await popup.alert("Payment overdue. Complete your pending payment to regain access to the recorded materials.", { title: "Payment overdue", tone: "danger" });
     }
     navigate(HOME[r.role] || "/");
   };

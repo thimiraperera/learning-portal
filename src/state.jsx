@@ -163,8 +163,14 @@ export function StoreProvider({ children }) {
       storeToken(t, remember);
       setToken(t);
       setCurrentUser(user);
-      applyBootstrap(await api("/bootstrap", { token: t }));
-      return { ok: true, role: user.role };
+      const boot = await api("/bootstrap", { token: t });
+      applyBootstrap(boot);
+      // Same "missed installment" definition as the student Dashboard banner,
+      // computed here (not read back from state) so the caller has it the
+      // instant login resolves, without waiting on a re-render.
+      const hasOverdue = user.role === "student"
+        && (boot.payments || []).reduce((n, p) => n + (p.missedCount || 0), 0) > 0;
+      return { ok: true, role: user.role, hasOverdue };
     } catch (e) {
       return { ok: false, error: e.message };
     }

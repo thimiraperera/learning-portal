@@ -577,7 +577,12 @@ async function setPlanSchedule(userId, courseId, items, batchId) {
      ON DUPLICATE KEY UPDATE batch_id=VALUES(batch_id)`, [userId, courseId, bid, Date.now()]);
   const [[plan]] = await q("SELECT id FROM payment_plans WHERE user_id=? AND course_id=?", [userId, courseId]);
   await q("DELETE FROM payment_installments WHERE plan_id=?", [plan.id]);
-  let seq = 1;
+  // seq starts at 2, not 1: slot 1 is permanently reserved for the (now-removed)
+  // registration fee, so "Installment 1" stays seq 2 - matching the numbering
+  // every content/exam "unlocks at" stage still assumes (installmentBuckets,
+  // examOpts). Changing this back to 1 would silently break every existing
+  // "unlock at Installment N" configuration across the app.
+  let seq = 2;
   for (const it of items) {
     await q("INSERT INTO payment_installments (plan_id,seq,label,amount,due_date) VALUES (?,?,?,?,?)",
       [plan.id, seq, String(it.label || `Installment ${seq}`).slice(0, 64), Math.max(0, Number(it.amount) || 0), String(it.dueDate || "").slice(0, 20)]);

@@ -583,9 +583,9 @@ function PlanCard({ course, plan, store, onApply }) {
                   course plan and are never deleted here). */}
               <div className="table-wrap" style={{ marginBottom: 12 }}>
                 <table>
-                  <thead><tr><th>Installment</th><th>Amount</th><th>Due</th><th>Payment date</th><th>Note</th><th>Paid</th><th></th></tr></thead>
+                  <thead><tr><th>Installment</th><th>Amount</th><th>Due</th><th>Payment date</th><th>Note</th><th>Paid</th><th>Remaining</th><th></th></tr></thead>
                   <tbody>
-                    {alloc.rows.map(({ inst: it, slices }) => {
+                    {alloc.rows.map(({ inst: it, slices, remainC }) => {
                       const ib = instBadge(it.status);
                       return (
                         <tr key={`i${it.id}`}>
@@ -595,6 +595,7 @@ function PlanCard({ course, plan, store, onApply }) {
                           <td style={{ color: "#6B7280", whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(slices, (s) => dstr(s.paid_at))}</td>
                           <td style={{ color: "#6B7280", verticalAlign: "top" }}>{lines(slices, (s) => s.note || "-")}</td>
                           <td style={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(slices, (s) => rs(s.amount))}</td>
+                          <td style={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top", color: remainC > 0 ? "#DC2626" : "#9CA3AF" }}>{rs(remainC / 100)}</td>
                           <td style={{ textAlign: "right", verticalAlign: "top" }}>
                             {lines(slices, (s) => (
                               <button className="icon-btn-plain" title="Delete this payment (the schedule reflows automatically; it does not remove the installment)" onClick={() => delPay(s.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
@@ -611,6 +612,7 @@ function PlanCard({ course, plan, store, onApply }) {
                         <td style={{ color: "#6B7280", whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(alloc.over, (s) => dstr(s.paid_at))}</td>
                         <td style={{ color: "#6B7280", verticalAlign: "top" }}>{lines(alloc.over, (s) => s.note || "-")}</td>
                         <td style={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{lines(alloc.over, (s) => rs(s.amount))}</td>
+                        <td style={{ verticalAlign: "top" }}></td>
                         <td style={{ textAlign: "right", verticalAlign: "top" }}>
                           {lines(alloc.over, (s) => (
                             <button className="icon-btn-plain" title="Delete this payment (the schedule reflows automatically)" onClick={() => delPay(s.id)}><Trash2 style={{ width: 16, height: 16 }} /></button>
