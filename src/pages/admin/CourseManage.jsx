@@ -473,20 +473,30 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
   );
 }
 
+// An edited due date must stay within the plan's own first-payment/start date
+// and its "Complete all payments by" date (whichever bounds are actually set).
+function dueDateOutOfRange(date, startDate, completionDate) {
+  if (!date) return null;
+  if (startDate && date < startDate) return `Can't be before the start date (${fmtDate(startDate)}).`;
+  if (completionDate && date > completionDate) return `Can't be after "Complete all payments by" (${fmtDate(completionDate)}).`;
+  return null;
+}
+
 function CoursePlanTab({ id, batchId, batchNum, store }) {
   const batchLabel = batchNum != null ? `Batch ${batchNum}` : "this batch";
   const { fetchCoursePlan, saveCoursePlan, applyCoursePlan } = store;
   const [plan, setPlan] = useState(null);
   const [preview, setPreview] = useState([]);
+  const [dueDates, setDueDates] = useState({}); // { label: "YYYY-MM-DD" } row overrides, staged until Save
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1 };
+    const blank = { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1, due_dates: {} };
     setPlan(null);
     fetchCoursePlan(id, batchId)
-      .then((d) => { if (alive) { setPlan(d.plan || blank); setPreview(d.preview || []); } })
+      .then((d) => { if (alive) { setPlan(d.plan || blank); setPreview(d.preview || []); setDueDates((d.plan || blank).due_dates || {}); } })
       .catch(() => { if (alive) setPlan(blank); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -495,13 +505,22 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
   if (!plan) return <p style={{ color: "#9CA3AF", fontSize: 13 }}>Loading...</p>;
 
   const set = (k) => (e) => setPlan((p) => ({ ...p, [k]: e.target.value }));
+  const setDueDate = (label, value) => setDueDates((d) => ({ ...d, [label]: value }));
+  const rowErrors = preview.reduce((acc, it) => {
+    const err = dueDateOutOfRange(dueDates[it.label] ?? it.dueDate, plan.start_date, plan.completion_date);
+    if (err) acc[it.label] = err;
+    return acc;
+  }, {});
+  const hasRowErrors = Object.keys(rowErrors).length > 0;
+
   // Save the template and immediately apply it to every enrolled student, so
   // each student follows the course plan with no per-student setup.
   const saveAndApply = async () => {
+    if (hasRowErrors) { setMsg({ ok: false, text: "Fix the schedule due-date errors below before saving." }); return; }
     setBusy(true); setMsg(null);
-    const r = await saveCoursePlan(id, batchId, plan);
+    const r = await saveCoursePlan(id, batchId, { ...plan, dueDates });
     if (!r.ok) { setBusy(false); setMsg({ ok: false, text: r.msg }); return; }
-    setPlan(r.plan); setPreview(r.preview || []);
+    setPlan(r.plan); setPreview(r.preview || []); setDueDates(r.plan.due_dates || {});
     const a = await applyCoursePlan(id, batchId);
     setBusy(false);
     setMsg(a.ok
@@ -547,7 +566,7 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <Button className="btn btn-primary" loading={busy} onClick={saveAndApply}><Save /> Save & apply to {batchLabel} students</Button>
+        <Button className="btn btn-primary" loading={busy} disabled={hasRowErrors} onClick={saveAndApply}><Save /> Save & apply to {batchLabel} students</Button>
       </div>
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>SCHEDULE PREVIEW (SAVED)</div>
@@ -559,9 +578,24 @@ function CoursePlanTab({ id, batchId, batchNum, store }) {
             <table>
               <thead><tr><th>Line</th><th>Amount</th><th>Due</th></tr></thead>
               <tbody>
-                {preview.map((it, i) => (
-                  <tr key={i}><td>{it.label}</td><td style={{ whiteSpace: "nowrap" }}>{rs(it.amount)}</td><td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDate(it.dueDate)}</td></tr>
-                ))}
+                {preview.map((it, i) => {
+                  const value = dueDates[it.label] ?? it.dueDate;
+                  const err = rowErrors[it.label];
+                  return (
+                    <tr key={i}>
+                      <td>{it.label}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{rs(it.amount)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <Calendar style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "#9CA3AF", pointerEvents: "none" }} />
+                          <input type="date" className="form-control" style={{ paddingLeft: 28, width: 165 }}
+                            value={value} onChange={(e) => setDueDate(it.label, e.target.value)} />
+                        </div>
+                        {err && <div style={{ color: "#DC2626", fontSize: 11.5, marginTop: 4 }}>{err}</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

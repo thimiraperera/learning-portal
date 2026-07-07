@@ -263,6 +263,10 @@ async function init() {
   // Per-batch payment level that unlocks exams: -1 = fully paid (default),
   // 0 = everyone, N = after installment stage N (1 = reg fee, 2 = installment 1...).
   await ensureColumn("course_payment_plans", "exam_unlock", "INT DEFAULT -1");
+  // Per-row due-date overrides (keyed by schedule line label, e.g. "Registration
+  // fee" / "Installment 2"), so an admin can move one installment's date off
+  // the auto-computed even spread. Missing keys just use the computed date.
+  await ensureColumn("course_payment_plans", "due_dates", "TEXT");
   await ensureColumn("exam_questions", "qtype", "VARCHAR(10) DEFAULT 'single'");
   await ensureColumn("exam_questions", "corrects", "TEXT");
   await ensureColumn("users", "totp_secret", "VARCHAR(64)");
@@ -620,8 +624,10 @@ async function overduePayments() {
 // enrolled students, which writes each student's own schedule.
 async function getCoursePlan(batchId) {
   const [[row]] = await q("SELECT * FROM course_payment_plans WHERE batch_id=?", [batchId]);
-  if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1 };
-  return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "", exam_unlock: row.exam_unlock == null ? -1 : Number(row.exam_unlock) };
+  if (!row) return { total_fee: 0, reg_fee: 0, installments: 0, start_date: "", completion_date: "", exam_unlock: -1, due_dates: {} };
+  let dueDates = {};
+  try { dueDates = row.due_dates ? JSON.parse(row.due_dates) : {}; } catch { dueDates = {}; }
+  return { total_fee: Number(row.total_fee), reg_fee: Number(row.reg_fee), installments: row.installments, start_date: row.start_date || "", completion_date: row.completion_date || "", exam_unlock: row.exam_unlock == null ? -1 : Number(row.exam_unlock), due_dates: dueDates };
 }
 async function setCoursePlan(courseId, batchId, f) {
   const total = Math.max(0, Number(f.total_fee) || 0);
@@ -630,9 +636,18 @@ async function setCoursePlan(courseId, batchId, f) {
   // -1 (fully paid) | 0 (everyone) | 1..inst+1 (after that installment stage).
   let unlock = Math.floor(Number(f.exam_unlock));
   if (!Number.isInteger(unlock) || unlock < -1 || unlock > inst + 1) unlock = -1;
-  await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date,exam_unlock) VALUES (?,?,?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date), exam_unlock=VALUES(exam_unlock)`,
-    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20), unlock]);
+  // Per-row due-date overrides: keep only well-formed "YYYY-MM-DD" string values.
+  // Range validation (within start/completion date) happens in server.cjs
+  // before this is called, since it needs to produce a clear admin-facing error.
+  const dueDates = {};
+  if (f.dueDates && typeof f.dueDates === "object") {
+    for (const [label, val] of Object.entries(f.dueDates)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(val || ""))) dueDates[String(label).slice(0, 60)] = String(val);
+    }
+  }
+  await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date,exam_unlock,due_dates) VALUES (?,?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date), exam_unlock=VALUES(exam_unlock), due_dates=VALUES(due_dates)`,
+    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20), unlock, JSON.stringify(dueDates)]);
   return getCoursePlan(batchId);
 }
 // Map of batchId -> exam_unlock level, for gating student exam access.

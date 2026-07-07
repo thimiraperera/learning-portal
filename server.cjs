@@ -180,14 +180,19 @@ async function sendOverdueReminders({ force }) {
 
 /* Build a schedule (registration fee + N evenly-spaced installments) from a
    course-level template. Installment N falls on the completion date; earlier
-   ones are spread from the start date. Used to apply a course plan to students. */
+   ones are spread from the start date. Used to apply a course plan to students.
+   t.due_dates (optional) is a { label: "YYYY-MM-DD" } map of per-row admin
+   overrides (see setCoursePlan) that replace the computed date for that row;
+   callers are expected to have already range-checked these (see
+   validateDueDateOverrides) before they ever reach here. */
 function generateScheduleItems(t) {
   const total = Math.max(0, Number(t.total_fee) || 0);
   const reg = Math.max(0, Number(t.reg_fee) || 0);
   const n = Math.max(0, Math.min(36, Math.floor(Number(t.installments) || 0)));
   const start = String(t.start_date || ""), end = String(t.completion_date || "");
+  const overrides = t.due_dates && typeof t.due_dates === "object" ? t.due_dates : {};
   const items = [];
-  if (reg > 0) items.push({ label: "Registration fee", amount: reg, dueDate: start || end });
+  if (reg > 0) items.push({ label: "Registration fee", amount: reg, dueDate: overrides["Registration fee"] || start || end });
   const balanceC = Math.round(Math.max(0, total - reg) * 100);
   if (n > 0 && balanceC > 0) {
     const eachC = Math.floor(balanceC / n);
@@ -195,12 +200,29 @@ function generateScheduleItems(t) {
     const eMs = end ? Date.parse(end + "T00:00:00Z") : NaN;
     for (let i = 0; i < n; i++) {
       const amtC = i === n - 1 ? balanceC - eachC * (n - 1) : eachC;
+      const label = `Installment ${i + 1}`;
       let due = end || start;
       if (!isNaN(sMs) && !isNaN(eMs) && eMs >= sMs) due = new Date(n === 1 ? eMs : sMs + ((eMs - sMs) * (i + 1)) / n).toISOString().slice(0, 10);
-      items.push({ label: `Installment ${i + 1}`, amount: amtC / 100, dueDate: due });
+      items.push({ label, amount: amtC / 100, dueDate: overrides[label] || due });
     }
   }
   return items;
+}
+
+// Reject any per-row due-date override that falls outside [start_date,
+// completion_date] (the "first installment date" / "Complete all payments
+// by" bounds shown in the UI). Returns an error message, or null if all clear.
+function validateDueDateOverrides(dueDates, startDate, completionDate) {
+  if (!dueDates || typeof dueDates !== "object") return null;
+  const start = String(startDate || "");
+  const end = String(completionDate || "");
+  for (const [label, val] of Object.entries(dueDates)) {
+    const d = String(val || "");
+    if (!d) continue;
+    if (start && d < start) return `${label} due date can't be before the first payment / start date (${start}).`;
+    if (end && d > end) return `${label} due date can't be after "Complete all payments by" (${end}).`;
+  }
+  return null;
 }
 
 // Give a student the course's payment plan (if the course has a valid one), so
@@ -691,6 +713,8 @@ app.get("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) =>
 app.put("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
   const cid = String(req.params.id);
   const bid = Number(req.body?.batchId) || await dbmod.currentBatchId(cid);
+  const dateError = validateDueDateOverrides(req.body?.dueDates, req.body?.start_date, req.body?.completion_date);
+  if (dateError) return res.status(400).json({ error: dateError });
   const tpl = await dbmod.setCoursePlan(cid, bid, req.body || {});
   res.json({ plan: tpl, preview: generateScheduleItems(tpl), batchId: bid });
 }));
