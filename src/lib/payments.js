@@ -105,6 +105,26 @@ export function installmentLabel(seq) {
   return `Installment ${n - 1}`;
 }
 
+// Turns a plain count into its ordinal word: 1 -> "1st", 2 -> "2nd", 3 -> "3rd",
+// 4 -> "4th", 11-13 -> "11th"/"12th"/"13th" (teens are always "th"), 21 -> "21st"...
+function ordinal(n) {
+  const abs = Math.round(Math.abs(Number(n) || 0));
+  const mod100 = abs % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${abs}th`;
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[abs % 10] || "th";
+  return `${abs}${suffix}`;
+}
+
+// Ordinal label for one installment, e.g. "2nd Installment" - same seq offset
+// as installmentLabel above (seq 2 is Installment 1, seq 3 is Installment 2...).
+// seq 1 (the reserved registration-fee slot) defers to installmentLabel so it
+// still reads "Registration fee" instead of ordinalizing to "0th Installment".
+export function installmentOrdinal(seq) {
+  const n = Number(seq) || 0;
+  if (n <= 1) return installmentLabel(n);
+  return `${ordinal(n - 1)} Installment`;
+}
+
 // Header label conveying that content is available FROM a stage onward (it
 // stays visible for every later payment part once that stage is reached).
 export function installmentFromLabel(seq) {

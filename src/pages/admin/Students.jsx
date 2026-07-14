@@ -7,7 +7,7 @@ import SearchSelect from "../../components/SearchSelect.jsx";
 import Button from "../../components/Button.jsx";
 import { popup } from "../../components/Popup.jsx";
 import { useStore } from "../../state.jsx";
-import { payFilterBucket, buildDeleteWarning } from "../../lib/payments.js";
+import { payFilterBucket, buildDeleteWarning, installmentOrdinal, fmtDate } from "../../lib/payments.js";
 
 /* Build a sensible username suggestion from the full name: lowercase, strip
    accents, and join words with a hyphen ("John Doe" becomes "john-doe").
@@ -43,14 +43,27 @@ const PAY_COL = {
   none: { cls: "badge-muted", label: "No plan" },
 };
 
-/* A student's overall payment status across their plans, as filter buckets. */
+/* A student's overall payment status as a filter bucket, plus (for overdue/
+   balance) the next pending installment to name in the table: worst bucket
+   wins across a student's plans, then the plan due soonest among ties. */
 function buildPayStatus(plans) {
   const byUser = {};
   for (const p of plans) (byUser[p.user_id] ||= []).push(p);
   const out = {};
   for (const uid in byUser) {
-    const buckets = byUser[uid].map((p) => payFilterBucket(p.status));
-    out[uid] = buckets.includes("overdue") ? "overdue" : buckets.includes("balance") ? "balance" : buckets.includes("paid") ? "paid" : "none";
+    const userPlans = byUser[uid];
+    const buckets = userPlans.map((p) => payFilterBucket(p.status));
+    const bucket = buckets.includes("overdue") ? "overdue" : buckets.includes("balance") ? "balance" : buckets.includes("paid") ? "paid" : "none";
+    let next = null;
+    if (bucket === "overdue" || bucket === "balance") {
+      const dueKey = (d) => d || "9999-99-99"; // no due date on file sorts last
+      for (let i = 0; i < userPlans.length; i++) {
+        if (buckets[i] !== bucket) continue;
+        const inst = (userPlans[i].installments || []).find((x) => x.status !== "paid");
+        if (inst && (!next || dueKey(inst.due_date) < dueKey(next.due_date))) next = inst;
+      }
+    }
+    out[uid] = { bucket, next };
   }
   return out;
 }
@@ -111,7 +124,7 @@ export default function Students() {
       ? s.enrolledBatch && s.enrolledBatch[course] === Number(batch)
       : Object.values(s.enrolledBatch || {}).includes(Number(batch))))
     .filter(([, s]) => gender === "all" || s.gender === gender)
-    .filter(([, s]) => pay === "all" || (payStatusByUser[s.id] || "none") === pay)
+    .filter(([, s]) => pay === "all" || ((payStatusByUser[s.id] || {}).bucket || "none") === pay)
     .filter(([e, s]) => !ql || s.name.toLowerCase().includes(ql) || e.toLowerCase().includes(ql) || (s.username || "").toLowerCase().includes(ql));
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -217,7 +230,9 @@ export default function Students() {
                 </thead>
                 <tbody>
                   {slice.map(([email, s]) => {
-                    const pc = PAY_COL[payStatusByUser[s.id] || "none"];
+                    const payInfo = payStatusByUser[s.id] || { bucket: "none", next: null };
+                    const pc = PAY_COL[payInfo.bucket || "none"];
+                    const dueText = payInfo.next ? fmtDate(payInfo.next.due_date) : "";
                     return (
                     <tr key={email}>
                       <td>
@@ -230,7 +245,18 @@ export default function Students() {
                       <td style={{ color: "#6B7280" }}>{s.username}</td>
                       <td style={{ color: "#6B7280" }}>{s.gender || "-"}</td>
                       <td><span className={"badge " + (s.status === "active" ? "badge-accepted" : "badge-pending")}>{s.status}</span></td>
-                      <td><span className={"badge " + pc.cls}>{pc.label}</span></td>
+                      <td>
+                        {payInfo.next ? (
+                          <>
+                            <span className={"badge " + pc.cls}>
+                              {(payInfo.bucket === "overdue" ? "Overdue: " : "Pending: ") + installmentOrdinal(payInfo.next.seq)}
+                            </span>
+                            {dueText && <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>Due {dueText}</div>}
+                          </>
+                        ) : (
+                          <span className={"badge " + pc.cls}>{pc.label}</span>
+                        )}
+                      </td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn btn-outline btn-sm" onClick={() => navigate(`/admin/students/${s.id}`)} style={{ marginRight: 8 }}>
                           <Eye /> View
