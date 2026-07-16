@@ -273,7 +273,7 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 
 async function publicUser(u) {
   return {
-    name: dbmod.displayName(u),
+    name: dbmod.displayName(u), fullName: u.name || "",
     firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "", gender: u.gender || "",
     avatar: u.avatar || "",
     email: u.email, username: u.username, role: u.role, status: u.status,
@@ -608,12 +608,15 @@ app.put("/api/admin/students/:id", auth, adminOnly, wrap(async (req, res) => {
   if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
   const gender = String(req.body?.gender || "");
   if (!gender) return res.status(400).json({ error: "Select a gender." });
+  const fullName = String(req.body?.fullName || "").trim();
+  if (!fullName) return res.status(400).json({ error: "Enter the student's full name." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? AND id<>?", [email, id]);
   if (clash) return res.status(409).json({ error: "That email is already in use." });
   await dbmod.updateStudentProfile(id, {
     firstName: String(req.body?.firstName || "").trim(),
     lastName: String(req.body?.lastName || "").trim(),
     nickname: String(req.body?.nickname || "").trim(),
+    fullName,
     phone: String(req.body?.phone || "").trim(),
     gender,
     notes: String(req.body?.notes || ""),
@@ -855,9 +858,19 @@ app.post("/api/admin/courses/:id/batches/:batchId/end", auth, adminOnly, wrap(as
   await dbmod.endBatch(Number(req.params.batchId));
   res.json(await adminState());
 }));
-// Edit a batch's start/end dates.
+// Edit a batch's number and/or start/end/cert dates.
 app.put("/api/admin/courses/:id/batches/:batchId", auth, adminOnly, wrap(async (req, res) => {
-  await dbmod.setBatchDates(Number(req.params.batchId), req.body?.startDate, req.body?.endDate, req.body?.certDate);
+  const courseId = String(req.params.id);
+  const batchId = Number(req.params.batchId);
+  let number;
+  if (req.body?.number !== undefined && req.body?.number !== null && String(req.body.number).trim() !== "") {
+    const raw = Number(req.body.number);
+    if (!Number.isInteger(raw) || raw < 1) return res.status(400).json({ error: "Batch number must be a positive whole number." });
+    number = raw;
+    const [[clash]] = await q("SELECT 1 AS x FROM batches WHERE course_id=? AND number=? AND id<>? LIMIT 1", [courseId, number, batchId]);
+    if (clash) return res.status(409).json({ error: `Batch ${number} already exists for this course.` });
+  }
+  await dbmod.setBatchDates(batchId, courseId, { startDate: req.body?.startDate, endDate: req.body?.endDate, certDate: req.body?.certDate, number });
   res.json(await adminState());
 }));
 
@@ -1484,9 +1497,11 @@ app.post("/api/admin/items/reorder", auth, adminOnly, wrap(async (req, res) => {
 
 /* ---- account self-service (any signed-in user; username cannot change) ---- */
 app.put("/api/account", auth, wrap(async (req, res) => {
-  const { firstName, lastName, nickname, email, phone, gender } = req.body || {};
+  const { firstName, lastName, nickname, email, phone, gender, fullName } = req.body || {};
   const e = String(email || "").trim().toLowerCase();
   if (!e.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  const name = String(fullName || "").trim();
+  if (!name) return res.status(400).json({ error: "Enter your full name." });
   const [[clash]] = await q("SELECT 1 AS x FROM users WHERE lower(email)=? AND id<>?", [e, req.user.id]);
   if (clash) return res.status(409).json({ error: "That email is already in use." });
   const first = String(firstName || "").trim();
@@ -1494,7 +1509,6 @@ app.put("/api/account", auth, wrap(async (req, res) => {
   const nick = String(nickname || "").trim();
   const ph = String(phone || "").trim();
   const g = String(gender || "");
-  const name = nick || [first, last].filter(Boolean).join(" ") || req.user.username;
   await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, email=?, name=? WHERE id=?", [first, last, nick, ph, g, e, name, req.user.id]);
   if (req.body?.avatar !== undefined) await q("UPDATE users SET avatar=? WHERE id=?", [String(req.body.avatar || ""), req.user.id]);
   const [[u]] = await q("SELECT * FROM users WHERE id=?", [req.user.id]);

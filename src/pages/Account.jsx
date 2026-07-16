@@ -12,6 +12,7 @@ function initials(name) { return name.split(" ").map((p) => p[0]).slice(0, 2).jo
 export default function Account() {
   const { currentUser, updateAccount, changePassword } = useStore();
 
+  const [fullName, setFullName] = useState(currentUser.fullName || "");
   const [firstName, setFirstName] = useState(currentUser.firstName || "");
   const [lastName, setLastName] = useState(currentUser.lastName || "");
   const [nickname, setNickname] = useState(currentUser.nickname || "");
@@ -34,7 +35,8 @@ export default function Account() {
   const [wmsg, setWmsg] = useState(null);
 
   const saveProfile = async () => {
-    setPmsg(await updateAccount({ firstName, lastName, nickname, email, phone, gender, avatar }));
+    if (!fullName.trim()) { setPmsg({ ok: false, msg: "Enter your full name." }); return; }
+    setPmsg(await updateAccount({ fullName, firstName, lastName, nickname, email, phone, gender, avatar }));
   };
 
   const savePassword = async () => {
@@ -80,6 +82,11 @@ export default function Account() {
           <div className="form-group">
             <label className="form-label">Username</label>
             <input className="form-control locked-input" value={currentUser.username} readOnly disabled />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Full name <span className="req">*</span> <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(used exactly as shown on certificates)</span></label>
+            <input className="form-control" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" autoComplete="name" />
           </div>
 
           <div className="field-row">

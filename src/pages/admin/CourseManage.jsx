@@ -21,6 +21,7 @@ import { useStore } from "../../state.jsx";
 import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
 
 function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
+  const [number, setNumber] = useState(String(batch.number ?? ""));
   const [startDate, setStartDate] = useState(batch.start_date || "");
   const [endDate, setEndDate] = useState(batch.end_date || "");
   const [certDate, setCertDate] = useState(batch.cert_date || "");
@@ -29,18 +30,20 @@ function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
 
   const save = async () => {
     setBusy(true); setMsg(null);
-    const r = await setBatchDates(courseId, batch.id, { startDate, endDate, certDate });
+    const r = await setBatchDates(courseId, batch.id, { number: Number(number), startDate, endDate, certDate });
     setBusy(false);
-    if (r.ok) { popup.toast("Batch dates saved."); onDone(); }
-    else setMsg(r.msg || "Could not save dates.");
+    if (r.ok) { popup.toast("Batch details saved."); onDone(); }
+    else setMsg(r.msg || "Could not save batch details.");
   };
 
   return (
     <div className="card" style={{ marginTop: 12, maxWidth: 700 }}>
-      <div className="card-title">Batch {batch.number} dates</div>
+      <div className="card-title">Batch {batch.number} details</div>
       <div className="card-subtitle">The certificate date prints on every certificate issued for this batch (e.g. a graduation date). Leave it blank to print each certificate's actual issue date instead.</div>
       {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+        <div className="form-group"><label className="form-label">Batch number</label>
+          <input className="form-control" type="number" min="1" step="1" value={number} onChange={(e) => setNumber(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Start date</label>
           <input className="form-control" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">End date</label>
@@ -49,7 +52,7 @@ function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
           <input className="form-control" type="date" value={certDate} onChange={(e) => setCertDate(e.target.value)} /></div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save dates</Button>
+        <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save changes</Button>
         <button className="btn btn-ghost" type="button" onClick={onDone}>Cancel</button>
       </div>
     </div>

@@ -419,9 +419,15 @@ async function batchById(batchId) {
 // certDate (optional): the date printed on every certificate issued for this
 // batch (e.g. a graduation date), independent of start/end. Blank clears it,
 // which falls back to each certificate's real issue date.
-async function setBatchDates(batchId, startDate, endDate, certDate) {
-  await q("UPDATE batches SET start_date=?, end_date=?, cert_date=? WHERE id=?",
-    [String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), String(certDate || "").slice(0, 20), batchId]);
+// number (optional): renumber this batch. Left untouched when omitted.
+async function setBatchDates(batchId, courseId, { startDate, endDate, certDate, number } = {}) {
+  if (number !== undefined) {
+    if (!Number.isInteger(number) || number < 1) { const e = new Error("Batch number must be a positive whole number."); e.status = 400; throw e; }
+    const [[clash]] = await q("SELECT 1 AS x FROM batches WHERE course_id=? AND number=? AND id<>? LIMIT 1", [courseId, number, batchId]);
+    if (clash) { const e = new Error(`Batch ${number} already exists for this course.`); e.status = 409; throw e; }
+  }
+  await q("UPDATE batches SET number=COALESCE(?, number), start_date=?, end_date=?, cert_date=? WHERE id=?",
+    [number ?? null, String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), String(certDate || "").slice(0, 20), batchId]);
 }
 async function endBatch(batchId) { await q("UPDATE batches SET status='ended' WHERE id=?", [batchId]); }
 // Start a new batch: end the current ongoing one, create the next number, and
@@ -672,7 +678,7 @@ async function usersMap() {
   const map = {};
   for (const u of rows) {
     map[u.email] = {
-      id: u.id, name: displayName(u), username: u.username, email: u.email,
+      id: u.id, name: displayName(u), fullName: u.name || "", username: u.username, email: u.email,
       firstName: u.first_name || "", lastName: u.last_name || "", nickname: u.nickname || "", phone: u.phone || "",
       gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
       nic: u.nic || "", reg_no: u.reg_no || "",
@@ -712,9 +718,10 @@ async function completeRegistration(token, f, passwordHash) {
   return r.affectedRows > 0;
 }
 async function updateStudentProfile(id, f) {
-  const name = f.nickname || [f.firstName, f.lastName].filter(Boolean).join(" ") || "";
+  // 'name' is the certificate name: a direct field now, never derived from nickname/first/last.
+  const name = String(f.fullName || "").trim();
   await q("UPDATE users SET first_name=?, last_name=?, nickname=?, phone=?, gender=?, notes=?, nic=?, email=?, name=? WHERE id=? AND role='student'",
-    [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.nic || "", f.email, name || f.email, id]);
+    [f.firstName, f.lastName, f.nickname, f.phone, f.gender || "", f.notes || "", f.nic || "", f.email, name, id]);
   // Admins can flip active/inactive, but never override the pre-registration "invited" state.
   if (f.status === "active" || f.status === "inactive") {
     await q("UPDATE users SET status=? WHERE id=? AND role='student' AND status<>'invited'", [f.status, id]);

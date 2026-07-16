@@ -79,6 +79,7 @@ export default function StudentManage() {
 }
 
 function ProfileTab({ id, s, store, navigate }) {
+  const [fullName, setFullName] = useState(s.fullName || "");
   const [firstName, setFirstName] = useState(s.firstName || "");
   const [lastName, setLastName] = useState(s.lastName || "");
   const [nickname, setNickname] = useState(s.nickname || "");
@@ -94,12 +95,13 @@ function ProfileTab({ id, s, store, navigate }) {
 
   const save = async () => {
     const er = {};
+    if (!fullName.trim()) er.fullName = "Enter the student's full name.";
     if (!email.trim()) er.email = "Email is required.";
     else if (!email.includes("@")) er.email = "Enter a valid email address.";
     if (!gender) er.gender = "Select a gender.";
     setFieldErr(er);
     if (Object.keys(er).length > 0) { setMsg(null); return; }
-    setMsg(await store.updateStudent(id, { firstName, lastName, nickname, email, phone, gender, notes, nic, status }));
+    setMsg(await store.updateStudent(id, { fullName, firstName, lastName, nickname, email, phone, gender, notes, nic, status }));
   };
   const remove = async () => {
     const warning = buildDeleteWarning(s.name, (store.plans || []).filter((p) => p.user_id === id));
@@ -137,8 +139,13 @@ function ProfileTab({ id, s, store, navigate }) {
         <div className="form-group"><label className="form-label">Last name</label>
           <input className="form-control" value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
       </div>
-      <div className="form-group"><label className="form-label">Nickname</label>
-        <input className="form-control" value={nickname} onChange={(e) => setNickname(e.target.value)} /></div>
+      <div className="field-row">
+        <div className="form-group"><label className="form-label">Full name <span className="req">*</span> <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(used exactly as shown on certificates)</span></label>
+          <input className={"form-control" + (fieldErr.fullName ? " is-invalid" : "")} value={fullName} onChange={(e) => { setFullName(e.target.value); setFieldErr((x) => ({ ...x, fullName: undefined })); }} />
+          {fieldErr.fullName && <div className="field-error">{fieldErr.fullName}</div>}</div>
+        <div className="form-group"><label className="form-label">Nickname</label>
+          <input className="form-control" value={nickname} onChange={(e) => setNickname(e.target.value)} /></div>
+      </div>
       <div className="field-row">
         <div className="form-group"><label className="form-label">Email <span className="req">*</span></label>
           <input className={"form-control" + (fieldErr.email ? " is-invalid" : "")} type="email" value={email} onChange={(e) => { setEmail(e.target.value); setFieldErr((x) => ({ ...x, email: undefined })); }} />
