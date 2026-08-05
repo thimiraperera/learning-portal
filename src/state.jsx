@@ -45,6 +45,9 @@ export function StoreProvider({ children }) {
   const [locked, setLocked] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  // student: per enrolled course, the server's own reading of what a certificate
+  // is still waiting on. An older server sends no such key, so {} means unknown.
+  const [certStatus, setCertStatus] = useState({});
   const [exams, setExams] = useState([]);
   const [requests, setRequests] = useState([]);
   const [overdue, setOverdue] = useState([]); // admin: students with past-due balances
@@ -67,6 +70,7 @@ export function StoreProvider({ children }) {
     setUsers(data.users || {});
     setInstructors(data.instructors || []);
     setCertificates(data.certificates || []);
+    setCertStatus(data.certStatus || {});
     setExams(data.exams || []);
     setLocked(data.locked || []);
     setRequests(data.requests || []);
@@ -517,7 +521,7 @@ export function StoreProvider({ children }) {
   const fetchStudentPlans = useCallback((id) => api(`/admin/students/${id}/plans`, { token }).then((d) => d.plans || []), [token]);
   const fetchCoursePlan = useCallback((courseId, batchId) => api(`/admin/courses/${courseId}/plan?batchId=${Number(batchId) || ""}`, { token }), [token]);
   const saveCoursePlan = useCallback(async (courseId, batchId, fields) => {
-    try { const d = await api(`/admin/courses/${courseId}/plan`, { method: "PUT", token, body: { ...fields, batchId } }); return { ok: true, ...d }; }
+    try { const d = await api(`/admin/courses/${courseId}/plan`, { method: "PUT", token, body: { ...fields, batchId } }); applyAdmin(d); return { ok: true, ...d }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const applyCoursePlan = useCallback(async (courseId, batchId) => {
@@ -569,6 +573,12 @@ export function StoreProvider({ children }) {
     try { applyAdmin(await api(`/admin/students/${id}/courses/${courseId}/lock`, { method: "POST", token, body: { locked } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  // Withhold or release one student's certificate for one course. Releasing can
+  // issue it there and then, so the fresh admin state comes back either way.
+  const setCertBlock = useCallback(async (id, courseId, blocked) => {
+    try { applyAdmin(await api(`/admin/students/${id}/courses/${courseId}/cert-block`, { method: "POST", token, body: { blocked } })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
   const saveReminders = useCallback(async (enabled) => {
     try { const d = await api("/admin/reminders", { method: "PUT", token, body: { enabled } }); setRemindersLocal(d); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -579,7 +589,7 @@ export function StoreProvider({ children }) {
   }, [token]);
 
   const value = {
-    ready, currentUser, courses, users, locked, instructors, certificates, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum, timezone, certSignature,
+    ready, currentUser, courses, users, locked, instructors, certificates, certStatus, exams, requests, overdue, plans, payments, paymentLocked, reminders, brand, smtp, captcha, showcase, regnum, timezone, certSignature,
     login, register, logout, setBrand, requestPasswordReset, resetPassword,
     setup2fa, enable2fa, disable2fa, saveCaptcha, inviteInstructorLogin,
     toggleEnrol, addStudent, removeStudent, updateStudent,
@@ -598,7 +608,7 @@ export function StoreProvider({ children }) {
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
-    setCourseLock, saveReminders, sendRemindersNow,
+    setCourseLock, setCertBlock, saveReminders, sendRemindersNow,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

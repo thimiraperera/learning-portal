@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import {
   ArrowLeft, Save, Trash2, Plus, BookOpen, Settings as SettingsIcon, CheckCircle, AlertTriangle, UserMinus, ChevronRight,
-  BarChart3, Award, FileQuestion, Wallet, Lock, Unlock, Receipt, Activity,
+  BarChart3, Award, FileQuestion, Wallet, Lock, Unlock, Receipt, Activity, Ban,
 } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -232,7 +232,7 @@ function OverviewTab({ id, s, store, navigate }) {
                         {times > 1 && <div style={{ fontSize: 12, color: "#9CA3AF" }}>Written {times} times</div>}
                       </td>
                       <td style={{ color: "#6B7280" }}>{a.course_id ? a.courseTitle : "-"}</td>
-                      <td><span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span></td>
+                      <td><span className="badge badge-muted">{fmtScore(a.score)}/{a.total} ({pct}%)</span></td>
                       <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateTime(a.finished_at)}</td>
                       <td style={{ color: "#6B7280" }}>{fmtDuration(a.started_at, a.finished_at)}</td>
                     </tr>
@@ -320,16 +320,46 @@ function ActivityTab({ id, store }) {
   );
 }
 
+/* One batch labelling for the whole tab. curNum is whichever batch counts as
+   current here: the student's own batch in an enrolled row, the course's
+   default batch when enrolling. */
+const batchOpts = (c, curNum) => (c.batches || []).map((b) => ({
+  value: String(b.id),
+  label: `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${b.number === curNum ? " - current" : ""}`,
+}));
+
 function CoursesTab({ id, email, s, store, navigate }) {
-  const { courses, toggleEnrol, setCourseLock, plans } = store;
+  const { courses, toggleEnrol, setCourseLock, setCertBlock, plans } = store;
   const [sel, setSel] = useState("");
+  const [selBatch, setSelBatch] = useState("");
   const enrolled = s.enrolled.map((cid) => [cid, courses[cid]]).filter(([, c]) => c);
   const available = Object.entries(courses).filter(([cid]) => !s.enrolled.includes(cid));
   const lockedSet = new Set(s.lockedCourses || []);
+  const certHeldSet = new Set(s.certBlockedCourses || []);
   const planByCourse = {};
   (plans || []).forEach((p) => { if (p.user_id === id) planByCourse[p.course_id] = p; });
 
-  const add = async () => { if (sel) { await toggleEnrol(email, sel); setSel(""); } };
+  // Enrolment batch picker. c.batchId is the course's default batch, the same
+  // one the server falls back to when no batch id is sent.
+  const selCourse = sel ? courses[sel] : null;
+  const selCurrent = selCourse ? (selCourse.batches || []).find((b) => String(b.id) === String(selCourse.batchId)) : null;
+  const selBatchOptions = selCourse ? batchOpts(selCourse, selCurrent ? selCurrent.number : null) : [];
+
+  const pickCourse = (cid) => {
+    setSel(cid);
+    const c = courses[cid];
+    setSelBatch(c && c.batchId != null ? String(c.batchId) : "");
+  };
+
+  const add = async () => {
+    if (!sel) return;
+    const c = courses[sel];
+    const b = (c.batches || []).find((x) => String(x.id) === String(selBatch));
+    await toggleEnrol(email, sel, selBatch);
+    setSel("");
+    setSelBatch("");
+    popup.toast(b ? `Enrolled in Batch ${b.number} of ${c.title}` : `Enrolled in ${c.title}`);
+  };
 
   // Move the student to a different batch of a course they are already in.
   // We keep their existing schedule and recorded payments, so the student stays
@@ -345,6 +375,22 @@ function CoursesTab({ id, email, s, store, navigate }) {
       { title: "Move to batch", confirmText: `Move to Batch ${target.number}` }))) return;
     await toggleEnrol(email, cid, newBatchId, true); // keepFee: do not re-price
     popup.toast(`Moved to Batch ${target.number}`);
+  };
+
+  // Hold back one course's certificate for this student. Certificates issue and
+  // email themselves once the exams are done and the fees settled, so this is the
+  // only way to stop one. It is not the access lock: the course stays open.
+  const toggleCertHold = async (cid, c, hold) => {
+    const body = hold
+      ? `Withhold ${s.name}'s certificate for "${c.title}"?\n\nIt will not be issued automatically and the student cannot download it until you release it. You can still issue one by hand from the course's Certificates tab. Course access is not affected.`
+      : `Release ${s.name}'s certificate for "${c.title}"?\n\nIf every exam is completed and the fees are settled, the certificate is issued and emailed straight away.`;
+    if (!(await popup.confirm(body, {
+      title: hold ? "Withhold certificate" : "Release certificate",
+      confirmText: hold ? "Withhold" : "Release",
+    }))) return;
+    const r = await setCertBlock(id, cid, hold);
+    if (!r.ok) { popup.toast(r.msg || "Could not update the certificate.", "error"); return; }
+    popup.toast(hold ? `Certificate withheld for ${c.title}` : `Certificate released for ${c.title}`);
   };
 
   // Remove a course from the student. This also deletes that one course's
@@ -367,11 +413,12 @@ function CoursesTab({ id, email, s, store, navigate }) {
         <div style={{ marginBottom: 22 }}>
           {enrolled.map(([cid, c]) => {
             const locked = lockedSet.has(cid);
+            const certHeld = certHeldSet.has(cid);
             const plan = planByCourse[cid];
             const pb = planBadge(plan ? plan.status : "empty");
             const curNum = s.enrolledBatch ? s.enrolledBatch[cid] : null;
             const curBatch = (c.batches || []).find((b) => b.number === curNum);
-            const batchOptions = (c.batches || []).map((b) => ({ value: String(b.id), label: `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${b.number === curNum ? " - current" : ""}` }));
+            const batchOptions = batchOpts(c, curNum);
             return (
               <div key={cid} className="assigned-row">
                 <button className="ar-body" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
@@ -383,6 +430,7 @@ function CoursesTab({ id, email, s, store, navigate }) {
                       <span className={"badge " + pb.cls} style={{ marginLeft: 8 }}>{pb.label}</span>
                       {plan && plan.missedCount > 0 && <span className="badge badge-rejected" style={{ marginLeft: 6 }}>{plan.missedCount} missed</span>}
                       {locked && <span className="badge badge-muted" style={{ marginLeft: 6 }}>locked</span>}
+                      {certHeld && <span className="badge badge-pending" style={{ marginLeft: 6 }}>Certificate on hold</span>}
                     </span>
                     <span className="ar-sub">
                       {/* Course code hidden for now: {c.code} */}
@@ -403,6 +451,13 @@ function CoursesTab({ id, email, s, store, navigate }) {
                   onClick={() => setCourseLock(id, cid, !locked)}>
                   {locked ? <><Unlock /> Unlock</> : <><Lock /> Lock</>}
                 </button>
+                <button className={"btn btn-sm " + (certHeld ? "btn-outline" : "btn-ghost")}
+                  title={certHeld
+                    ? "Release this certificate so it can be issued and downloaded"
+                    : "Withhold this certificate: no automatic issue, no download. Course access is not affected."}
+                  onClick={() => toggleCertHold(cid, c, !certHeld)}>
+                  {certHeld ? <><Award /> Release certificate</> : <><Ban /> Withhold certificate</>}
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => removeCourse(cid, c)}><UserMinus /> Remove</button>
               </div>
             );
@@ -411,11 +466,19 @@ function CoursesTab({ id, email, s, store, navigate }) {
       )}
 
       <div className="nav-label" style={{ color: "#9CA3AF", padding: "0 0 8px" }}>ENROLL IN A COURSE</div>
+      <div className="card-subtitle" style={{ marginTop: 0 }}>Pick the batch the student joins; it starts on the course's current batch. The fee schedule comes from the batch you choose.</div>
       <div className="toolbar" style={{ marginBottom: 0 }}>
         <SearchSelect style={{ flex: "1 1 260px" }} value={sel} placeholder="Select a course..." showAll={false}
           emptyText="Enrolled in every course already."
           options={available.map(([cid, c]) => ({ value: cid, label: c.title }))}
-          onChange={setSel} />
+          onChange={pickCourse} />
+        {selBatchOptions.length > 0 && (
+          <div className="stage-select" style={{ flex: "0 0 250px" }}>
+            <span className="stage-select-label">Batch</span>
+            <SearchSelect style={{ flex: "1 1 auto", minWidth: 0 }} value={selBatch} placeholder="Select a batch..." showAll={false}
+              options={selBatchOptions} onChange={setSelBatch} />
+          </div>
+        )}
         <Button className="btn btn-primary" onClick={add} disabled={available.length === 0}><Plus /> Enroll</Button>
       </div>
     </div>

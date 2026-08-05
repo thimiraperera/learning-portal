@@ -275,6 +275,9 @@ async function init() {
   await ensureColumn("users", "nic", "VARCHAR(40) DEFAULT ''");
   await ensureColumn("users", "reg_no", "VARCHAR(64) DEFAULT ''");
   await ensureColumn("enrolments", "locked", "TINYINT DEFAULT 0");
+  // Admin withholds one student's certificate for one course: stops the
+  // automatic issue and blocks their download of an already issued one.
+  await ensureColumn("enrolments", "cert_blocked", "TINYINT DEFAULT 0");
   await ensureColumn("payment_plans", "last_reminded", "BIGINT");
   // Content items can be gated behind a payment stage: 0 = everyone, 1 = reg fee,
   // 2 = Installment 1, 3 = Installment 2... (matches the schedule line seq).
@@ -284,6 +287,20 @@ async function init() {
   await ensureColumn("exams", "attempt_limit", "INT DEFAULT 0");
   // A student can ask the admin to re-enable a one-time certificate download.
   await ensureColumn("certificates", "redownload_requested", "TINYINT DEFAULT 0");
+  // One certificate per student per course, enforced by the database because the
+  // app can run as more than one process. A database that already holds a
+  // duplicate would fail the ALTER and take the boot down, so check first and
+  // leave the mess for an admin to clear rather than refusing to start.
+  if (!(await hasIndex("certificates", "uniq_cert_student_course"))) {
+    const [dups] = await q("SELECT student_id, course_id FROM certificates GROUP BY student_id, course_id HAVING COUNT(*) > 1");
+    if (dups.length) console.warn(`Certificates: skipped the unique index, ${dups.length} student/course pair(s) already have more than one certificate. Delete the extras and restart.`);
+    else {
+      // Log a failed ALTER (a denied privilege on shared hosting, say). Without
+      // the index nothing stops a duplicate, so silence here would hide that.
+      try { await q("ALTER TABLE certificates ADD UNIQUE KEY uniq_cert_student_course (student_id, course_id)"); }
+      catch (e) { if (!(await hasIndex("certificates", "uniq_cert_student_course"))) console.warn(`Certificates: could not add the unique index (${e.code || e.message}). Duplicates are possible until it exists.`); }
+    }
+  }
   await migrateBatches();
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
@@ -429,6 +446,14 @@ async function setBatchDates(batchId, courseId, { startDate, endDate, certDate, 
   await q("UPDATE batches SET number=COALESCE(?, number), start_date=?, end_date=?, cert_date=? WHERE id=?",
     [number ?? null, String(startDate || "").slice(0, 20), String(endDate || "").slice(0, 20), String(certDate || "").slice(0, 20), batchId]);
 }
+// A batch ends when its payments complete, so every write of a plan template's
+// completion_date carries that date onto the batch. A blank date is ignored: it
+// must never wipe an end date the admin set by hand in the batch editor.
+async function syncBatchEndDate(batchId, completionDate) {
+  const d = String(completionDate || "").trim().slice(0, 20);
+  if (!d || !Number(batchId)) return;
+  await q("UPDATE batches SET end_date=? WHERE id=?", [d, Number(batchId)]);
+}
 async function endBatch(batchId) { await q("UPDATE batches SET status='ended' WHERE id=?", [batchId]); }
 // Start a new batch: end the current ongoing one, create the next number, and
 // copy instructors + content + the payment-plan template (NOT students/payments).
@@ -451,6 +476,13 @@ async function startNewBatch(courseId, { startDate = "", endDate = "", number } 
     await q("INSERT INTO materials (course_id, group_id, title, size, ext, filename, url, position, installment_seq, batch_id) SELECT course_id, group_id, title, size, ext, filename, url, position, installment_seq, ? FROM materials WHERE batch_id=?", [newId, prev.id]);
     // reg_fee is intentionally not copied (always 0): registration fees are no longer taken.
     await q("INSERT INTO course_payment_plans (course_id, total_fee, reg_fee, installments, start_date, completion_date, batch_id) SELECT course_id, total_fee, 0, installments, start_date, completion_date, ? FROM course_payment_plans WHERE batch_id=?", [newId, prev.id]);
+    // The copy brings the previous batch's completion date across, so line the
+    // new batch's end date up with it. An end date typed for this new batch
+    // wins, since the copied one belongs to the batch before it.
+    if (!String(endDate || "").trim()) {
+      const [[copied]] = await q("SELECT completion_date FROM course_payment_plans WHERE batch_id=?", [newId]);
+      await syncBatchEndDate(newId, copied && copied.completion_date);
+    }
   }
   return newId;
 }
@@ -468,6 +500,21 @@ async function lockedCourseIds(userId) {
 async function isCourseLocked(userId, courseId) {
   const [[r]] = await q("SELECT locked FROM enrolments WHERE user_id=? AND course_id=?", [userId, courseId]);
   return !!(r && r.locked);
+}
+
+/* ---- per-student certificate withhold ---- */
+// A withheld enrolment stops the automatic certificate issue and blocks the
+// student's download. An admin can still issue by hand if they choose.
+async function setCertBlocked(userId, courseId, blocked) {
+  await q("UPDATE enrolments SET cert_blocked=? WHERE user_id=? AND course_id=?", [blocked ? 1 : 0, userId, courseId]);
+}
+async function certBlockedCourseIds(userId) {
+  const [rows] = await q("SELECT course_id FROM enrolments WHERE user_id=? AND cert_blocked=1", [userId]);
+  return rows.map((r) => r.course_id);
+}
+async function isCertBlocked(userId, courseId) {
+  const [[r]] = await q("SELECT cert_blocked FROM enrolments WHERE user_id=? AND course_id=?", [userId, courseId]);
+  return !!(r && r.cert_blocked);
 }
 
 /* ---- course enrolment requests ---- */
@@ -660,9 +707,11 @@ async function setCoursePlan(courseId, batchId, f) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(String(val || ""))) dueDates[String(label).slice(0, 60)] = String(val);
     }
   }
+  const completion = String(f.completion_date || "").slice(0, 20);
   await q(`INSERT INTO course_payment_plans (course_id,batch_id,total_fee,reg_fee,installments,start_date,completion_date,exam_unlock,due_dates) VALUES (?,?,?,?,?,?,?,?,?)
      ON DUPLICATE KEY UPDATE total_fee=VALUES(total_fee), reg_fee=VALUES(reg_fee), installments=VALUES(installments), start_date=VALUES(start_date), completion_date=VALUES(completion_date), exam_unlock=VALUES(exam_unlock), due_dates=VALUES(due_dates)`,
-    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), String(f.completion_date || "").slice(0, 20), unlock, JSON.stringify(dueDates)]);
+    [courseId, Number(batchId), total, reg, inst, String(f.start_date || "").slice(0, 20), completion, unlock, JSON.stringify(dueDates)]);
+  await syncBatchEndDate(batchId, completion);
   return getCoursePlan(batchId);
 }
 // Map of batchId -> exam_unlock level, for gating student exam access.
@@ -675,6 +724,14 @@ async function examUnlocksForBatches(batchIds) {
 
 async function usersMap() {
   const [rows] = await q("SELECT * FROM users WHERE role='student' ORDER BY id DESC"); // newest first
+  // Read every withheld enrolment once: this map is rebuilt on nearly every
+  // admin mutation, so a query per student would be felt.
+  const [blockedRows] = await q("SELECT user_id, course_id FROM enrolments WHERE cert_blocked=1");
+  const blockedByUser = new Map();
+  for (const b of blockedRows) {
+    if (!blockedByUser.has(b.user_id)) blockedByUser.set(b.user_id, []);
+    blockedByUser.get(b.user_id).push(b.course_id);
+  }
   const map = {};
   for (const u of rows) {
     map[u.email] = {
@@ -683,6 +740,7 @@ async function usersMap() {
       gender: u.gender || "", notes: u.notes || "", avatar: u.avatar || "",
       nic: u.nic || "", reg_no: u.reg_no || "",
       role: u.role, status: u.status, enrolled: await enrolledIds(u.id), enrolledBatch: await enrolledBatchNumbers(u.id), lockedCourses: await lockedCourseIds(u.id),
+      certBlockedCourses: blockedByUser.get(u.id) || [],
     };
   }
   return map;
@@ -901,18 +959,35 @@ async function certExists(studentId, courseId) {
   const [[r]] = await q("SELECT id FROM certificates WHERE student_id=? AND course_id=?", [studentId, courseId]);
   return !!r;
 }
+// Returns true when this call created the certificate, false when one was
+// already there. The unique index is what settles a race between two issuing
+// paths, so a rejected insert means the other side won, not that anything broke.
 async function issueCertificate(studentId, courseId, certNo, when) {
   const [[e]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [studentId, courseId]);
   const bid = e ? e.batch_id : await currentBatchId(courseId);
-  await q("INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,?,0,0)", [certNo, studentId, courseId, bid, when]);
+  try {
+    await q("INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,?,0,0)", [certNo, studentId, courseId, bid, when]);
+  } catch (err) {
+    if (err && (err.code === "ER_DUP_ENTRY" || err.errno === 1062)) return false;
+    throw err;
+  }
+  return true;
 }
 async function listCertificates() {
   const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.redownload_requested, c.student_id, c.course_id, bt.number AS batchNumber,
-      u.name AS studentName, u.email AS studentEmail, co.title AS courseTitle, co.code AS courseCode
+      u.name AS studentName, u.email AS studentEmail, co.title AS courseTitle, co.code AS courseCode,
+      COALESCE(en.cert_blocked,0) AS certBlocked
     FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
     LEFT JOIN batches bt ON bt.id=c.batch_id
+    LEFT JOIN enrolments en ON en.user_id=c.student_id AND en.course_id=c.course_id
     ORDER BY c.issued_at DESC`);
-  return rows;
+  // Tell the admin at a glance whether the student finished the course's exams.
+  // Issuing stays their call, this only reports eligibility.
+  const gate = await certExamStatusMap(rows.map((r) => ({ studentId: r.student_id, courseId: r.course_id })));
+  return rows.map((r) => {
+    const g = gate.get(`${r.student_id}:${r.course_id}`) || { ok: true, required: 0, pending: [] };
+    return { ...r, certBlocked: !!r.certBlocked, examOk: g.ok, examRequired: g.required, examPending: g.pending };
+  });
 }
 async function getCertificate(id) {
   const [[r]] = await q(`SELECT c.*, u.name AS studentName, u.email AS studentEmail,
@@ -1096,6 +1171,68 @@ async function studentExams(userId) {
     const [[a]] = await q("SELECT id, started_at, finished_at, score, total FROM exam_attempts WHERE exam_id=? AND user_id=? ORDER BY id DESC LIMIT 1", [r.id, userId]);
     const attemptsUsed = await finishedAttemptCount(r.id, userId);
     out.push({ ...r, attempt: a || null, attemptsUsed });
+  }
+  return out;
+}
+
+/* ---- certificate exam gate ---- */
+/* Exams that gate a course certificate: attached to the course and holding at
+   least one question. An empty paper never blocks a certificate (studentExams
+   skips those too). There is no pass mark, completion is the whole rule. */
+async function gatingExams(courseIds) {
+  const ids = [...new Set((courseIds || []).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const [rows] = await q(`SELECT e.id, e.course_id, e.title
+    FROM exams e WHERE e.course_id IN (?)
+      AND EXISTS (SELECT 1 FROM exam_questions eq WHERE eq.exam_id=e.id)
+    ORDER BY e.id`, [ids]);
+  return rows;
+}
+/* Builds the gate result for one student from the set of exam ids they have
+   finished at least once. Returns { ok, required, pending[] }. */
+function buildExamGate(exams, finishedIds) {
+  const pending = exams.filter((e) => !finishedIds.has(e.id)).map((e) => ({ id: e.id, title: e.title }));
+  return { ok: pending.length === 0, required: exams.length, pending };
+}
+/* userId -> Set of exam ids that user has a finished attempt for. */
+async function finishedAttemptsFor(examIds, userIds) {
+  const byUser = new Map();
+  if (examIds.length === 0 || userIds.length === 0) return byUser;
+  const [rows] = await q(`SELECT DISTINCT exam_id, user_id FROM exam_attempts
+    WHERE exam_id IN (?) AND user_id IN (?) AND finished_at IS NOT NULL`, [examIds, userIds]);
+  for (const r of rows) {
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, new Set());
+    byUser.get(r.user_id).add(r.exam_id);
+  }
+  return byUser;
+}
+/* Has this student completed every certificate-gating exam of the course?
+   A course with no gating exam returns ok with an empty pending list. */
+async function certExamStatus(userId, courseId) {
+  const exams = await gatingExams([courseId]);
+  if (exams.length === 0) return { ok: true, required: 0, pending: [] };
+  const byUser = await finishedAttemptsFor(exams.map((e) => e.id), [Number(userId)]);
+  return buildExamGate(exams, byUser.get(Number(userId)) || new Set());
+}
+/* The same gate for many student/course pairs in two queries, so certificate
+   lists never fan out into a query per row. Keyed "studentId:courseId". */
+async function certExamStatusMap(pairs) {
+  const out = new Map();
+  const list = (pairs || []).filter((p) => p && p.courseId);
+  if (list.length === 0) return out;
+  const exams = await gatingExams(list.map((p) => p.courseId));
+  const byCourse = new Map();
+  for (const e of exams) {
+    if (!byCourse.has(e.course_id)) byCourse.set(e.course_id, []);
+    byCourse.get(e.course_id).push(e);
+  }
+  const byUser = await finishedAttemptsFor(exams.map((e) => e.id), [...new Set(list.map((p) => Number(p.studentId)))]);
+  for (const p of list) {
+    const forCourse = byCourse.get(p.courseId) || [];
+    out.set(`${p.studentId}:${p.courseId}`,
+      forCourse.length === 0
+        ? { ok: true, required: 0, pending: [] }
+        : buildExamGate(forCourse, byUser.get(Number(p.studentId)) || new Set()));
   }
   return out;
 }
@@ -1364,6 +1501,7 @@ module.exports = {
   studentPlans, allPlans, setPlanSchedule, planById, deletePlan, addPayment, paymentOwnerUser, deletePayment, overduePayments,
   getCoursePlan, setCoursePlan, examUnlocksForBatches,
   setCourseLock, lockedCourseIds, isCourseLocked,
+  setCertBlocked, certBlockedCourseIds, isCertBlocked,
   getRemindersConfig, setRemindersConfig, markReminded,
   getTimezoneConfig, setTimezoneConfig,
   getCertSignature, setCertSignature,
@@ -1373,6 +1511,7 @@ module.exports = {
   logActivity, listActivity, clearActivity,
   examsList, examMeta, examFull, addExamQuestion, updateExamQuestion, deleteExamQuestion, clearExamQuestions, deleteExam,
   latestAttempt, finishedAttemptCount, createAttempt, finishAttempt, studentExams, studentAttemptsAdmin,
+  certExamStatus, certExamStatusMap,
   getBrand, getBrandPublic, setBrandValue, loginShowcase, getSmtp, getSmtpForClient, setSmtp,
   getRegConfig, getRegConfigForClient, setRegConfig, assignRegNo,
   getCaptcha, getCaptchaForClient, setCaptcha,

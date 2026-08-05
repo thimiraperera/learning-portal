@@ -6,6 +6,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 import { previewWords } from "../../lib/text.js";
+import { rs } from "../../lib/payments.js";
 
 const RECENT_COUNT = 6;
 
@@ -69,7 +70,7 @@ export default function Dashboard() {
         </>
       )}
 
-      {certificates.length > 0 && <CertificatesSection certificates={certificates} download={downloadCertificate} />}
+      {certificates.length > 0 && <CertificatesSection certificates={certificates} payments={payments} download={downloadCertificate} />}
 
       {locked.length > 0 && (
         <div style={{ marginTop: 30 }}>
@@ -86,7 +87,11 @@ export default function Dashboard() {
   );
 }
 
-function CertificatesSection({ certificates, download }) {
+/* The certificates the student has already been issued. Whatever still stops a
+   download is condensed to one calm line here, and the course page carries the
+   detail. "Locked" is deliberately avoided: in this app that word means course
+   access is blocked, which is a different thing entirely. */
+function CertificatesSection({ certificates, payments, download }) {
   const [msg, setMsg] = useState(null);
   const get = async (c) => {
     setMsg(null);
@@ -96,21 +101,37 @@ function CertificatesSection({ certificates, download }) {
   return (
     <div className="card" style={{ marginTop: 28 }}>
       <div className="card-title"><Award style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6, color: "var(--primary)" }} />My certificates</div>
-      <div className="card-subtitle">You can download each certificate once. If you need it again, ask your administrator to unlock it.</div>
+      <div className="card-subtitle">Certificates already issued to you. You can download each one once. If you need it again, ask your administrator to unlock it.</div>
       {certificates.map((c) => {
-        const canDownload = !c.downloaded || c.unlocked;
+        const plan = (payments || []).find((p) => p.course_id === c.course_id) || null;
+        const owed = plan && plan.remaining > 0 ? plan.remaining : 0;
+        // An older server sends no certBlocked, so it defaults to the permissive
+        // answer rather than inventing a hold. The rest matches the download route.
+        const blocked = c.certBlocked === true;
+        const alreadyUsed = c.downloaded && !c.unlocked;
+        const reason = blocked
+          ? "Your certificate for this course is on hold. Please contact your administrator."
+          : owed > 0
+            ? `Settle your remaining ${rs(owed)} to download this certificate.`
+            : null;
+        const canDownload = !blocked && !alreadyUsed && owed <= 0;
         return (
           <div key={c.id} className="media-row" style={{ marginBottom: 8 }}>
             <div className="mr-icon"><Award /></div>
             <div className="mr-body">
               <div className="mr-title">{c.courseTitle} <span className="cc-code" style={{ marginLeft: 6 }}>{c.courseCode}</span></div>
-              <div className="mr-meta">Certificate {c.cert_no}{c.downloaded && !c.unlocked ? " · already downloaded" : ""}</div>
+              <div className="mr-meta">Certificate {c.cert_no}{alreadyUsed ? " · already downloaded" : ""}</div>
+              {reason && (!alreadyUsed || blocked) && (
+                <div style={{ color: "#9CA3AF", fontSize: 12, marginTop: 4 }}>{reason}</div>
+              )}
               {msg && msg.id === c.id && <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 4 }}><AlertTriangle style={{ width: 12, height: 12, verticalAlign: "-2px" }} /> {msg.text}</div>}
             </div>
             <div className="mr-actions">
-              {canDownload
-                ? <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>
-                : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+              {canDownload && <button className="btn btn-primary btn-sm" onClick={() => get(c)}><Download /> Download</button>}
+              {!canDownload && !blocked && alreadyUsed && <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.6 }}>Downloaded</button>}
+              {!canDownload && (blocked || !alreadyUsed) && (
+                <span className="badge badge-muted">{blocked ? "On hold" : "Not yet available"}</span>
+              )}
             </div>
           </div>
         );

@@ -18,7 +18,7 @@ import { popup } from "../../components/Popup.jsx";
 import Button from "../../components/Button.jsx";
 import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
-import { rs, fmtDate, planBadge, installmentBuckets } from "../../lib/payments.js";
+import { rs, fmtDate, fmtDateMs, planBadge, installmentBuckets } from "../../lib/payments.js";
 
 function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
   const [number, setNumber] = useState(String(batch.number ?? ""));
@@ -47,7 +47,8 @@ function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
         <div className="form-group"><label className="form-label">Start date</label>
           <input className="form-control" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">End date</label>
-          <input className="form-control" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+          <input className="form-control" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Saving this batch's payment plan replaces this with the plan's completion date.</div></div>
         <div className="form-group"><label className="form-label">Certificate date</label>
           <input className="form-control" type="date" value={certDate} onChange={(e) => setCertDate(e.target.value)} /></div>
       </div>
@@ -330,13 +331,28 @@ function StudentsTab({ id, batchId, batchNum, store, navigate }) {
   );
 }
 
-function fmtCertDate(ts) { return new Date(Number(ts) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
+function fmtCertDate(ts) { return fmtDateMs(Number(ts) || Date.now()); }
 
-/* Issue and manage certificates for THIS course and THIS batch only. Scoping
-   the list to the viewed batch is what stops an accidental "issue to everyone":
-   only students enrolled in this course's selected batch can be ticked. */
+// The same reading the automatic issue uses: no plan means nothing to settle.
+const feesSettled = (plan) => !plan || Number(plan.remaining || 0) <= 0.009;
+
+/* What is still holding a certificate up, in one sub-line. Long exam lists are
+   summarised so the row never wraps. Empty when nothing is outstanding. */
+function outstandingNote(gate, plan) {
+  const bits = [];
+  const titles = gate.known ? gate.pending.map((p) => p.title) : [];
+  if (titles.length > 0) {
+    bits.push("Not completed: " + (titles.length > 2 ? `${titles.slice(0, 2).join(", ")} +${titles.length - 2} more` : titles.join(", ")));
+  }
+  if (!feesSettled(plan)) bits.push(`${rs(plan.remaining)} remaining`);
+  return bits.join(" · ");
+}
+
+/* Watch and, in exceptional cases, override certificates for THIS course and
+   THIS batch. Issuing is automatic, so the manual tick list stays scoped to the
+   viewed batch: that is what stops an accidental "issue to everyone". */
 function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) {
-  const { users, certificates, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
+  const { users, certificates, exams, plans, loadExam, issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate } = store;
   const [statusF, setStatusF] = useState("all");
   const [qy, setQy] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -344,6 +360,35 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const batchTag = batchNum != null ? `Batch ${batchNum}` : "this course";
+
+  // Same rule the server gates on: an exam attached to this course counts only
+  // while it holds questions, so an empty paper never blocks a certificate.
+  const gating = (exams || []).filter((e) => e.course_id === id && Number(e.bankSize) > 0);
+  const gatingKey = gating.map((e) => e.id).join(",");
+  // examId -> ids of the students who have finished it. null until it loads,
+  // which is the only time a row cannot report where the student stands.
+  const [finished, setFinished] = useState(null);
+  const [examErr, setExamErr] = useState(false);
+
+  useEffect(() => {
+    const ids = gatingKey ? gatingKey.split(",").map(Number) : [];
+    let alive = true;
+    setExamErr(false);
+    if (ids.length === 0) { setFinished(new Map()); return undefined; }
+    setFinished(null);
+    Promise.all(ids.map((eid) => loadExam(eid)))
+      .then((list) => {
+        if (!alive) return;
+        const m = new Map();
+        list.forEach((ex, i) => m.set(ids[i], new Set((ex.attempts || []).map((a) => a.user_id))));
+        setFinished(m);
+      })
+      .catch(() => { if (alive) setExamErr(true); });
+    return () => { alive = false; };
+  }, [gatingKey, loadExam]);
+
+  const planByUser = {};
+  (plans || []).forEach((p) => { if (p.course_id === id) planByUser[p.user_id] = p; });
 
   // One row per student enrolled in THIS course's viewed batch, plus any
   // certificate already issued for this course+batch (in case a student moved).
@@ -354,12 +399,12 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
     const stuBatch = u.enrolledBatch ? u.enrolledBatch[id] : null;
     if (batchNum != null && stuBatch !== batchNum) continue;
     const cert = certificates.find((c) => c.student_id === u.id && c.course_id === id) || null;
-    rows.push({ key: String(u.id), studentId: u.id, name: u.name, email: u.email, batchNumber: stuBatch, cert });
+    rows.push({ key: String(u.id), studentId: u.id, name: u.name, email: u.email, batchNumber: stuBatch, cert, blocked: (u.certBlockedCourses || []).includes(id) });
     seen.add(String(u.id));
   }
   for (const c of certificates) {
     if (c.course_id !== id || (batchNum != null && c.batchNumber !== batchNum) || seen.has(String(c.student_id))) continue;
-    rows.push({ key: String(c.student_id), studentId: c.student_id, name: c.studentName, email: c.studentEmail, batchNumber: c.batchNumber, cert: c });
+    rows.push({ key: String(c.student_id), studentId: c.student_id, name: c.studentName, email: c.studentEmail, batchNumber: c.batchNumber, cert: c, blocked: !!c.certBlocked });
   }
 
   const ql = qy.trim().toLowerCase();
@@ -383,14 +428,28 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
 
   const missingProgramName = !certProgramName || !certProgramName.trim();
 
+  // Exam progress for one row. An issued certificate carries the server's own
+  // reading of the gate; every other row is measured against the same exams here.
+  const examGate = (r) => {
+    if (r.cert) return { known: true, required: Number(r.cert.examRequired) || 0, pending: r.cert.examPending || [], ok: !!r.cert.examOk };
+    if (gating.length === 0) return { known: true, required: 0, pending: [], ok: true };
+    if (!finished) return { known: false, required: gating.length, pending: [], ok: false };
+    const pending = gating.filter((e) => { const done = finished.get(e.id); return !done || !done.has(r.studentId); });
+    return { known: true, required: gating.length, pending, ok: pending.length === 0 };
+  };
+  const clear = (r) => !r.blocked && examGate(r).ok && feesSettled(planByUser[r.studentId]);
+
   const issue = async () => {
     if (missingProgramName) { setMsg({ ok: false, msg: "Set a Certificate program name on the Course details tab before issuing certificates." }); return; }
-    const pairs = filtered.filter((r) => !r.cert && selected.has(r.key)).map((r) => ({ studentId: r.studentId, courseId: id }));
-    if (pairs.length === 0) { setMsg({ ok: false, msg: "Tick at least one student to certify." }); return; }
-    if (!(await popup.confirm(
-      `Issue ${pairs.length} certificate${pairs.length === 1 ? "" : "s"} for "${courseTitle}" (${batchTag})? Each selected student gets a certificate for this course and an email. This only affects the students ticked below.`,
-      { title: "Issue certificates", confirmText: `Issue ${pairs.length}` }))) return;
-    const r = await issueManyCertificates(pairs);
+    const picked = filtered.filter((r) => !r.cert && selected.has(r.key));
+    if (picked.length === 0) { setMsg({ ok: false, msg: "Tick at least one student to certify." }); return; }
+    const held = picked.filter((r) => !clear(r));
+    const lines = [`Issue ${picked.length} certificate${picked.length === 1 ? "" : "s"} for "${courseTitle}" (${batchTag})? Each selected student gets a certificate for this course and an email. This only affects the students ticked below.`];
+    if (held.length > 0) {
+      lines.push("", `${held.length} of them ${held.length === 1 ? "has" : "have"} exams or fees outstanding, or a certificate on hold. Issuing by hand overrides those checks, but the student still cannot download while the fees are outstanding or the hold stands.`);
+    }
+    if (!(await popup.confirm(lines.join("\n"), { title: "Issue certificates", confirmText: `Issue ${picked.length}` }))) return;
+    const r = await issueManyCertificates(picked.map((r2) => ({ studentId: r2.studentId, courseId: id })));
     setMsg(r);
     if (r.ok) setSelected(new Set());
   };
@@ -402,12 +461,28 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
     if (cert.downloaded) return <span className="badge badge-muted">Downloaded</span>;
     return <span className="badge badge-accepted">Available</span>;
   };
+  // Has the student completed every gating exam? Nothing to show while the course
+  // has no gating exam, or until the attempts load.
+  const examBadge = (gate) => {
+    if (!gate.known || gate.required === 0) return null;
+    return gate.ok
+      ? <span className="badge badge-accepted">Exams completed</span>
+      : <span className="badge badge-pending">Exams pending</span>;
+  };
+  // The line under the certificate badge: when it was issued, or what the
+  // automatic issue is waiting for.
+  const certNote = (r) => {
+    if (r.cert) return `Issued ${fmtCertDate(r.cert.issued_at)}`;
+    if (r.blocked) return "Withheld by an admin";
+    if (clear(r)) return missingProgramName ? "Waiting on the Certificate program name" : "Issues by itself at this student's next sign in";
+    return "";
+  };
 
   return (
     <div>
-      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Issuing is limited to <strong>{batchTag}</strong> of this course. Switch the batch selector above to certify a different batch. Only the students you tick are certified.</span></div>
+      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Certificates issue and email themselves once a student has completed the course exams and settled their fees, so there is normally nothing to do here. Issuing by hand skips those checks and covers <strong>{batchTag}</strong> only: switch the batch selector above for another batch.</span></div>
       {missingProgramName && (
-        <div className="alert alert-danger" style={{ marginBottom: 14 }}><AlertTriangle /> <span>No Certificate program name is set for this course. Set one on the Course details tab before certificates can be issued.</span></div>
+        <div className="alert alert-danger" style={{ marginBottom: 14 }}><AlertTriangle /> <span>No Certificate program name is set for this course. Set one on the Course details tab before any certificate for this course can be issued, automatically or by hand.</span></div>
       )}
       {msg && <div className={"alert " + (msg.ok ? "alert-success" : "alert-danger")}>{msg.ok ? <CheckCircle /> : <AlertTriangle />} {msg.msg}</div>}
 
@@ -421,11 +496,17 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
           <Search style={{ position: "absolute", left: 12, top: 11, width: 16, height: 16, color: "#9CA3AF" }} />
           <input className="form-control" style={{ paddingLeft: 36, width: "100%" }} placeholder="Search student name or email" value={qy} onChange={(e) => { setQy(e.target.value); reset(); }} />
         </div>
-        <Button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0 || missingProgramName}>
-          <Award /> Issue {selected.size} certificate{selected.size === 1 ? "" : "s"}
+        <Button className="btn btn-outline" style={{ marginLeft: "auto" }} onClick={issue} disabled={selected.size === 0 || missingProgramName}>
+          <Award /> Issue {selected.size > 0 ? `${selected.size} ` : ""}by hand
         </Button>
       </div>
-      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 14 }}>{filtered.length} student{filtered.length === 1 ? "" : "s"} in {batchTag}</div>
+      <div style={{ fontSize: 12.5, color: "#9CA3AF", marginBottom: 14 }}>
+        {filtered.length} student{filtered.length === 1 ? "" : "s"} in {batchTag}
+        {gating.length > 0
+          ? ` · Exams checked: ${gating.map((e) => e.title).join(", ")}`
+          : " · No exam is attached to this course, so only the fees are checked"}
+        {examErr ? " · exam progress could not be loaded, reload to try again" : ""}
+      </div>
 
       {filtered.length === 0 ? (
         <div className="empty-state"><div className="empty-icon"><Award /></div><p>No students in {batchTag} match these filters.</p></div>
@@ -439,32 +520,48 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
                     <input type="checkbox" checked={allChecked} disabled={selectableKeys.length === 0} onChange={toggleAll}
                       style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: selectableKeys.length ? "pointer" : "default" }} />
                   </th>
-                  <th>Student</th><th>Batch</th><th>Status</th><th></th>
+                  <th>Student</th><th>Batch</th><th>Exams and fees</th><th>Certificate</th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {slice.map((r) => (
-                  <tr key={r.key} style={{ opacity: r.cert ? 0.85 : 1 }}>
-                    <td style={{ textAlign: "center" }}>
-                      {r.cert
-                        ? <CheckCircle style={{ width: 15, height: 15, color: "#16A34A" }} />
-                        : <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: "pointer" }} />}
-                    </td>
-                    <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
-                    <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
-                    <td>{statusBadge(r.cert)}{r.cert && r.cert.redownload_requested ? <span className="badge badge-pending" style={{ marginLeft: 6 }}>Re-download requested</span> : null}{r.cert && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{fmtCertDate(r.cert.issued_at)}</div>}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {r.cert && <>
-                        <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(r.cert.id))}><Eye style={{ width: 16, height: 16 }} /></button>
-                        <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(r.cert.id, r.cert.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
-                        <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(r.cert.id))}><Send style={{ width: 16, height: 16 }} /></button>
-                        {r.cert.downloaded && !r.cert.unlocked && (
-                          <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(r.cert.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
-                        )}
-                      </>}
-                    </td>
-                  </tr>
-                ))}
+                {slice.map((r) => {
+                  const plan = planByUser[r.studentId] || null;
+                  const pb = planBadge(plan ? plan.status : "empty");
+                  const gate = examGate(r);
+                  const waiting = outstandingNote(gate, plan);
+                  const note = certNote(r);
+                  return (
+                    <tr key={r.key}>
+                      <td style={{ textAlign: "center" }}>
+                        {r.cert
+                          ? <CheckCircle style={{ width: 15, height: 15, color: "#16A34A" }} />
+                          : <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} style={{ width: 16, height: 16, accentColor: "var(--primary)", cursor: "pointer" }} />}
+                      </td>
+                      <td><div style={{ fontWeight: 700, color: "var(--title)" }}>{r.name}</div><div style={{ fontSize: 12, color: "#9CA3AF" }}>{r.email}</div></td>
+                      <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{r.batchNumber != null ? `Batch ${r.batchNumber}` : "-"}</td>
+                      <td>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{examBadge(gate)}<span className={"badge " + pb.cls}>{pb.label}</span></div>
+                        {waiting ? <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{waiting}</div> : null}
+                      </td>
+                      <td>
+                        {statusBadge(r.cert)}
+                        {r.blocked ? <span className="badge badge-pending" style={{ marginLeft: 6 }}>Certificate on hold</span> : null}
+                        {r.cert && r.cert.redownload_requested ? <span className="badge badge-pending" style={{ marginLeft: 6 }}>Re-download requested</span> : null}
+                        {note ? <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{note}</div> : null}
+                      </td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        {r.cert && <>
+                          <button className="icon-btn-plain" title="View" onClick={() => act(() => adminViewCertificate(r.cert.id))}><Eye style={{ width: 16, height: 16 }} /></button>
+                          <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(r.cert.id, r.cert.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
+                          <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(r.cert.id))}><Send style={{ width: 16, height: 16 }} /></button>
+                          {r.cert.downloaded && !r.cert.unlocked && (
+                            <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(r.cert.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
+                          )}
+                        </>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

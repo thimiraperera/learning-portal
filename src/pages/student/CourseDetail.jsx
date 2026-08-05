@@ -18,7 +18,7 @@ export function openUrl(u) {
 export default function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments, certificates, downloadCertificate, requestCertRedownload } = useStore();
+  const { currentUser, courses, exams, downloadMaterial, paymentLocked, logActivity, payments, certificates, certStatus, downloadCertificate, requestCertRedownload } = useStore();
   const [tab, setTab] = useState("recordings");
   const [showDesc, setShowDesc] = useState(false);
   // Start every tab at the top of the page (long content can leave you scrolled down).
@@ -116,7 +116,7 @@ export default function CourseDetail() {
 
         {tab === "payments" && <PaymentsView plan={myPlan} />}
 
-        {tab === "certificate" && <CertificateView cert={myCert} plan={myPlan} download={downloadCertificate} requestRedownload={requestCertRedownload} />}
+        {tab === "certificate" && <CertificateView cert={myCert} plan={myPlan} status={(certStatus || {})[id]} download={downloadCertificate} requestRedownload={requestCertRedownload} />}
 
         {tab === "exam" && myExams.map((x) => {
           const served = x.question_count > 0 ? Math.min(x.question_count, x.bankSize) : x.bankSize;
@@ -232,20 +232,90 @@ function PaymentsView({ plan }) {
   );
 }
 
-/* The student's certificate for this course. It can be downloaded only when the
-   certificate has been issued AND the course fees are fully paid, and only once
-   (a second download needs the admin to re-enable it; the student requests that
-   here and the admin sees the request on the course's Certificates tab). */
-function CertificateView({ cert, plan, download, requestRedownload }) {
+/* The two things that hold a certificate up. The payment one is shown both
+   before and after issue, so a student reads the same wording either way.
+   `spaced` adds the gap when another card is already stacked above. */
+function PaymentGate({ owed, spaced }) {
+  return (
+    <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginTop: spaced ? 12 : 0, marginBottom: 0 }}>
+      <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Payment outstanding</div>
+      <div className="card-subtitle" style={{ marginBottom: 0 }}>Your certificate becomes available once your course fees are fully paid.{owed > 0 ? ` You still owe ${rs(owed)}.` : ""} Check the Payments tab for your schedule.</div>
+    </div>
+  );
+}
+
+function ExamGate({ pending, spaced }) {
+  const many = pending.length !== 1;
+  return (
+    <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginTop: spaced ? 12 : 0, marginBottom: 0 }}>
+      <div className="card-title" style={{ color: "var(--danger)" }}><FileQuestion style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> {many ? "Exams to complete" : "Exam to complete"}</div>
+      <div className="card-subtitle" style={{ marginBottom: 0 }}>
+        Your certificate becomes available once you have completed {many ? "every exam" : "the exam"} for this course. There is no minimum score. Open the Exams tab to complete {many ? "them" : "it"}.
+      </div>
+      {pending.map((p) => (
+        <div key={p.id} style={{ fontSize: 12.5, color: "#6B7280", marginTop: 8 }}>
+          <strong style={{ color: "var(--title)" }}>{p.title}</strong> is not completed yet.
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Calm, no-alarm card for a certificate the student cannot get at right now and
+   cannot do anything about: an admin hold, or a course with no certificate
+   program name set. Both need the administrator, so neither promises delivery. */
+function UnavailableCard({ blocked }) {
+  return (
+    <div className="card" style={{ marginBottom: 0 }}>
+      <div className="card-title"><Info style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> {blocked ? "Certificate on hold" : "Certificate not available yet"}</div>
+      <div className="card-subtitle" style={{ marginBottom: 0 }}>
+        {blocked
+          ? "Your certificate for this course is on hold. Please contact your administrator."
+          : "Your certificate for this course is not available yet. Please contact your administrator."}
+      </div>
+    </div>
+  );
+}
+
+/* The student's certificate for this course. The system issues and emails it on
+   its own once every course exam is completed and the fees are settled, so until
+   then there is no certificate row and this tab reports what the server says is
+   still outstanding. Eligibility is never worked out here: a locked course shows
+   the student no exams at all, so an empty exam list is not proof of anything.
+   A certificate can be downloaded once; a second download needs the admin to
+   re-enable it, and the student asks for that here. */
+function CertificateView({ cert, plan, status, download, requestRedownload }) {
   const [msg, setMsg] = useState(null);
-  if (!cert) {
-    return <div className="empty-state"><div className="empty-icon"><Award /></div><p>No certificate yet. It appears here once your administrator issues it for this course.</p></div>;
-  }
   const owed = plan && plan.remaining > 0 ? plan.remaining : 0;
-  const fullyPaid = owed <= 0;
+
+  if (!cert) {
+    // No summary means an older server, or a course it does not cover. Say only
+    // what is certain rather than guessing at a delivery that may never come.
+    if (!status) {
+      return <div className="empty-state"><div className="empty-icon"><Award /></div><p>No certificate here yet. It appears here as soon as one is issued for this course.</p></div>;
+    }
+    if (status.certBlocked || status.missingProgramName) return <UnavailableCard blocked={!!status.certBlocked} />;
+    const pending = Array.isArray(status.examsPending) ? status.examsPending : [];
+    return (
+      <div>
+        <div className="empty-state">
+          <div className="empty-icon"><Award /></div>
+          <p>{status.eligible
+            ? "No certificate here yet. You have completed everything for this course, so your certificate is on its way. It is emailed to you and appears here on its own, nothing is needed from you."
+            : "No certificate here yet. It is issued and emailed to you automatically once everything below is done."}</p>
+        </div>
+        {!status.feesSettled && <PaymentGate owed={owed} />}
+        {!status.examsComplete && <ExamGate pending={pending} spaced={!status.feesSettled} />}
+      </div>
+    );
+  }
+
+  // An issued certificate belongs to the student, so only the checks the download
+  // route itself makes are shown: an admin hold, and the outstanding fees.
+  const blocked = cert.certBlocked === true;
   const alreadyUsed = cert.downloaded && !cert.unlocked;
-  const canDownload = fullyPaid && !alreadyUsed;
-  const issued = new Date(Number(cert.issued_at) || Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  const canDownload = !blocked && owed <= 0 && !alreadyUsed;
+  const issued = fmtDateMs(Number(cert.issued_at) || Date.now());
   const get = async () => { setMsg(null); try { await download(cert.id, cert.cert_no); setMsg({ ok: true, text: "Certificate downloaded." }); } catch (e) { setMsg({ ok: false, text: e.message }); } };
   const ask = async () => { setMsg(null); const r = await requestRedownload(cert.id); setMsg({ ok: r.ok, text: r.msg }); };
 
@@ -260,14 +330,11 @@ function CertificateView({ cert, plan, download, requestRedownload }) {
         {canDownload && <div className="mr-actions"><Button className="btn btn-primary btn-sm" onClick={get}><Download style={{ width: 15, height: 15 }} /> Download</Button></div>}
       </div>
 
-      {!fullyPaid && (
-        <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginBottom: 0 }}>
-          <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Payment required</div>
-          <div className="card-subtitle" style={{ marginBottom: 0 }}>You can download your certificate once your course fees are fully paid. You still owe {rs(owed)}. Check the Payments tab for your schedule.</div>
-        </div>
-      )}
+      {blocked && <UnavailableCard blocked />}
 
-      {fullyPaid && alreadyUsed && (
+      {owed > 0 && <PaymentGate owed={owed} spaced={blocked} />}
+
+      {!blocked && owed <= 0 && alreadyUsed && (
         <div className="card" style={{ marginBottom: 0 }}>
           <div className="card-subtitle" style={{ marginTop: 0, marginBottom: cert.redownload_requested ? 0 : 12 }}>
             You have already downloaded this certificate once. {cert.redownload_requested

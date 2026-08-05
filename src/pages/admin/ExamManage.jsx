@@ -378,7 +378,8 @@ function ResultsTab({ exam }) {
                     <div style={{ fontSize: 12, color: "#9CA3AF" }}>{a.studentEmail}</div>
                   </td>
                   <td>
-                    <span className={"badge " + (pct >= 50 ? "badge-accepted" : "badge-pending")}>{fmtScore(a.score)}/{a.total} ({pct}%)</span>
+                    {/* Neutral on purpose: an exam has no pass mark. */}
+                    <span className="badge badge-muted">{fmtScore(a.score)}/{a.total} ({pct}%)</span>
                   </td>
                   <td style={{ color: "#6B7280", whiteSpace: "nowrap" }}>{fmtDateTime(a.finished_at)}</td>
                   <td style={{ color: "#6B7280" }}>{fmtDuration(a.started_at, a.finished_at)}</td>

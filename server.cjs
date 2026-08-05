@@ -128,6 +128,10 @@ async function sendMail(to, subject, html, attachments) {
       requireTLS: security === "starttls", // force STARTTLS upgrade (usually port 587)
       ignoreTLS: security === "none",      // no encryption
       auth: s.username ? { user: s.username, pass: s.password } : undefined,
+      // Without these a dead SMTP host holds the socket open for minutes.
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
     });
     const from = s.fromName ? `"${s.fromName}" <${s.fromEmail || s.username}>` : (s.fromEmail || s.username);
     // Embed the email header logo inline (cid:brandlogo) so it renders in all
@@ -486,6 +490,10 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     const courses = await dbmod.coursesMap(ids, batchByCourse);
     const paymentLocked = await dbmod.lockedCourseIds(u.id);
     const plans = await dbmod.studentPlans(u.id);
+    // Safety net: eligibility can shift through data edits no route covers, so
+    // re-check every enrolled course at sign-in. Reuses the plans just loaded,
+    // and is never allowed to break bootstrap.
+    for (const cid of ids) await tryAutoIssue(u.id, cid, plans);
     // Which installment seqs the student has paid, per course (for content gating).
     const paidByCourse = {};
     const planByCourse = {};
@@ -519,7 +527,38 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
       const reason = examLockReason(examUnlock[batchByCourse[ex.course_id]] ?? -1, planByCourse[ex.course_id], paidByCourse[ex.course_id]);
       if (reason) { ex.paymentLocked = true; ex.lockReason = reason; }
     }
-    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates: await dbmod.studentCertificates(u.id), exams, requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
+    // A certificate also needs every course exam completed and no admin hold, so
+    // carry both along and the student page can explain the block before they click.
+    const certificates = await dbmod.studentCertificates(u.id);
+    const certBlockedIds = await dbmod.certBlockedCourseIds(u.id);
+    const gatePairs = [...new Set([...ids, ...certificates.map((c) => c.course_id)])].map((cid) => ({ studentId: u.id, courseId: cid }));
+    const certGate = await dbmod.certExamStatusMap(gatePairs);
+    for (const c of certificates) {
+      const g = certGate.get(`${u.id}:${c.course_id}`) || { ok: true, required: 0, pending: [] };
+      Object.assign(c, { examOk: g.ok, examRequired: g.required, examPending: g.pending, certBlocked: certBlockedIds.includes(c.course_id) });
+    }
+    // The same answer for courses with no certificate yet. The page cannot work
+    // this out for itself: a locked course shows the student no exams at all, so
+    // an empty exam list is not proof that the course is finished.
+    const certStatus = {};
+    for (const cid of ids) {
+      const g = certGate.get(`${u.id}:${cid}`) || { ok: true, required: 0, pending: [] };
+      const pl = planByCourse[cid];
+      const row = {
+        courseId: cid,
+        examsComplete: g.ok,
+        examsRequired: g.required,
+        examsPending: g.pending,
+        feesSettled: !(pl && pl.remaining > 0.009),
+        certBlocked: certBlockedIds.includes(cid),
+        missingProgramName: !String((courses[cid] && courses[cid].certProgramName) || "").trim(),
+        hasCertificate: certificates.some((c) => c.course_id === cid),
+      };
+      // An account that is no longer active is never issued one, so never promise it.
+      row.eligible = row.examsComplete && row.feesSettled && !row.certBlocked && !row.missingProgramName && u.status === "active";
+      certStatus[cid] = row;
+    }
+    res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates, certStatus, exams, requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
   }
 }));
 
@@ -647,6 +686,21 @@ app.post("/api/admin/students/:id/courses/:courseId/lock", auth, adminOnly, wrap
   res.json(await adminState());
 }));
 
+/* ---- admin: withhold/release a student's certificate for one course ---- */
+// Withholding stops the automatic issue and blocks the student's download.
+// Issuing by hand stays available to the admin either way.
+app.post("/api/admin/students/:id/courses/:courseId/cert-block", auth, adminOnly, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const cid = String(req.params.courseId);
+  const [[has]] = await q("SELECT 1 AS x FROM enrolments WHERE user_id=? AND course_id=?", [id, cid]);
+  if (!has) return res.status(404).json({ error: "Student is not enrolled in this course." });
+  const blocked = req.body?.blocked ? 1 : 0;
+  await dbmod.setCertBlocked(id, cid, blocked);
+  // Releasing a hold can make the student eligible right away.
+  if (!blocked) await tryAutoIssue(id, cid);
+  res.json(await adminState());
+}));
+
 /* ---- admin: installment payment plans ---- */
 app.get("/api/admin/students/:id/plans", auth, adminOnly, wrap(async (req, res) => {
   res.json({ plans: await dbmod.studentPlans(Number(req.params.id)) });
@@ -668,12 +722,17 @@ app.put("/api/admin/students/:id/plans/:courseId", auth, adminOnly, wrap(async (
   if (items.some((it) => !it.dueDate)) return res.status(400).json({ error: "Every installment needs a due date." });
   if (items.length === 0) { await dbmod.deletePlan(id, cid); }
   else await dbmod.setPlanSchedule(id, cid, items);
+  // Lowering (or clearing) the fee can leave nothing owing, which settles the course.
+  await tryAutoIssue(id, cid);
   res.json({ plans: await dbmod.studentPlans(id), ...(await adminState()) });
 }));
 
 app.delete("/api/admin/students/:id/plans/:courseId", auth, adminOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
-  await dbmod.deletePlan(id, String(req.params.courseId));
+  const cid = String(req.params.courseId);
+  await dbmod.deletePlan(id, cid);
+  // No plan means nothing to pay, so the student may now qualify.
+  await tryAutoIssue(id, cid);
   res.json({ plans: await dbmod.studentPlans(id), ...(await adminState()) });
 }));
 
@@ -696,6 +755,8 @@ app.post("/api/admin/plans/:planId/payments", auth, adminOnly, wrap(async (req, 
   const note = String(req.body?.note || "").slice(0, 255);
   const paidAt = Number(req.body?.paidAt) || Date.now();
   await dbmod.addPayment(planId, amount, note, paidAt);
+  // This payment may have settled the course, which is half of the certificate rule.
+  await tryAutoIssue(plan.user_id, plan.course_id);
   res.json({ plans: await dbmod.studentPlans(plan.user_id), ...(await adminState()) });
 }));
 
@@ -719,7 +780,9 @@ app.put("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) =>
   const dateError = validateDueDateOverrides(req.body?.dueDates, req.body?.start_date, req.body?.completion_date);
   if (dateError) return res.status(400).json({ error: dateError });
   const tpl = await dbmod.setCoursePlan(cid, bid, req.body || {});
-  res.json({ plan: tpl, preview: generateScheduleItems(tpl), batchId: bid });
+  // Saving the plan also moves this batch's end date onto the completion date,
+  // so send the refreshed state back for the batch list to pick up.
+  res.json({ plan: tpl, preview: generateScheduleItems(tpl), batchId: bid, ...(await adminState()) });
 }));
 // Write the generated schedule onto every enrolled student in this batch.
 app.post("/api/admin/courses/:id/plan/apply", auth, adminOnly, wrap(async (req, res) => {
@@ -730,6 +793,8 @@ app.post("/api/admin/courses/:id/plan/apply", auth, adminOnly, wrap(async (req, 
   if (items.some((it) => !it.dueDate)) return res.status(400).json({ error: "The plan needs a start date and a completion date." });
   const [rows] = await q("SELECT user_id FROM enrolments WHERE course_id=? AND batch_id=?", [cid, bid]);
   for (const r of rows) await dbmod.setPlanSchedule(r.user_id, cid, items, bid);
+  // The new schedule can settle a student who had already overpaid the old one.
+  for (const r of rows) await tryAutoIssue(r.user_id, cid);
   res.json({ applied: rows.length, ...(await adminState()) });
 }));
 
@@ -956,6 +1021,82 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
 }));
 
 /* ---- certificates (admin) ---- */
+/* The one place a certificate is created and announced, shared by the admin
+   Issue button and the automatic gate so both produce the same certificate and
+   the same email. Returns null on success, or a reason string when it declines:
+   "exists" or "no-program-name". awaitMail=false hands the email off and returns
+   as soon as the row is written, for the paths where a student or an admin is
+   waiting on the response. */
+async function issueCertificateFor(stu, course, { awaitMail = true } = {}) {
+  if (await dbmod.certExists(stu.id, course.id)) return "exists";
+  // The certificate prints this instead of the internal course title, so it
+  // must be set before a certificate for this course can be issued at all.
+  if (!String(course.cert_program_name || "").trim()) return "no-program-name";
+  // First issue for a course locks in the default template so future
+  // certificates for that course keep using the same design.
+  if (!course.cert_template && defaultTemplateId()) {
+    course.cert_template = defaultTemplateId();
+    await q("UPDATE courses SET cert_template=? WHERE id=?", [course.cert_template, course.id]);
+  }
+  const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+  // The unique index can reject this when another path issued the same
+  // certificate a moment ago, which is the same answer as certExists above.
+  if (!(await dbmod.issueCertificate(stu.id, course.id, certNo, Date.now()))) return "exists";
+  const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
+    mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
+    mailer.statusBox(`Your certificate for ${mailer.esc(course.title)} has been issued.`, "success") +
+    mailer.infoTable([["Course", mailer.esc(course.title)], /* course code hidden: ["Code", mailer.esc(course.code)], */ ["Certificate No", mailer.esc(certNo)]]) +
+    mailer.muted("Sign in to your dashboard to download your certificate."));
+  const mailing = sendMail(stu.email, "Your certificate has been issued", html)
+    .catch((e) => { console.error("Certificate email failed", stu.email, e); });
+  if (awaitMail) await mailing;
+  return null;
+}
+
+/* Issue by itself once the student has finished every gating exam and settled
+   the course fees. Idempotent: certExists makes a repeat call a no-op, so it is
+   safe to fire from every route where eligibility can change. Callers that
+   already hold the student's plans pass them in to save the lookup. */
+async function autoIssueCertificate(userId, courseId, knownPlans) {
+  const sid = Number(userId);
+  const cid = String(courseId || "");
+  if (!sid || !cid) return false;
+  const [[en]] = await q("SELECT cert_blocked FROM enrolments WHERE user_id=? AND course_id=?", [sid, cid]);
+  if (!en || en.cert_blocked) return false;
+  if (await dbmod.certExists(sid, cid)) return false;
+  const gate = await dbmod.certExamStatus(sid, cid);
+  if (!gate.ok) return false;
+  // Same payment rule as the download route: a plan with a balance still owes,
+  // and no plan at all means there is nothing to pay.
+  const plan = (knownPlans || await dbmod.studentPlans(sid)).find((pl) => pl.course_id === cid);
+  if (plan && plan.remaining > 0.009) return false;
+  // Only a student who can still use the portal gets one by itself. An admin
+  // issuing by hand is free to decide otherwise.
+  const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student' AND status='active'", [sid]);
+  const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
+  if (!stu || !course) return false;
+  // A course with no Certificate program name simply cannot be issued yet, so
+  // pass over it quietly instead of failing the route that triggered this.
+  const issued = (await issueCertificateFor(stu, course, { awaitMail: false })) === null;
+  // The email is no longer awaited, so this is the record that it happened.
+  if (issued) dbmod.logActivity(sid, "certificate", `Certificate issued automatically for "${course.title}"`).catch(() => {});
+  return issued;
+}
+/* Every trigger site goes through this: an auto-issue must never fail the
+   request that caused it. Calls for the same student and course are chained,
+   because awaits interleave and two triggers landing together could otherwise
+   both clear certExists. Across processes the unique index catches the rest. */
+const autoIssueQueue = new Map();
+async function tryAutoIssue(userId, courseId, knownPlans) {
+  const key = `${userId}:${courseId}`;
+  const run = (autoIssueQueue.get(key) || Promise.resolve())
+    .then(() => autoIssueCertificate(userId, courseId, knownPlans))
+    .catch((e) => { console.error("Automatic certificate issue failed", userId, courseId, e); });
+  autoIssueQueue.set(key, run);
+  await run;
+  if (autoIssueQueue.get(key) === run) autoIssueQueue.delete(key);
+}
+
 app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req, res) => {
   const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
   let issued = 0;
@@ -965,24 +1106,10 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     const cid = String(p.courseId || "");
     const [[stu]] = await q("SELECT * FROM users WHERE id=? AND role='student'", [sid]);
     const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
-    if (!stu || !course || await dbmod.certExists(sid, cid)) continue;
-    // The certificate prints this instead of the internal course title, so it
-    // must be set before a certificate for this course can be issued at all.
-    if (!String(course.cert_program_name || "").trim()) { missingProgramName.add(course.title); continue; }
-    // First issue for a course locks in the default template so future
-    // certificates for that course keep using the same design.
-    if (!course.cert_template && defaultTemplateId()) {
-      course.cert_template = defaultTemplateId();
-      await q("UPDATE courses SET cert_template=? WHERE id=?", [course.cert_template, cid]);
-    }
-    const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-    await dbmod.issueCertificate(sid, cid, certNo, Date.now());
-    const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
-      mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
-      mailer.statusBox(`Your certificate for ${mailer.esc(course.title)} has been issued.`, "success") +
-      mailer.infoTable([["Course", mailer.esc(course.title)], /* course code hidden: ["Code", mailer.esc(course.code)], */ ["Certificate No", mailer.esc(certNo)]]) +
-      mailer.muted("Sign in to your dashboard to download your certificate."));
-    await sendMail(stu.email, "Your certificate has been issued", html);
+    if (!stu || !course) continue;
+    const declined = await issueCertificateFor(stu, course);
+    if (declined === "no-program-name") { missingProgramName.add(course.title); continue; }
+    if (declined) continue;
     issued++;
   }
   if (issued === 0 && missingProgramName.size) {
@@ -1024,11 +1151,17 @@ app.post("/api/admin/certificates/:id/unlock", auth, adminOnly, wrap(async (req,
 app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  // An admin can withhold this student's certificate for this course.
+  if (await dbmod.isCertBlocked(req.user.id, cert.course_id)) {
+    return res.status(403).json({ error: "Your certificate for this course is on hold. Please contact your administrator." });
+  }
   // The course fees must be fully settled before the certificate can be downloaded.
   const plan = (await dbmod.studentPlans(req.user.id)).find((p) => p.course_id === cert.course_id);
   if (plan && plan.remaining > 0.009) {
     return res.status(403).json({ error: `Please settle your course balance before downloading your certificate. You still owe Rs. ${plan.remaining.toLocaleString("en-US")}.` });
   }
+  // No exam check here: a certificate that exists was already granted, either
+  // by the automatic gate or by an admin, so it belongs to the student.
   if (cert.downloaded && !cert.unlocked) return res.status(403).json({ error: "You have already downloaded this certificate. Ask your administrator to unlock it if you need it again." });
   const pdf = await certPdf(cert);
   await dbmod.markCertDownloaded(cert.id);
@@ -1320,6 +1453,8 @@ app.post("/api/exams/:id/start", auth, wrap(async (req, res) => {
     const snap = JSON.parse(attempt.snapshot);
     await dbmod.finishAttempt(attempt.id, 0, snap.questions.length, []);
     attempt = await dbmod.latestAttempt(eid, req.user.id);
+    // A timed-out attempt still counts as completed, so the gate may now clear.
+    await tryAutoIssue(req.user.id, exam.course_id);
   }
   const meta = { title: exam.title, courseId: exam.course_id, courseTitle: exam.courseTitle, courseCode: exam.courseCode };
   if (attempt && attempt.finished_at) {
@@ -1376,6 +1511,9 @@ app.post("/api/exams/:id/submit", auth, wrap(async (req, res) => {
   const score = gradeAttempt(snap.questions, answers);
   await dbmod.finishAttempt(attempt.id, score, snap.questions.length, answers);
   dbmod.logActivity(req.user.id, "exam_submit", `Submitted "${exam.title}" - scored ${score}/${snap.questions.length}`).catch(() => {});
+  // This may have been the last exam standing between the student and their
+  // certificate, so try the automatic issue before answering.
+  if (exam.course_id) await tryAutoIssue(req.user.id, exam.course_id);
   res.json({ finished: true, score, total: snap.questions.length });
 }));
 
