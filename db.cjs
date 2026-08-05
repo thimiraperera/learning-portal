@@ -302,6 +302,12 @@ async function init() {
     }
   }
   await migrateBatches();
+  // A batch now ends when its fees finish, but batches created before that only
+  // pick it up the next time their plan is saved. Fill the blanks once so the
+  // dates are right straight away. Anything an admin typed by hand is left be.
+  await q(`UPDATE batches b JOIN course_payment_plans p ON p.batch_id=b.id
+     SET b.end_date=p.completion_date
+     WHERE COALESCE(p.completion_date,'')<>'' AND COALESCE(b.end_date,'')=''`);
   // Admin tiers: super admins have full access (incl. Settings); local admins do not.
   // When the column is first added, promote every existing admin to super so no one
   // loses access on upgrade; new local admins default to 0.
