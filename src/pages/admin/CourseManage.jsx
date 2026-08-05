@@ -480,7 +480,7 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
 
   return (
     <div>
-      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Certificates issue and email themselves once a student has completed the course exams and settled their fees, so there is normally nothing to do here. Issuing by hand skips those checks and covers <strong>{batchTag}</strong> only: switch the batch selector above for another batch.</span></div>
+      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>Certificates appear on their own, with no email sent, once a student has completed the course exams and settled their fees, so there is normally nothing to do here. Issuing by hand skips those checks, emails the student, and covers <strong>{batchTag}</strong> only: switch the batch selector above for another batch.</span></div>
       {missingProgramName && (
         <div className="alert alert-danger" style={{ marginBottom: 14 }}><AlertTriangle /> <span>No Certificate program name is set for this course. Set one on the Course details tab before any certificate for this course can be issued, automatically or by hand.</span></div>
       )}

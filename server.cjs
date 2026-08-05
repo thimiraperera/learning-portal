@@ -1021,13 +1021,12 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
 }));
 
 /* ---- certificates (admin) ---- */
-/* The one place a certificate is created and announced, shared by the admin
-   Issue button and the automatic gate so both produce the same certificate and
-   the same email. Returns null on success, or a reason string when it declines:
-   "exists" or "no-program-name". awaitMail=false hands the email off and returns
-   as soon as the row is written, for the paths where a student or an admin is
-   waiting on the response. */
-async function issueCertificateFor(stu, course, { awaitMail = true } = {}) {
+/* The one place a certificate is created, shared by the admin Issue button and
+   the automatic gate so both produce the same certificate. Returns null on
+   success, or a reason string when it declines: "exists" or "no-program-name".
+   sendEmail=false issues silently: the certificate simply appears on the
+   student's dashboard, which is what the automatic gate does. */
+async function issueCertificateFor(stu, course, { sendEmail = true } = {}) {
   if (await dbmod.certExists(stu.id, course.id)) return "exists";
   // The certificate prints this instead of the internal course title, so it
   // must be set before a certificate for this course can be issued at all.
@@ -1042,14 +1041,13 @@ async function issueCertificateFor(stu, course, { awaitMail = true } = {}) {
   // The unique index can reject this when another path issued the same
   // certificate a moment ago, which is the same answer as certExists above.
   if (!(await dbmod.issueCertificate(stu.id, course.id, certNo, Date.now()))) return "exists";
+  if (!sendEmail) return null;
   const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
     mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
     mailer.statusBox(`Your certificate for ${mailer.esc(course.title)} has been issued.`, "success") +
     mailer.infoTable([["Course", mailer.esc(course.title)], /* course code hidden: ["Code", mailer.esc(course.code)], */ ["Certificate No", mailer.esc(certNo)]]) +
     mailer.muted("Sign in to your dashboard to download your certificate."));
-  const mailing = sendMail(stu.email, "Your certificate has been issued", html)
-    .catch((e) => { console.error("Certificate email failed", stu.email, e); });
-  if (awaitMail) await mailing;
+  await sendMail(stu.email, "Your certificate has been issued", html);
   return null;
 }
 
@@ -1077,8 +1075,8 @@ async function autoIssueCertificate(userId, courseId, knownPlans) {
   if (!stu || !course) return false;
   // A course with no Certificate program name simply cannot be issued yet, so
   // pass over it quietly instead of failing the route that triggered this.
-  const issued = (await issueCertificateFor(stu, course, { awaitMail: false })) === null;
-  // The email is no longer awaited, so this is the record that it happened.
+  const issued = (await issueCertificateFor(stu, course, { sendEmail: false })) === null;
+  // Nothing is emailed on this path, so this is the only record that it happened.
   if (issued) dbmod.logActivity(sid, "certificate", `Certificate issued automatically for "${course.title}"`).catch(() => {});
   return issued;
 }

@@ -377,8 +377,8 @@ function CoursesTab({ id, email, s, store, navigate }) {
     popup.toast(`Moved to Batch ${target.number}`);
   };
 
-  // Hold back one course's certificate for this student. Certificates issue and
-  // email themselves once the exams are done and the fees settled, so this is the
+  // Hold back one course's certificate for this student. Certificates issue
+  // themselves once the exams are done and the fees settled, so this is the
   // only way to stop one. It is not the access lock: the course stays open.
   const toggleCertHold = async (cid, c, hold) => {
     const body = hold

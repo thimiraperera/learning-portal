@@ -277,9 +277,9 @@ function UnavailableCard({ blocked }) {
   );
 }
 
-/* The student's certificate for this course. The system issues and emails it on
-   its own once every course exam is completed and the fees are settled, so until
-   then there is no certificate row and this tab reports what the server says is
+/* The student's certificate for this course. The system issues it on its own
+   once every course exam is completed and the fees are settled, so until then
+   there is no certificate row and this tab reports what the server says is
    still outstanding. Eligibility is never worked out here: a locked course shows
    the student no exams at all, so an empty exam list is not proof of anything.
    A certificate can be downloaded once; a second download needs the admin to
@@ -301,8 +301,8 @@ function CertificateView({ cert, plan, status, download, requestRedownload }) {
         <div className="empty-state">
           <div className="empty-icon"><Award /></div>
           <p>{status.eligible
-            ? "No certificate here yet. You have completed everything for this course, so your certificate is on its way. It is emailed to you and appears here on its own, nothing is needed from you."
-            : "No certificate here yet. It is issued and emailed to you automatically once everything below is done."}</p>
+            ? "No certificate here yet. You have completed everything for this course, so your certificate is on its way. It appears here on its own, nothing is needed from you."
+            : "No certificate here yet. It appears here automatically once everything below is done."}</p>
         </div>
         {!status.feesSettled && <PaymentGate owed={owed} />}
         {!status.examsComplete && <ExamGate pending={pending} spaced={!status.feesSettled} />}
