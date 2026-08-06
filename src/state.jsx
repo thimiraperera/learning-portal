@@ -436,6 +436,10 @@ export function StoreProvider({ children }) {
   const submitExam = useCallback(async (id, answers) => {
     const d = await api(`/exams/${id}/submit`, { method: "POST", token, body: { answers } });
     setExams((xs) => xs.map((x) => (x.id === id ? { ...x, attempt: { ...(x.attempt || {}), finished_at: 1, score: d.score, total: d.total } } : x)));
+    // Finishing the last exam can release a certificate, and the server may have
+    // just issued one. Only a fresh bootstrap carries that, so reload it here or
+    // the student keeps seeing "complete the exam" for the rest of the session.
+    try { applyBootstrap(await api("/bootstrap", { token })); } catch { /* keep what we have */ }
     return d;
   }, [token]);
 

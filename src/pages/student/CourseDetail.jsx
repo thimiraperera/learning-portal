@@ -7,6 +7,7 @@ import Layout from "../../components/Layout.jsx";
 import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, fmtDateMs, instBadge, allocatePayments } from "../../lib/payments.js";
+import { certPaymentMessage, certExamLead } from "../../lib/certGate.js";
 
 /* Open a user-entered URL safely in a new tab, adding https:// if missing. */
 export function openUrl(u) {
@@ -232,25 +233,26 @@ function PaymentsView({ plan }) {
   );
 }
 
-/* The two things that hold a certificate up. The payment one is shown both
-   before and after issue, so a student reads the same wording either way.
+/* The two things that hold a certificate up. Both are shown before and after
+   issue, so a student reads the same wording either way, and the same wording
+   the download route answers with.
    `spaced` adds the gap when another card is already stacked above. */
 function PaymentGate({ owed, spaced }) {
   return (
     <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginTop: spaced ? 12 : 0, marginBottom: 0 }}>
-      <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Payment outstanding</div>
-      <div className="card-subtitle" style={{ marginBottom: 0 }}>Your certificate becomes available once your course fees are fully paid.{owed > 0 ? ` You still owe ${rs(owed)}.` : ""} Check the Payments tab for your schedule.</div>
+      <div className="card-title" style={{ color: "var(--danger)" }}><Lock style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> Pending payments</div>
+      <div className="card-subtitle" style={{ marginBottom: 0 }}>{certPaymentMessage(owed)} Check the Payments tab for your schedule.</div>
     </div>
   );
 }
 
 function ExamGate({ pending, spaced }) {
-  const many = pending.length !== 1;
+  const many = pending.length > 1;
   return (
     <div className="card" style={{ borderLeft: "4px solid var(--danger)", marginTop: spaced ? 12 : 0, marginBottom: 0 }}>
       <div className="card-title" style={{ color: "var(--danger)" }}><FileQuestion style={{ width: 16, height: 16, verticalAlign: "-3px", marginRight: 6 }} /> {many ? "Exams to complete" : "Exam to complete"}</div>
       <div className="card-subtitle" style={{ marginBottom: 0 }}>
-        Your certificate becomes available once you have completed {many ? "every exam" : "the exam"} for this course. There is no minimum score. Open the Exams tab to complete {many ? "them" : "it"}.
+        {certExamLead(pending.length)} There is no minimum score. Open the Exams tab to complete {many ? "them" : "it"}.
       </div>
       {pending.map((p) => (
         <div key={p.id} style={{ fontSize: 12.5, color: "#6B7280", marginTop: 8 }}>
@@ -310,11 +312,15 @@ function CertificateView({ cert, plan, status, download, requestRedownload }) {
     );
   }
 
-  // An issued certificate belongs to the student, so only the checks the download
-  // route itself makes are shown: an admin hold, and the outstanding fees.
+  // The same checks the download route makes, in the same order, so the button
+  // never promises something the server will refuse. An older server sends no
+  // examOk, so that defaults to the permissive answer rather than inventing a
+  // block the student cannot see the reason for.
   const blocked = cert.certBlocked === true;
   const alreadyUsed = cert.downloaded && !cert.unlocked;
-  const canDownload = !blocked && owed <= 0 && !alreadyUsed;
+  const examsIncomplete = cert.examOk === false;
+  const examPending = Array.isArray(cert.examPending) ? cert.examPending : [];
+  const canDownload = !blocked && owed <= 0 && !examsIncomplete && !alreadyUsed;
   const issued = fmtDateMs(Number(cert.issued_at) || Date.now());
   const get = async () => { setMsg(null); try { await download(cert.id, cert.cert_no); setMsg({ ok: true, text: "Certificate downloaded." }); } catch (e) { setMsg({ ok: false, text: e.message }); } };
   const ask = async () => { setMsg(null); const r = await requestRedownload(cert.id); setMsg({ ok: r.ok, text: r.msg }); };
@@ -332,9 +338,13 @@ function CertificateView({ cert, plan, status, download, requestRedownload }) {
 
       {blocked && <UnavailableCard blocked />}
 
-      {owed > 0 && <PaymentGate owed={owed} spaced={blocked} />}
+      {!alreadyUsed && owed > 0 && <PaymentGate owed={owed} spaced={blocked} />}
 
-      {!blocked && owed <= 0 && alreadyUsed && (
+      {!alreadyUsed && examsIncomplete && <ExamGate pending={examPending} spaced={blocked || owed > 0} />}
+
+      {/* A spent certificate needs re-enabling first, so say that rather than
+          pointing at fees or exams that would not release it on their own. */}
+      {!blocked && alreadyUsed && (
         <div className="card" style={{ marginBottom: 0 }}>
           <div className="card-subtitle" style={{ marginTop: 0, marginBottom: cert.redownload_requested ? 0 : 12 }}>
             You have already downloaded this certificate once. {cert.redownload_requested

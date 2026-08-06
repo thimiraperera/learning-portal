@@ -1146,6 +1146,16 @@ app.post("/api/admin/certificates/:id/unlock", auth, adminOnly, wrap(async (req,
 }));
 
 /* ---- certificates (student, one-time download) ---- */
+/* What the exam gate is still waiting on, in one line. Mirrors certExamLead and
+   certExamMessage in src/lib/certGate.js so the page and this refusal match. */
+function examGateMessage(pending) {
+  const titles = (pending || []).map((p) => p && p.title).filter(Boolean);
+  const lead = titles.length > 1
+    ? "You must complete all exams to receive your certificate."
+    : "You must complete the exam to receive your certificate.";
+  return titles.length > 1 ? `${lead} Not completed: ${titles.join(", ")}.` : lead;
+}
+
 app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
@@ -1153,13 +1163,15 @@ app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   if (await dbmod.isCertBlocked(req.user.id, cert.course_id)) {
     return res.status(403).json({ error: "Your certificate for this course is on hold. Please contact your administrator." });
   }
-  // The course fees must be fully settled before the certificate can be downloaded.
+  // Both conditions are re-checked on every download, never trusted from issue
+  // time. A certificate that exists is not proof it went through the gate:
+  // rows that predate the gate, and ones an admin issued by hand, never did.
   const plan = (await dbmod.studentPlans(req.user.id)).find((p) => p.course_id === cert.course_id);
   if (plan && plan.remaining > 0.009) {
-    return res.status(403).json({ error: `Please settle your course balance before downloading your certificate. You still owe Rs. ${plan.remaining.toLocaleString("en-US")}.` });
+    return res.status(403).json({ error: `You have pending payments. Settle your remaining Rs. ${plan.remaining.toLocaleString("en-US")} to download your certificate.` });
   }
-  // No exam check here: a certificate that exists was already granted, either
-  // by the automatic gate or by an admin, so it belongs to the student.
+  const examGate = await dbmod.certExamStatus(req.user.id, cert.course_id);
+  if (!examGate.ok) return res.status(403).json({ error: examGateMessage(examGate.pending) });
   if (cert.downloaded && !cert.unlocked) return res.status(403).json({ error: "You have already downloaded this certificate. Ask your administrator to unlock it if you need it again." });
   const pdf = await certPdf(cert);
   await dbmod.markCertDownloaded(cert.id);

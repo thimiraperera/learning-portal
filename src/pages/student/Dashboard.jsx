@@ -6,7 +6,7 @@ import {
 import Layout from "../../components/Layout.jsx";
 import { useStore } from "../../state.jsx";
 import { previewWords } from "../../lib/text.js";
-import { rs } from "../../lib/payments.js";
+import { certPaymentMessage, certExamMessage } from "../../lib/certGate.js";
 
 const RECENT_COUNT = 6;
 
@@ -105,16 +105,21 @@ function CertificatesSection({ certificates, payments, download }) {
       {certificates.map((c) => {
         const plan = (payments || []).find((p) => p.course_id === c.course_id) || null;
         const owed = plan && plan.remaining > 0 ? plan.remaining : 0;
-        // An older server sends no certBlocked, so it defaults to the permissive
-        // answer rather than inventing a hold. The rest matches the download route.
+        // An older server sends no certBlocked or examOk, so those default to the
+        // permissive answer rather than inventing a block. The rest matches the
+        // download route, in the same order, so the reason shown is the one the
+        // server would give.
         const blocked = c.certBlocked === true;
         const alreadyUsed = c.downloaded && !c.unlocked;
+        const examsIncomplete = c.examOk === false;
         const reason = blocked
           ? "Your certificate for this course is on hold. Please contact your administrator."
           : owed > 0
-            ? `Settle your remaining ${rs(owed)} to download this certificate.`
-            : null;
-        const canDownload = !blocked && !alreadyUsed && owed <= 0;
+            ? certPaymentMessage(owed)
+            : examsIncomplete
+              ? certExamMessage(c.examPending)
+              : null;
+        const canDownload = !blocked && !alreadyUsed && owed <= 0 && !examsIncomplete;
         return (
           <div key={c.id} className="media-row" style={{ marginBottom: 8 }}>
             <div className="mr-icon"><Award /></div>
