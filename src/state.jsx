@@ -395,6 +395,7 @@ export function StoreProvider({ children }) {
     const qs = new URLSearchParams();
     if (sample.courseTitle) qs.set("courseTitle", sample.courseTitle);
     if (sample.certProgramName) qs.set("certProgramName", sample.certProgramName);
+    if (sample.certSubtitle) qs.set("certSubtitle", sample.certSubtitle);
     const q = qs.toString();
     return fetchBlobOpen(`/admin/cert-templates/${id}/preview${q ? `?${q}` : ""}`);
   }, [token]);

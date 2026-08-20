@@ -181,6 +181,7 @@ function DetailsTab({ id, c, store, navigate }) {
   const [blurb, setBlurb] = useState(c.blurb || "");
   const [certTemplate, setCertTemplate] = useState(c.certTemplate || "");
   const [certProgramName, setCertProgramName] = useState(c.certProgramName || "");
+  const [certSubtitle, setCertSubtitle] = useState(c.certSubtitle || "");
   const [templates, setTemplates] = useState([]);
   const [defaultId, setDefaultId] = useState("");
   const [msg, setMsg] = useState(null);
@@ -200,10 +201,10 @@ function DetailsTab({ id, c, store, navigate }) {
   const certValue = knownTemplate ? certTemplate : "";
   const preview = async () => {
     const tid = certValue || defaultId;
-    if (tid) { try { await store.previewCertTemplate(tid, { courseTitle: title, certProgramName }); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+    if (tid) { try { await store.previewCertTemplate(tid, { courseTitle: title, certProgramName, certSubtitle }); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName }));
+  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName, certSubtitle }));
   const remove = async () => {
     if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
@@ -235,6 +236,10 @@ function DetailsTab({ id, c, store, navigate }) {
       <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#EF4444" }}>*</span></label>
         <input className="form-control" value={certProgramName} placeholder="e.g. Stock Market Certificate Program" onChange={(e) => setCertProgramName(e.target.value)} />
         <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The course title printed on the certificate. Required - certificates cannot be issued for this course until this is set.</div>
+      </div>
+      <div className="form-group"><label className="form-label">Certificate subject line</label>
+        <input className="form-control" value={certSubtitle} placeholder="In Stock Market Investments" onChange={(e) => setCertSubtitle(e.target.value)} />
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The smaller line under the certificate heading. Leave it blank to keep the wording built into the template ("In Stock Market Investments").</div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>

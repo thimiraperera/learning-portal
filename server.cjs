@@ -263,6 +263,7 @@ async function certPdf(cert) {
     brandName: brand.name, studentName: cert.studentName,
     courseTitle: cert.courseTitle, courseCode: cert.courseCode,
     certProgramName: cert.certProgramName || cert.courseTitle,
+    certSubtitle: cert.certSubtitle || "",
     certNo: cert.cert_no, issuedText,
     signerName: sig.name, signerTitle: sig.title, signatureImage: sig.image,
   }, cert.certTemplate);
@@ -872,6 +873,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
     blurb: sanitizeHtml(req.body?.blurb || ""),
     sessions: Number.parseInt(req.body?.sessions, 10) || 0,
     certProgramName: String(req.body?.certProgramName || "").trim(),
+    certSubtitle: String(req.body?.certSubtitle || "").trim(),
   });
   res.json(await adminState());
 }));
@@ -1223,6 +1225,7 @@ app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (re
     brandName: brand.name, studentName: "Student Name",
     courseTitle, courseCode: "SC-100",
     certProgramName,
+    certSubtitle: String(req.query?.certSubtitle || "").trim(),
     certNo: "CERT-SAMPLE", issuedText: formatCertIssuedAt(Date.now(), tz),
     signerName: sig.name, signerTitle: sig.title, signatureImage: sig.image,
   }, req.params.id);

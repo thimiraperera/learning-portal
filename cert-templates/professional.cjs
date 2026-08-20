@@ -5,8 +5,8 @@
    recipient name, program name, signer name/title/image, and the date are
    dynamic; every other position/size/color is a literal constant from the
    source design.
-   d = { studentName, courseTitle, certProgramName, certNo, issuedText,
-         signerName, signerTitle, signatureImage } */
+   d = { studentName, courseTitle, certProgramName, certSubtitle, certNo,
+         issuedText, signerName, signerTitle, signatureImage } */
 const path = require("path");
 const BG = path.join(__dirname, "assets", "professional-bg.png");
 const LOGO = path.join(__dirname, "assets", "professional-logo.png");
@@ -50,8 +50,10 @@ module.exports = {
 
     // Subtitle, with fixed decorative gold rules either side (exact positions
     // from the source design - these do not move with subtitle text length).
-    doc.font("LB-Regular").fontSize(23.25).fillColor(INK)
-      .text("In Stock Market Investments", 0, topY(221.25, 23.25), { width: W, align: "center", lineBreak: false });
+    const subtitle = d.certSubtitle || "In Stock Market Investments";
+    const subtitleSize = fitSize(doc, subtitle, "LB-Regular", 23.25, 12, 355.5);
+    doc.font("LB-Regular").fontSize(subtitleSize).fillColor(INK)
+      .text(subtitle, 0, topY(221.25, subtitleSize), { width: W, align: "center", lineBreak: false });
     doc.save().lineWidth(1.5).strokeColor(GOLD)
       .moveTo(171.75, 213.75).lineTo(236.25, 213.75).stroke()
       .moveTo(606.0, 213.75).lineTo(669.75, 213.75).stroke()

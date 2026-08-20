@@ -255,6 +255,9 @@ async function init() {
   // Optional override for the program-name heading printed on the certificate
   // (falls back to the course title when blank).
   await ensureColumn("courses", "cert_program_name", "VARCHAR(255) DEFAULT ''");
+  // The line under the certificate heading. Blank keeps the design's own wording,
+  // so existing courses print exactly what they printed before.
+  await ensureColumn("courses", "cert_subtitle", "VARCHAR(255) DEFAULT ''");
   // Per-batch date printed on every certificate issued for that batch (e.g. a
   // graduation/completion date). Blank = use each certificate's actual issue date.
   await ensureColumn("batches", "cert_date", "VARCHAR(20) DEFAULT ''");
@@ -396,7 +399,7 @@ async function courseFull(id, batchId) {
   const [[planRow]] = await q("SELECT installments FROM course_payment_plans WHERE batch_id=?", [bid]);
   return {
     code: c.code, title: c.title, blurb: c.blurb, sessions: c.sessions,
-    certTemplate: c.cert_template || "", certProgramName: c.cert_program_name || "",
+    certTemplate: c.cert_template || "", certProgramName: c.cert_program_name || "", certSubtitle: c.cert_subtitle || "",
     instructors, instructor: instructors.map((x) => x.name).join(", "),
     recordings, links, materials, groups: [],
     planInstallments: planRow ? Number(planRow.installments) || 0 : 0,
@@ -792,8 +795,8 @@ async function updateStudentProfile(id, f) {
   }
 }
 async function updateCourse(id, f) {
-  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=?, cert_program_name=? WHERE id=?",
-    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", String(f.certProgramName || "").slice(0, 255), id]);
+  await q("UPDATE courses SET code=?, title=?, blurb=?, sessions=?, cert_template=?, cert_program_name=?, cert_subtitle=? WHERE id=?",
+    [f.code, f.title, f.blurb, f.sessions, f.certTemplate || "", String(f.certProgramName || "").slice(0, 255), String(f.certSubtitle || "").slice(0, 255), id]);
 }
 
 async function instructorsList() {
@@ -998,7 +1001,7 @@ async function listCertificates() {
 async function getCertificate(id) {
   const [[r]] = await q(`SELECT c.*, u.name AS studentName, u.email AS studentEmail,
       co.title AS courseTitle, co.code AS courseCode, co.cert_template AS certTemplate,
-      co.cert_program_name AS certProgramName, bt.cert_date AS certDate
+      co.cert_program_name AS certProgramName, co.cert_subtitle AS certSubtitle, bt.cert_date AS certDate
     FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id
     LEFT JOIN batches bt ON bt.id=c.batch_id WHERE c.id=?`, [id]);
   return r || null;
