@@ -72,7 +72,7 @@ function Routed() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      <Route path="/join/:key" element={<Join />} />
+      <Route path="/join" element={<Join />} />
       <Route path="/setup" element={<Setup />} />
       <Route path="/forgot" element={<Forgot />} />
       <Route path="/reset" element={<Reset />} />

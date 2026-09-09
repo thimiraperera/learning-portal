@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Link2, Search, Eye, X } from "lucide-react";
+import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Link2, Ban, Search, Eye, X } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -69,7 +69,7 @@ function buildPayStatus(plans) {
 }
 
 export default function Students() {
-  const { users, courses, addStudent, removeStudent, plans, fetchSelfRegisterLink } = useStore();
+  const { users, courses, addStudent, removeStudent, plans, fetchSelfRegisterLink, setSelfRegisterEnabled } = useStore();
   const navigate = useNavigate();
   const payStatusByUser = buildPayStatus(plans);
   const [name, setName] = useState("");
@@ -78,6 +78,7 @@ export default function Students() {
   const [usernameEdited, setUsernameEdited] = useState(false);
   const [msg, setMsg] = useState(null); // { ok, msg, link, sent }
   const [selfLink, setSelfLink] = useState(""); // only filled when the clipboard refuses, so the admin can copy by hand
+  const [selfOpen, setSelfOpen] = useState(null); // null until the link is fetched, then true/false
 
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
@@ -122,6 +123,7 @@ export default function Students() {
       popup.toast(r.msg || "Could not load the registration link. Please try again.", "error");
       return;
     }
+    setSelfOpen(r.enabled);
     try {
       // navigator.clipboard is undefined outside a secure origin, so guard before use.
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -132,6 +134,19 @@ export default function Students() {
       setSelfLink(r.link);
       popup.toast("Could not copy automatically. Select the link below and copy it.", "error");
     }
+  };
+
+  /* Closing the link is the only way to stop sign ups, since the URL itself
+     holds nothing secret. */
+  const toggleSelfRegister = async () => {
+    const next = !selfOpen;
+    if (!next && !(await popup.confirm(
+      "Turn off the shared registration link?\n\nAnyone opening it will be told registration is closed. The invite by email is not affected, and you can turn it back on at any time.",
+      { title: "Turn off registration link", confirmText: "Turn off" }))) return;
+    const r = await setSelfRegisterEnabled(next);
+    if (!r.ok) { popup.toast(r.msg || "Could not change the link.", "error"); return; }
+    setSelfOpen(r.enabled);
+    popup.toast(r.enabled ? "Registration link is on." : "Registration link is off.");
   };
 
   const ql = qy.trim().toLowerCase();
@@ -198,9 +213,17 @@ export default function Students() {
           </>
         )}
         <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 14 }}>
-          <Button className="btn btn-outline btn-sm" onClick={copySelfRegisterLink}><Link2 /> Copy Registration Link</Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Button className="btn btn-outline btn-sm" onClick={copySelfRegisterLink}><Link2 /> Copy Registration Link</Button>
+            {selfOpen !== null && (
+              <button className="btn btn-ghost btn-sm" type="button" onClick={toggleSelfRegister}>
+                {selfOpen ? <><Ban /> Turn off</> : <><CheckCircle /> Turn on</>}
+              </button>
+            )}
+            {selfOpen === false && <span className="badge badge-muted">Closed</span>}
+          </div>
           <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>
-            Anyone with this link can register themselves as a student. The invite above goes to one person by email, while this one link can be shared with a whole group.
+            Anyone with this link can register themselves as a student. The invite above goes to one person by email, while this one link can be shared with a whole group. Turn it off when you are not enrolling.
           </div>
           {selfLink && (
             <input className="form-control" style={{ width: "100%", marginTop: 8, fontSize: 12 }}

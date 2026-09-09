@@ -1417,22 +1417,17 @@ async function markReminded(planIds, when) {
 // One general purpose link the admin shares with many people at once. The key
 // only keeps the page from being guessable by strangers, it says nothing about
 // who opens it. Rotating replaces the key, which kills off a link that leaked.
-/* Read only, so a stranger poking at /api/join/<guess> cannot bring the link
-   into existence. Until an admin asks for the link there is no key and every
-   public attempt is refused. */
+/* The sign-up link is a plain /join address with nothing secret in it, so this
+   switch is the only way to close it again if it ever attracts junk sign ups.
+   Rows written before the switch existed hold a key instead, and count as on. */
 async function getSelfRegisterConfig() {
   const [[row]] = await q("SELECT v FROM settings WHERE k='selfRegister'");
-  const cfg = row ? JSON.parse(row.v) : { key: "" };
-  return { key: cfg.key || "" };
+  if (!row) return { enabled: true };
+  const cfg = JSON.parse(row.v);
+  return { enabled: cfg.enabled === undefined ? true : !!cfg.enabled };
 }
-// Used by the admin link endpoint: creates the key the first time it is asked for.
-async function ensureSelfRegisterKey() {
-  const cur = await getSelfRegisterConfig();
-  if (cur.key) return cur;
-  return rotateSelfRegisterKey();
-}
-async function rotateSelfRegisterKey() {
-  const cfg = { key: crypto.randomBytes(18).toString("hex") };
+async function setSelfRegisterEnabled(enabled) {
+  const cfg = { enabled: !!enabled };
   await q("INSERT INTO settings (k,v) VALUES ('selfRegister',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(cfg)]);
   return cfg;
 }
@@ -1552,7 +1547,7 @@ module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, enrolledBatches, lockedCourses, usersMap,
   listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch,
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration, usernameExists,
-  createSelfRegisteredStudent, getSelfRegisterConfig, ensureSelfRegisterKey, rotateSelfRegisterKey,
+  createSelfRegisteredStudent, getSelfRegisterConfig, setSelfRegisterEnabled,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,

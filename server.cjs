@@ -436,19 +436,10 @@ app.post("/api/register/:token", wrap(async (req, res) => {
 }));
 
 /* ---- public self-registration (one shareable link) ---- */
-// The same link goes to everybody, so the key in it proves nothing about who is
-// filling the form in. It only keeps the page off the open internet, where
-// anyone could otherwise create accounts on the portal.
-const JOIN_BAD_KEY = "This registration link is not valid. Please ask your administrator for a new one.";
-
-/* The link is shared, so the key says nothing about who is using it. Compare it
-   without leaking length or position through timing, and refuse everything
-   while no key exists (an admin has not asked for the link yet). */
-function joinKeyOk(given, key) {
-  const a = Buffer.from(String(given || ""));
-  const b = Buffer.from(String(key || ""));
-  return !!key && a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+// A plain /join address that an admin shares with a group. There is nothing
+// secret in the URL, so the on/off switch and the rate limit below are what
+// keep it from being used to fill the portal with accounts.
+const JOIN_CLOSED = "Registration is closed at the moment. Please contact your administrator.";
 
 /* Signing up is unauthenticated and costs a password hash plus an insert, so
    without a ceiling one script could fill the portal with accounts and tie up
@@ -477,15 +468,15 @@ function joinRateOk(ip) {
 // rather than a database error surfacing as a 500.
 const JOIN_MAX = { email: 190, firstName: 255, lastName: 255, name: 255, phone: 60, gender: 20 };
 
-app.get("/api/join/:key", wrap(async (req, res) => {
+app.get("/api/join", wrap(async (_req, res) => {
   const cfg = await dbmod.getSelfRegisterConfig();
-  if (!joinKeyOk(req.params.key, cfg.key)) return res.status(404).json({ error: JOIN_BAD_KEY });
+  if (!cfg.enabled) return res.status(404).json({ error: JOIN_CLOSED });
   res.json({ ok: true, brand: await dbmod.getBrandPublic() });
 }));
 
-app.post("/api/join/:key", wrap(async (req, res) => {
+app.post("/api/join", wrap(async (req, res) => {
   const cfg = await dbmod.getSelfRegisterConfig();
-  if (!joinKeyOk(req.params.key, cfg.key)) return res.status(404).json({ error: JOIN_BAD_KEY });
+  if (!cfg.enabled) return res.status(404).json({ error: JOIN_CLOSED });
   if (!joinRateOk(req.ip || req.connection?.remoteAddress || "unknown")) {
     return res.status(429).json({ error: "Too many sign ups from here just now. Please wait a while and try again." });
   }
@@ -2022,12 +2013,14 @@ app.put("/api/admin/timezone", auth, superOnly, wrap(async (req, res) => {
 
 /* ---- admin: the shareable self-registration link ---- */
 // Any admin invites students, so this is adminOnly rather than superOnly.
-const joinLink = (req, key) => `${req.protocol}://${req.get("host")}/join/${key}`;
+const joinLink = (req) => `${req.protocol}://${req.get("host")}/join`;
 app.get("/api/admin/self-register-link", auth, adminOnly, wrap(async (req, res) => {
-  res.json({ link: joinLink(req, (await dbmod.ensureSelfRegisterKey()).key) });
+  res.json({ link: joinLink(req), enabled: (await dbmod.getSelfRegisterConfig()).enabled });
 }));
-app.post("/api/admin/self-register-link/rotate", auth, adminOnly, wrap(async (req, res) => {
-  res.json({ link: joinLink(req, (await dbmod.rotateSelfRegisterKey()).key) });
+// The link has nothing secret in it, so this switch is how an admin closes it.
+app.post("/api/admin/self-register-link/toggle", auth, adminOnly, wrap(async (req, res) => {
+  const cfg = await dbmod.setSelfRegisterEnabled(req.body?.enabled);
+  res.json({ link: joinLink(req), enabled: cfg.enabled });
 }));
 
 /* ---- overdue payment reminders ---- */

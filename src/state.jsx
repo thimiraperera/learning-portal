@@ -187,14 +187,14 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, error: e.message }; }
   }, []);
 
-  /* Shared self-registration link. Both of these are public: the key in the URL
-     is the only thing the server checks, so no session token is sent. */
-  const checkSelfRegister = useCallback(async (key) => {
-    try { const d = await api(`/join/${key}`); return { ok: true, brand: d.brand }; }
+  /* Shared self-registration link. Both of these are public, so no session
+     token is sent; the server decides from the on/off switch. */
+  const checkSelfRegister = useCallback(async () => {
+    try { const d = await api("/join"); return { ok: true, brand: d.brand }; }
     catch (e) { return { ok: false, error: e.message }; }
   }, []);
-  const selfRegister = useCallback(async (key, fields) => {
-    try { await api(`/join/${key}`, { method: "POST", body: fields }); return { ok: true }; }
+  const selfRegister = useCallback(async (fields) => {
+    try { await api("/join", { method: "POST", body: fields }); return { ok: true }; }
     catch (e) { return { ok: false, error: e.message }; }
   }, []);
 
@@ -596,12 +596,13 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const fetchSelfRegisterLink = useCallback(async () => {
-    try { const d = await api("/admin/self-register-link", { token }); return { ok: true, link: d.link }; }
+    try { const d = await api("/admin/self-register-link", { token }); return { ok: true, link: d.link, enabled: d.enabled }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
-  // Replaces the key, so every copy of the old link stops working.
-  const rotateSelfRegisterLink = useCallback(async () => {
-    try { const d = await api("/admin/self-register-link/rotate", { method: "POST", token }); return { ok: true, link: d.link }; }
+  // Opens or closes the shared link. There is nothing secret in the URL, so this
+  // switch is the only way to stop new sign ups.
+  const setSelfRegisterEnabled = useCallback(async (enabled) => {
+    try { const d = await api("/admin/self-register-link/toggle", { method: "POST", token, body: { enabled } }); return { ok: true, link: d.link, enabled: d.enabled }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
 
@@ -635,7 +636,7 @@ export function StoreProvider({ children }) {
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
     setCourseLock, setCertBlock, saveReminders, sendRemindersNow,
-    checkSelfRegister, selfRegister, fetchSelfRegisterLink, rotateSelfRegisterLink,
+    checkSelfRegister, selfRegister, fetchSelfRegisterLink, setSelfRegisterEnabled,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

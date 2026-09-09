@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useStore } from "../state.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import Captcha from "../components/Captcha.jsx";
 import Button from "../components/Button.jsx";
 
-/* Public sign-up page reached from the one shareable link (/join/:key) that the
-   admin hands out. Nobody is invited here, so unlike the invite page this one
-   also collects the email and cannot offer a live username check. */
+/* Public sign-up page behind the one shareable /join link an admin hands out.
+   Nobody is invited here, so unlike the invite page this one also collects the
+   email and cannot offer a live username check. */
 export default function Join() {
   const { brand, checkSelfRegister, selfRegister, captcha: captchaCfg } = useStore();
   const navigate = useNavigate();
-  const { key } = useParams();
 
   const [state, setState] = useState("loading"); // loading | ready | invalid | done
   const [email, setEmail] = useState("");
@@ -30,19 +29,18 @@ export default function Join() {
 
   useEffect(() => {
     let alive = true;
-    if (!key) { setState("invalid"); return undefined; }
-    checkSelfRegister(key).then((r) => {
+    checkSelfRegister().then((r) => {
       if (!alive) return;
       setState(r.ok ? "ready" : "invalid");
     });
     return () => { alive = false; };
-  }, [key, checkSelfRegister]);
+  }, [checkSelfRegister]);
 
   // Sanitize as the user types: lowercase, only a-z 0-9 and hyphens.
   const onUsername = (v) => setUsername(v.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24));
 
-  // No availability endpoint on this route (the key is shared, so it identifies
-  // nobody). Length is checked here, duplicates come back on submit.
+  // No availability endpoint on this route. Length is checked here, and a
+  // duplicate comes back on submit.
   useEffect(() => {
     const u = username.trim();
     if (u && u.length < 3) setUname({ status: "invalid", msg: "Use at least 3 characters." });
@@ -63,7 +61,7 @@ export default function Join() {
     if (password !== confirm) { setError("Passwords do not match."); return; }
     if (captchaCfg.enabled && !captcha) { setError("Please complete the captcha."); return; }
     setBusy(true);
-    const r = await selfRegister(key, {
+    const r = await selfRegister({
       email: email.trim(),
       firstName: firstName.trim(),
       lastName: lastName.trim(),
