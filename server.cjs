@@ -435,6 +435,103 @@ app.post("/api/register/:token", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* ---- public self-registration (one shareable link) ---- */
+// The same link goes to everybody, so the key in it proves nothing about who is
+// filling the form in. It only keeps the page off the open internet, where
+// anyone could otherwise create accounts on the portal.
+const JOIN_BAD_KEY = "This registration link is not valid. Please ask your administrator for a new one.";
+
+/* The link is shared, so the key says nothing about who is using it. Compare it
+   without leaking length or position through timing, and refuse everything
+   while no key exists (an admin has not asked for the link yet). */
+function joinKeyOk(given, key) {
+  const a = Buffer.from(String(given || ""));
+  const b = Buffer.from(String(key || ""));
+  return !!key && a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/* Signing up is unauthenticated and costs a password hash plus an insert, so
+   without a ceiling one script could fill the portal with accounts and tie up
+   the process. Counts live in memory: a restart forgives them, which is fine
+   for slowing abuse down to a hand-typed pace. */
+const JOIN_HITS = new Map();
+const JOIN_PER_IP_HOUR = 5;
+const JOIN_PER_HOUR_TOTAL = 60;
+function joinRateOk(ip) {
+  const now = Date.now();
+  const hourAgo = now - 3600000;
+  for (const [k, times] of JOIN_HITS) {
+    const kept = times.filter((t) => t > hourAgo);
+    if (kept.length) JOIN_HITS.set(k, kept); else JOIN_HITS.delete(k);
+  }
+  let total = 0;
+  for (const times of JOIN_HITS.values()) total += times.length;
+  if (total >= JOIN_PER_HOUR_TOTAL) return false;
+  const mine = JOIN_HITS.get(ip) || [];
+  if (mine.length >= JOIN_PER_IP_HOUR) return false;
+  JOIN_HITS.set(ip, [...mine, now]);
+  return true;
+}
+
+// Longest value each column can hold, so an oversized field is a clear message
+// rather than a database error surfacing as a 500.
+const JOIN_MAX = { email: 190, firstName: 255, lastName: 255, name: 255, phone: 60, gender: 20 };
+
+app.get("/api/join/:key", wrap(async (req, res) => {
+  const cfg = await dbmod.getSelfRegisterConfig();
+  if (!joinKeyOk(req.params.key, cfg.key)) return res.status(404).json({ error: JOIN_BAD_KEY });
+  res.json({ ok: true, brand: await dbmod.getBrandPublic() });
+}));
+
+app.post("/api/join/:key", wrap(async (req, res) => {
+  const cfg = await dbmod.getSelfRegisterConfig();
+  if (!joinKeyOk(req.params.key, cfg.key)) return res.status(404).json({ error: JOIN_BAD_KEY });
+  if (!joinRateOk(req.ip || req.connection?.remoteAddress || "unknown")) {
+    return res.status(429).json({ error: "Too many sign ups from here just now. Please wait a while and try again." });
+  }
+  if (!(await checkCaptcha(req.body?.captcha))) return res.status(400).json({ error: "Captcha verification failed. Please try again." });
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const firstName = String(req.body?.firstName || "").trim();
+  const lastName = String(req.body?.lastName || "").trim();
+  const name = String(req.body?.name || "").trim();
+  const phone = String(req.body?.phone || "").trim();
+  const gender = String(req.body?.gender || "").trim();
+  const password = String(req.body?.password || "");
+  const username = normalizeUsername(req.body?.username);
+  if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+  if (!firstName) return res.status(400).json({ error: "Enter your first name." });
+  if (!lastName) return res.status(400).json({ error: "Enter your last name." });
+  if (!name) return res.status(400).json({ error: "Confirm your full name (used on certificates)." });
+  if (!phone) return res.status(400).json({ error: "Enter your phone number." });
+  if (!gender) return res.status(400).json({ error: "Select your gender." });
+  if (!username || username.length < 3) return res.status(400).json({ error: "Choose a username of at least 3 characters." });
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  // Reject anything the columns cannot hold rather than letting MySQL throw, or
+  // worse, silently trim a name that then prints short on a certificate.
+  for (const [field, label] of [["email", "email address"], ["firstName", "first name"], ["lastName", "last name"], ["name", "full name"], ["phone", "phone number"], ["gender", "gender"]]) {
+    const value = { email, firstName, lastName, name, phone, gender }[field];
+    if (value.length > JOIN_MAX[field]) return res.status(400).json({ error: `That ${label} is too long. Please use ${JOIN_MAX[field]} characters or fewer.` });
+  }
+  const [[clash]] = await q("SELECT email, username FROM users WHERE lower(email)=? OR lower(username)=? LIMIT 1", [email, username]);
+  if (clash && String(clash.email || "").toLowerCase() === email) {
+    return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
+  }
+  if (clash) return res.status(409).json({ error: "That username is already taken. Please choose another." });
+  try {
+    // Hash off the event loop: hashSync would freeze every other request for
+    // about a tenth of a second per sign up.
+    const hash = await bcrypt.hash(password, 10);
+    const id = await dbmod.createSelfRegisteredStudent({ name, firstName, lastName, phone, gender, username, email }, hash);
+    dbmod.logActivity(id, "register", "Registered through the shared link").catch(() => {});
+  } catch (e) {
+    // Two people can pass the checks above at the same moment; the unique keys
+    // on username and email settle it and the loser is told to try again.
+    if (e && e.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "That username or email is already taken. Please choose another." });
+    throw e;
+  }
+  res.json({ ok: true });
+}));
+
 /* ---- forgot / reset password (public) ---- */
 app.post("/api/forgot", wrap(async (req, res) => {
   const id = String(req.body?.username || "").trim();
@@ -1921,6 +2018,16 @@ app.put("/api/admin/timezone", auth, superOnly, wrap(async (req, res) => {
   try { saved = await dbmod.setTimezoneConfig({ tz }); }
   catch { return res.status(400).json({ error: "Unknown timezone." }); }
   res.json(saved);
+}));
+
+/* ---- admin: the shareable self-registration link ---- */
+// Any admin invites students, so this is adminOnly rather than superOnly.
+const joinLink = (req, key) => `${req.protocol}://${req.get("host")}/join/${key}`;
+app.get("/api/admin/self-register-link", auth, adminOnly, wrap(async (req, res) => {
+  res.json({ link: joinLink(req, (await dbmod.ensureSelfRegisterKey()).key) });
+}));
+app.post("/api/admin/self-register-link/rotate", auth, adminOnly, wrap(async (req, res) => {
+  res.json({ link: joinLink(req, (await dbmod.rotateSelfRegisterKey()).key) });
 }));
 
 /* ---- overdue payment reminders ---- */

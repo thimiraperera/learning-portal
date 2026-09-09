@@ -187,6 +187,17 @@ export function StoreProvider({ children }) {
     } catch (e) { return { ok: false, error: e.message }; }
   }, []);
 
+  /* Shared self-registration link. Both of these are public: the key in the URL
+     is the only thing the server checks, so no session token is sent. */
+  const checkSelfRegister = useCallback(async (key) => {
+    try { const d = await api(`/join/${key}`); return { ok: true, brand: d.brand }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  }, []);
+  const selfRegister = useCallback(async (key, fields) => {
+    try { await api(`/join/${key}`, { method: "POST", body: fields }); return { ok: true }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  }, []);
+
   const requestPasswordReset = useCallback(async (username) => {
     try { const d = await api("/forgot", { method: "POST", body: { username } }); return { ok: true, state: d.state }; }
     catch (e) { return { ok: false, error: e.message }; }
@@ -584,6 +595,16 @@ export function StoreProvider({ children }) {
     try { applyAdmin(await api(`/admin/students/${id}/courses/${courseId}/cert-block`, { method: "POST", token, body: { blocked } })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const fetchSelfRegisterLink = useCallback(async () => {
+    try { const d = await api("/admin/self-register-link", { token }); return { ok: true, link: d.link }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+  // Replaces the key, so every copy of the old link stops working.
+  const rotateSelfRegisterLink = useCallback(async () => {
+    try { const d = await api("/admin/self-register-link/rotate", { method: "POST", token }); return { ok: true, link: d.link }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
+
   const saveReminders = useCallback(async (enabled) => {
     try { const d = await api("/admin/reminders", { method: "PUT", token, body: { enabled } }); setRemindersLocal(d); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -614,6 +635,7 @@ export function StoreProvider({ children }) {
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
     fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
     setCourseLock, setCertBlock, saveReminders, sendRemindersNow,
+    checkSelfRegister, selfRegister, fetchSelfRegisterLink, rotateSelfRegisterLink,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

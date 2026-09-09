@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Search, Eye, X } from "lucide-react";
+import { Trash2, CheckCircle, AlertTriangle, Users, Mail, Copy, Link2, Search, Eye, X } from "lucide-react";
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
 import SearchSelect from "../../components/SearchSelect.jsx";
@@ -69,7 +69,7 @@ function buildPayStatus(plans) {
 }
 
 export default function Students() {
-  const { users, courses, addStudent, removeStudent, plans } = useStore();
+  const { users, courses, addStudent, removeStudent, plans, fetchSelfRegisterLink } = useStore();
   const navigate = useNavigate();
   const payStatusByUser = buildPayStatus(plans);
   const [name, setName] = useState("");
@@ -77,6 +77,7 @@ export default function Students() {
   const [username, setUsername] = useState("");
   const [usernameEdited, setUsernameEdited] = useState(false);
   const [msg, setMsg] = useState(null); // { ok, msg, link, sent }
+  const [selfLink, setSelfLink] = useState(""); // only filled when the clipboard refuses, so the admin can copy by hand
 
   const [qy, setQy] = useState("");
   const [status, setStatus] = useState("all");
@@ -110,6 +111,27 @@ export default function Students() {
     const r = await addStudent(name, email, username);
     setMsg(r);
     if (r.ok) { setName(""); setEmail(""); setUsername(""); setUsernameEdited(false); setFieldErr({}); }
+  };
+
+  /* The one general self-registration link, shared with many people at once.
+     Separate from the invite above, which is tied to a single email address. */
+  const copySelfRegisterLink = async () => {
+    const r = await fetchSelfRegisterLink();
+    if (!r.ok) {
+      setSelfLink("");
+      popup.toast(r.msg || "Could not load the registration link. Please try again.", "error");
+      return;
+    }
+    try {
+      // navigator.clipboard is undefined outside a secure origin, so guard before use.
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(r.link);
+      setSelfLink("");
+      popup.toast("Shared registration link copied. Anyone who opens it can register themselves.");
+    } catch {
+      setSelfLink(r.link);
+      popup.toast("Could not copy automatically. Select the link below and copy it.", "error");
+    }
   };
 
   const ql = qy.trim().toLowerCase();
@@ -175,6 +197,16 @@ export default function Students() {
             )}
           </>
         )}
+        <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 14 }}>
+          <Button className="btn btn-outline btn-sm" onClick={copySelfRegisterLink}><Link2 /> Copy Registration Link</Button>
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 8 }}>
+            Anyone with this link can register themselves as a student. The invite above goes to one person by email, while this one link can be shared with a whole group.
+          </div>
+          {selfLink && (
+            <input className="form-control" style={{ width: "100%", marginTop: 8, fontSize: 12 }}
+              readOnly value={selfLink} onFocus={(e) => e.target.select()} />
+          )}
+        </div>
       </div>
 
       <div className="card">

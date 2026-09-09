@@ -3,6 +3,7 @@ import { StoreProvider, useStore } from "./state.jsx";
 import { PopupProvider } from "./components/Popup.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import Join from "./pages/Join.jsx";
 import Setup from "./pages/Setup.jsx";
 import Forgot from "./pages/Forgot.jsx";
 import Reset from "./pages/Reset.jsx";
@@ -71,6 +72,7 @@ function Routed() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/join/:key" element={<Join />} />
       <Route path="/setup" element={<Setup />} />
       <Route path="/forgot" element={<Forgot />} />
       <Route path="/reset" element={<Reset />} />

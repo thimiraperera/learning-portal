@@ -784,6 +784,17 @@ async function completeRegistration(token, f, passwordHash) {
     [f.name.trim(), f.firstName.trim(), f.lastName.trim(), f.phone || "", f.gender || "", f.username, passwordHash, token]);
   return r.affectedRows > 0;
 }
+// Self-registration through the shared link. Role, status, reg_token and the
+// password hash are fixed here rather than taken from the caller, so the public
+// endpoint can only ever produce an ordinary active student.
+async function createSelfRegisteredStudent(f, passwordHash) {
+  const [r] = await q(
+    "INSERT INTO users (name,first_name,last_name,nickname,phone,gender,username,email,password_hash,role,status,reg_token) VALUES (?,?,?, '', ?,?, ?,?,?, 'student','active', NULL)",
+    [String(f.name || "").trim(), String(f.firstName || "").trim(), String(f.lastName || "").trim(),
+      f.phone || "", f.gender || "", f.username, f.email, passwordHash]);
+  await assignRegNo(r.insertId);
+  return r.insertId;
+}
 async function updateStudentProfile(id, f) {
   // 'name' is the certificate name: a direct field now, never derived from nickname/first/last.
   const name = String(f.fullName || "").trim();
@@ -1325,16 +1336,30 @@ async function setRegConfig(next) {
 function formatRegNo(cfg, n) { return String(cfg.prefix || "") + String(n).padStart(cfg.width || 4, "0"); }
 // Assign the next registration number to a student that has none yet. Returns
 // the existing number untouched if one is already set (numbers never change).
+/* Claims the next registration number. The counter lives in a settings row, so
+   two students registering at the same moment could otherwise read the same
+   value and both be handed it, which would print a duplicate number on their
+   certificates. The counter is bumped with a compare-and-swap against the row
+   we read, and a lost race just retries with the fresh value. */
 async function assignRegNo(userId) {
   const [[u]] = await q("SELECT reg_no FROM users WHERE id=?", [userId]);
   if (!u) return null;
   if (u.reg_no && u.reg_no.trim()) return u.reg_no;
-  const cfg = await getRegConfig();
-  const n = cfg.next || 1;
-  const regNo = formatRegNo(cfg, n);
-  await q("UPDATE users SET reg_no=? WHERE id=?", [regNo, userId]);
-  await q("INSERT INTO settings (k,v) VALUES ('regnum',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify({ ...cfg, next: n + 1 })]);
-  return regNo;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const [[row]] = await q("SELECT v FROM settings WHERE k='regnum'");
+    const cfg = row ? { ...REGNUM_DEFAULT, ...JSON.parse(row.v) } : { ...REGNUM_DEFAULT };
+    const n = cfg.next || 1;
+    const next = JSON.stringify({ ...cfg, next: n + 1 });
+    // Only take this number if nobody else moved the counter since the read.
+    const [r] = row
+      ? await q("UPDATE settings SET v=? WHERE k='regnum' AND v=?", [next, row.v])
+      : await q("INSERT IGNORE INTO settings (k,v) VALUES ('regnum',?)", [next]);
+    if (!r.affectedRows) continue;
+    const regNo = formatRegNo(cfg, n);
+    await q("UPDATE users SET reg_no=? WHERE id=?", [regNo, userId]);
+    return regNo;
+  }
+  return null;
 }
 
 /* ---- app timezone ---- */
@@ -1386,6 +1411,30 @@ async function setRemindersConfig(next) {
 async function markReminded(planIds, when) {
   if (!planIds || !planIds.length) return;
   await q(`UPDATE payment_plans SET last_reminded=? WHERE id IN (${planIds.map(() => "?").join(",")})`, [when, ...planIds]);
+}
+
+/* ---- shareable self-registration link ---- */
+// One general purpose link the admin shares with many people at once. The key
+// only keeps the page from being guessable by strangers, it says nothing about
+// who opens it. Rotating replaces the key, which kills off a link that leaked.
+/* Read only, so a stranger poking at /api/join/<guess> cannot bring the link
+   into existence. Until an admin asks for the link there is no key and every
+   public attempt is refused. */
+async function getSelfRegisterConfig() {
+  const [[row]] = await q("SELECT v FROM settings WHERE k='selfRegister'");
+  const cfg = row ? JSON.parse(row.v) : { key: "" };
+  return { key: cfg.key || "" };
+}
+// Used by the admin link endpoint: creates the key the first time it is asked for.
+async function ensureSelfRegisterKey() {
+  const cur = await getSelfRegisterConfig();
+  if (cur.key) return cur;
+  return rotateSelfRegisterKey();
+}
+async function rotateSelfRegisterKey() {
+  const cfg = { key: crypto.randomBytes(18).toString("hex") };
+  await q("INSERT INTO settings (k,v) VALUES ('selfRegister',?) ON DUPLICATE KEY UPDATE v=VALUES(v)", [JSON.stringify(cfg)]);
+  return cfg;
 }
 
 /* ---- certificate signature ---- */
@@ -1460,7 +1509,9 @@ async function getCaptcha() {
 }
 async function getCaptchaForClient() {
   const { provider, siteKey, secretKey } = await getCaptcha();
-  return { provider, siteKey, hasSecretKey: !!secretKey, enabled: provider !== "none" && !!siteKey };
+  // Without the secret key the server cannot verify anything, so showing the
+  // widget would only look like protection. Treat that as off.
+  return { provider, siteKey, hasSecretKey: !!secretKey, enabled: provider !== "none" && !!siteKey && !!secretKey };
 }
 async function setCaptcha(next) {
   const cur = await getCaptcha();
@@ -1501,6 +1552,7 @@ module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, enrolledBatches, lockedCourses, usersMap,
   listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch,
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration, usernameExists,
+  createSelfRegisteredStudent, getSelfRegisterConfig, ensureSelfRegisterKey, rotateSelfRegisterKey,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,
   instructorByUserId, coursesForInstructor, linkInstructorUser,
   addCourseInstructor, removeCourseInstructor,
