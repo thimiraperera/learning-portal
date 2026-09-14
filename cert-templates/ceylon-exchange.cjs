@@ -1,4 +1,4 @@
-/* Horizon Seal Certificate (navy and teal design with the red seal).
+/* Stock Market Beginners Course certificate (navy and teal design with the red seal).
    Ported 1:1 from the owner's ceylon-exchange-certificate.html: exact font
    (Quicksand at the four weights its CSS uses, embedded), exact colors, exact
    positions. The source lays everything out in millimetres on a 297x210mm
@@ -86,7 +86,7 @@ function left(doc, text, xMm, y, csEm, sizeMm, maxWidthMm) {
 const SEAL_POINTS = "50.00,0.00 55.91,8.92 64.09,2.03 67.24,12.25 77.03,7.94 77.18,18.64 87.79,17.26 84.91,27.56 95.48,29.23 89.82,38.31 99.49,42.88 91.50,50.00 99.49,57.12 89.82,61.69 95.48,70.77 84.91,72.44 87.79,82.74 77.18,81.36 77.03,92.06 67.24,87.75 64.09,97.97 55.91,91.08 50.00,100.00 44.09,91.08 35.91,97.97 32.76,87.75 22.97,92.06 22.82,81.36 12.21,82.74 15.09,72.44 4.52,70.77 10.18,61.69 0.51,57.12 8.50,50.00 0.51,42.88 10.18,38.31 4.52,29.23 15.09,27.56 12.21,17.26 22.82,18.64 22.97,7.94 32.76,12.25 35.91,2.03 44.09,8.92";
 
 module.exports = {
-  name: "Horizon Seal Certificate",
+  name: "Stock Market Beginners Course",
   render(doc, d) {
     doc.registerFont("QS-450", FONT_QS_450);
     doc.registerFont("QS-600", FONT_QS_600);
