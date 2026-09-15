@@ -10,6 +10,8 @@ import { useStore } from "../../state.jsx";
 import { previewWords } from "../../lib/text.js";
 
 const EMPTY = { title: "", code: "", blurb: "", certTemplate: "", instructorIds: [], batchNumber: "1" };
+// Reserved certTemplate value (cert.cjs NO_CERTIFICATE): the course awards no certificate.
+const NO_CERTIFICATE = "none";
 
 export default function Courses() {
   const { courses, users, instructors, addCourse, fetchCertTemplates, previewCertTemplate, brand } = useStore();
@@ -41,7 +43,7 @@ export default function Courses() {
   // Open a PDF preview of the chosen (or default) certificate template in a new tab.
   const previewTemplate = async () => {
     const tid = form.certTemplate || defaultId;
-    if (tid) { try { await previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+    if (tid && tid !== NO_CERTIFICATE) { try { await previewCertTemplate(tid); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
   const chosenInstructors = form.instructorIds.map((id) => instructors.find((i) => i.id === id)).filter(Boolean);
   const availableInstructors = instructors.filter((i) => !form.instructorIds.includes(i.id));
@@ -123,9 +125,12 @@ export default function Courses() {
               <select className="form-control" value={form.certTemplate} onChange={set("certTemplate")}>
                 <option value="">Default ({defaultName})</option>
                 {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <option value={NO_CERTIFICATE}>No certificate</option>
               </select>
-              <button className="btn btn-outline" type="button" onClick={previewTemplate}><Eye /> Preview</button>
-            </div></div>
+              {form.certTemplate !== NO_CERTIFICATE && <button className="btn btn-outline" type="button" onClick={previewTemplate}><Eye /> Preview</button>}
+            </div>
+            {form.certTemplate === NO_CERTIFICATE && <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>This course does not award a certificate.</div>}
+          </div>
           <div className="form-group"><label className="form-label">Instructors <span className="req">*</span> <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(at least one)</span></label>
             {instructors.length === 0
               ? <input className="form-control locked-input" value="No instructors created yet" readOnly disabled />

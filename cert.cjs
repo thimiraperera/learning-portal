@@ -1,6 +1,7 @@
 /* Certificate PDF generation with pdfkit.
    Templates live in ./cert-templates; every .cjs file there becomes a
-   selectable template (its id is the filename without the extension).
+   selectable template (its id is the filename without the extension, and
+   "none" is reserved, see NO_CERTIFICATE).
    Each template module exports { name, render(doc, d) } and draws onto an
    A4 landscape page. Drop more files into the folder to add templates. */
 const fs = require("fs");
@@ -10,6 +11,13 @@ const PDFDocument = require("pdfkit");
 
 const TEMPLATE_DIR = path.join(__dirname, "cert-templates");
 
+// Stored in courses.cert_template for a course that awards no certificate.
+// Reserved, so a template file with this name is never loaded.
+const NO_CERTIFICATE = "none";
+function offersCertificate(templateId) {
+  return String(templateId || "") !== NO_CERTIFICATE;
+}
+
 function loadTemplates() {
   const map = {};
   let files = [];
@@ -17,6 +25,10 @@ function loadTemplates() {
   catch { return map; }
   for (const f of files) {
     const id = path.basename(f, ".cjs");
+    if (id.toLowerCase() === NO_CERTIFICATE) {
+      console.error(`Certificate template ${f} was skipped: "${NO_CERTIFICATE}" is reserved for courses without a certificate.`);
+      continue;
+    }
     try {
       const t = require(path.join(TEMPLATE_DIR, f));
       if (t && typeof t.render === "function") map[id] = { id, name: t.name || id, render: t.render };
@@ -40,6 +52,8 @@ function defaultTemplateId() {
 function generateCertificate(data, templateId) {
   const t = templates[templateId] || templates[defaultTemplateId()];
   return new Promise((resolve, reject) => {
+    // Routes refuse these first; this stops a missed check falling back to the default design.
+    if (!offersCertificate(templateId)) return reject(new Error("This course does not offer a certificate."));
     if (!t) return reject(new Error("No certificate templates are installed."));
     const doc = new PDFDocument({
       size: "A4", layout: "landscape", margin: 0,
@@ -69,4 +83,4 @@ function generateCertificate(data, templateId) {
   });
 }
 
-module.exports = { generateCertificate, templatesList, defaultTemplateId };
+module.exports = { generateCertificate, templatesList, defaultTemplateId, NO_CERTIFICATE, offersCertificate };

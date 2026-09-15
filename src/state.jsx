@@ -380,8 +380,10 @@ export function StoreProvider({ children }) {
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
   const unlockCertificate = useCallback(async (id) => {
-    applyAdmin(await api(`/admin/certificates/${id}/unlock`, { method: "POST", token }));
+    try { applyAdmin(await api(`/admin/certificates/${id}/unlock`, { method: "POST", token })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const fetchCourseCertificateCount = useCallback(async (cid) => (await api(`/admin/courses/${cid}/certificate-count`, { token })).issued, [token]);
   const sendCertificate = useCallback(async (id) => {
     try { const d = await api(`/admin/certificates/${id}/send`, { method: "POST", token }); return { ok: d.ok, msg: d.msg }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -627,7 +629,7 @@ export function StoreProvider({ children }) {
     addGroup, renameGroup, deleteGroup, reorderGroups,
     requestCourse, approveRequest, declineRequest,
     addCourseInstructor, removeCourseInstructor, addInstructor, updateInstructor, deleteInstructor,
-    issueManyCertificates, unlockCertificate, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate, requestCertRedownload,
+    issueManyCertificates, unlockCertificate, fetchCourseCertificateCount, sendCertificate, adminViewCertificate, adminDownloadCertificate, downloadCertificate, requestCertRedownload,
     fetchCertTemplates, previewCertTemplate,
     createExam, loadExam, updateExam, deleteExam, addExamQuestion, updateExamQuestion, deleteExamQuestion,
     importExamCsv, exportExamCsv, loadStudentExams, startExam, submitExam,

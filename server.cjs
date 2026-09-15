@@ -13,7 +13,7 @@ const QRCode = require("qrcode");
 const multer = require("multer");
 const AdmZip = require("adm-zip");
 const dbmod = require("./db.cjs");
-const { generateCertificate, templatesList, defaultTemplateId } = require("./cert.cjs");
+const { generateCertificate, templatesList, defaultTemplateId, NO_CERTIFICATE, offersCertificate } = require("./cert.cjs");
 const totp = require("./totp.cjs");
 const mailer = require("./email.cjs");
 const { q } = dbmod;
@@ -269,6 +269,18 @@ async function certPdf(cert) {
   }, cert.certTemplate);
 }
 
+// A course's cert_template as the course forms send it: a template id,
+// NO_CERTIFICATE, or "" for the default design. Unknown or removed ids become "".
+function normaliseCertTemplate(value) {
+  const id = String(value || "");
+  if (!id || id === NO_CERTIFICATE) return id;
+  return templatesList().some((t) => t.id === id) ? id : "";
+}
+// Certificates issued before a course was switched to NO_CERTIFICATE are kept,
+// but nobody can open them until a design is chosen again.
+const NO_CERT_STUDENT_ERROR = "This course does not offer a certificate.";
+const NO_CERT_ADMIN_ERROR = "This course does not offer a certificate. To change that, pick a Certificate template on the Course details tab.";
+
 /* small async wrapper so thrown errors become 500s instead of hanging.
    Passes next through so it works for middleware (auth) and handlers alike. */
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((e) => {
@@ -314,7 +326,18 @@ function superOnly(req, res, next) {
   next();
 }
 async function adminState() {
-  return { courses: await dbmod.coursesMap(), users: await dbmod.usersMap(), instructors: await dbmod.instructorsList(), certificates: await dbmod.listCertificates(), exams: await dbmod.examsList(), requests: await dbmod.pendingRequests(), overdue: await dbmod.overduePayments(), paymentPlans: await dbmod.allPlans() };
+  const courses = await dbmod.coursesMap();
+  const users = await dbmod.usersMap();
+  const instructors = await dbmod.instructorsList();
+  const certificates = await dbmod.listCertificates();
+  // The Course details tab warns with this count before a switch to no certificate.
+  for (const c of Object.values(courses)) c.certificatesIssued = 0;
+  for (const r of certificates) {
+    const co = courses[r.course_id];
+    if (co) co.certificatesIssued++;
+    r.offersCertificate = offersCertificate(co && co.certTemplate);
+  }
+  return { courses, users, instructors, certificates, exams: await dbmod.examsList(), requests: await dbmod.pendingRequests(), overdue: await dbmod.overduePayments(), paymentPlans: await dbmod.allPlans() };
 }
 
 /* ---- public ---- */
@@ -618,7 +641,11 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     }
     // A certificate also needs every course exam completed and no admin hold, so
     // carry both along and the student page can explain the block before they click.
-    const certificates = await dbmod.studentCertificates(u.id);
+    // A course that offers no certificate hides any it issued earlier. The rows stay,
+    // so choosing a design again brings them back untouched.
+    const certificates = (await dbmod.studentCertificates(u.id))
+      .filter((c) => offersCertificate(c.certTemplate))
+      .map(({ certTemplate: _t, ...c }) => c);
     const certBlockedIds = await dbmod.certBlockedCourseIds(u.id);
     const gatePairs = [...new Set([...ids, ...certificates.map((c) => c.course_id)])].map((cid) => ({ studentId: u.id, courseId: cid }));
     const certGate = await dbmod.certExamStatusMap(gatePairs);
@@ -633,18 +660,21 @@ app.get("/api/bootstrap", auth, wrap(async (req, res) => {
     for (const cid of ids) {
       const g = certGate.get(`${u.id}:${cid}`) || { ok: true, required: 0, pending: [] };
       const pl = planByCourse[cid];
+      const offers = offersCertificate(courses[cid] && courses[cid].certTemplate);
       const row = {
         courseId: cid,
+        offersCertificate: offers,
         examsComplete: g.ok,
         examsRequired: g.required,
         examsPending: g.pending,
         feesSettled: !(pl && pl.remaining > 0.009),
         certBlocked: certBlockedIds.includes(cid),
-        missingProgramName: !String((courses[cid] && courses[cid].certProgramName) || "").trim(),
+        // Nothing to name when the course awards no certificate.
+        missingProgramName: offers && !String((courses[cid] && courses[cid].certProgramName) || "").trim(),
         hasCertificate: certificates.some((c) => c.course_id === cid),
       };
       // An account that is no longer active is never issued one, so never promise it.
-      row.eligible = row.examsComplete && row.feesSettled && !row.certBlocked && !row.missingProgramName && u.status === "active";
+      row.eligible = offers && row.examsComplete && row.feesSettled && !row.certBlocked && !row.missingProgramName && u.status === "active";
       certStatus[cid] = row;
     }
     res.json({ currentUser: await publicUser(u), courses, locked: await dbmod.lockedCourses(ids), paymentLocked, certificates, certStatus, exams, requests: await dbmod.studentRequestIds(u.id), payments: plans, brand: await dbmod.getBrandPublic() });
@@ -856,6 +886,12 @@ app.delete("/api/admin/payments/:paymentId", auth, adminOnly, wrap(async (req, r
   res.json({ plans: userId ? await dbmod.studentPlans(userId) : [], ...(await adminState()) });
 }));
 
+/* Live count for the warning shown before a course stops offering certificates. */
+app.get("/api/admin/courses/:id/certificate-count", auth, adminOnly, wrap(async (req, res) => {
+  const [[r]] = await q("SELECT COUNT(*) AS n FROM certificates WHERE course_id=?", [String(req.params.id)]);
+  res.json({ issued: Number(r.n) || 0 });
+}));
+
 /* ---- course-level installment plan template ---- */
 app.get("/api/admin/courses/:id/plan", auth, adminOnly, wrap(async (req, res) => {
   const cid = String(req.params.id);
@@ -927,9 +963,7 @@ app.post("/api/admin/courses", auth, adminOnly, wrap(async (req, res) => {
   if (!title) return res.status(400).json({ error: "Enter a course title." });
   const blurb = sanitizeHtml(req.body?.blurb || "").trim() || "Newly created course.";
   const sessions = Number.parseInt(req.body?.sessions, 10) || 0;
-  // An unknown / removed template id just falls back to the default.
-  let certTemplate = String(req.body?.certTemplate || "");
-  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) certTemplate = "";
+  const certTemplate = normaliseCertTemplate(req.body?.certTemplate);
   const instructorIds = (Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter(Boolean);
   if (instructorIds.length === 0) return res.status(400).json({ error: "Assign at least one instructor to the course." });
   const id = "c" + Date.now().toString(36);
@@ -952,9 +986,7 @@ app.put("/api/admin/courses/:id", auth, adminOnly, wrap(async (req, res) => {
   const code = String(req.body?.code || "").trim().toUpperCase() || c.code;
   const title = String(req.body?.title || "").trim();
   if (!title) return res.status(400).json({ error: "A course title is required." });
-  // An unknown / removed template id just falls back to the default.
-  let certTemplate = String(req.body?.certTemplate || "");
-  if (certTemplate && !templatesList().some((t) => t.id === certTemplate)) certTemplate = "";
+  const certTemplate = normaliseCertTemplate(req.body?.certTemplate);
   await dbmod.updateCourse(id, {
     code, title, certTemplate,
     instructor: String(req.body?.instructor || ""),
@@ -1113,24 +1145,30 @@ app.post("/api/admin/instructors/:id/invite-login", auth, adminOnly, wrap(async 
 /* ---- certificates (admin) ---- */
 /* The one place a certificate is created, shared by the admin Issue button and
    the automatic gate so both produce the same certificate. Returns null on
-   success, or a reason string when it declines: "exists" or "no-program-name".
-   sendEmail=false issues silently: the certificate simply appears on the
-   student's dashboard, which is what the automatic gate does. */
+   success, or a reason string when it declines: "no-certificate", "exists" or
+   "no-program-name". sendEmail=false issues silently: the certificate simply
+   appears on the student's dashboard, which is what the automatic gate does. */
 async function issueCertificateFor(stu, course, { sendEmail = true } = {}) {
+  // First, so the default design below is never locked onto such a course.
+  if (!offersCertificate(course.cert_template)) return "no-certificate";
   if (await dbmod.certExists(stu.id, course.id)) return "exists";
   // The certificate prints this instead of the internal course title, so it
   // must be set before a certificate for this course can be issued at all.
   if (!String(course.cert_program_name || "").trim()) return "no-program-name";
   // First issue for a course locks in the default template so future
   // certificates for that course keep using the same design.
+  // Only an empty setting is filled, so an admin choice saved a moment ago wins.
   if (!course.cert_template && defaultTemplateId()) {
-    course.cert_template = defaultTemplateId();
-    await q("UPDATE courses SET cert_template=? WHERE id=?", [course.cert_template, course.id]);
+    await q("UPDATE courses SET cert_template=? WHERE id=? AND COALESCE(cert_template,'')=''", [defaultTemplateId(), course.id]);
+    const [[fresh]] = await q("SELECT cert_template FROM courses WHERE id=?", [course.id]);
+    course.cert_template = fresh ? fresh.cert_template || "" : "";
+    if (!offersCertificate(course.cert_template)) return "no-certificate";
   }
   const certNo = "CERT-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-  // The unique index can reject this when another path issued the same
-  // certificate a moment ago, which is the same answer as certExists above.
-  if (!(await dbmod.issueCertificate(stu.id, course.id, certNo, Date.now()))) return "exists";
+  // The insert re-checks the course itself, and the unique index can reject it
+  // when another path issued the same certificate a moment ago.
+  const issued = await dbmod.issueCertificate(stu.id, course.id, certNo, Date.now(), NO_CERTIFICATE);
+  if (issued !== "issued") return issued;
   if (!sendEmail) return null;
   const html = await emailHtml("Your certificate is ready", "Congratulations on completing your course",
     mailer.paragraph(`Hello <strong>${mailer.esc(dbmod.displayName(stu))}</strong>,`) +
@@ -1149,8 +1187,9 @@ async function autoIssueCertificate(userId, courseId, knownPlans) {
   const sid = Number(userId);
   const cid = String(courseId || "");
   if (!sid || !cid) return false;
-  const [[en]] = await q("SELECT cert_blocked FROM enrolments WHERE user_id=? AND course_id=?", [sid, cid]);
-  if (!en || en.cert_blocked) return false;
+  // Joined with the course so a course without a certificate stops here, before the exam and fee lookups.
+  const [[en]] = await q("SELECT en.cert_blocked, co.cert_template FROM enrolments en JOIN courses co ON co.id=en.course_id WHERE en.user_id=? AND en.course_id=?", [sid, cid]);
+  if (!en || en.cert_blocked || !offersCertificate(en.cert_template)) return false;
   if (await dbmod.certExists(sid, cid)) return false;
   const gate = await dbmod.certExamStatus(sid, cid);
   if (!gate.ok) return false;
@@ -1189,6 +1228,7 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
   const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
   let issued = 0;
   const missingProgramName = new Set();
+  const noCertificate = new Set();
   for (const p of pairs) {
     const sid = Number(p.studentId);
     const cid = String(p.courseId || "");
@@ -1196,21 +1236,27 @@ app.post("/api/admin/certificates/issue-many", auth, adminOnly, wrap(async (req,
     const [[course]] = await q("SELECT * FROM courses WHERE id=?", [cid]);
     if (!stu || !course) continue;
     const declined = await issueCertificateFor(stu, course);
+    if (declined === "no-certificate") { noCertificate.add(course.title); continue; }
     if (declined === "no-program-name") { missingProgramName.add(course.title); continue; }
     if (declined) continue;
     issued++;
   }
-  if (issued === 0 && missingProgramName.size) {
-    return res.status(400).json({ error: `Set a Certificate program name on the Course details tab before issuing certificates for: ${[...missingProgramName].join(", ")}.` });
+  if (issued === 0 && (noCertificate.size || missingProgramName.size)) {
+    const errors = [];
+    if (noCertificate.size) errors.push(`No certificate is offered for: ${[...noCertificate].join(", ")}. To issue one, pick a Certificate template on the Course details tab.`);
+    if (missingProgramName.size) errors.push(`Set a Certificate program name on the Course details tab before issuing certificates for: ${[...missingProgramName].join(", ")}.`);
+    return res.status(400).json({ error: errors.join(" ") });
   }
   let msg = `Issued ${issued} certificate${issued === 1 ? "" : "s"}.`;
   if (missingProgramName.size) msg += ` Skipped for ${[...missingProgramName].join(", ")} - set a Certificate program name on the Course details tab first.`;
+  if (noCertificate.size) msg += ` Skipped for ${[...noCertificate].join(", ")} - no certificate is offered.`;
   res.json({ ok: true, msg, ...(await adminState()) });
 }));
 
 app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert) return res.status(404).json({ error: "Certificate not found." });
+  if (!offersCertificate(cert.certTemplate)) return res.status(403).json({ error: NO_CERT_ADMIN_ERROR });
   const pdf = await certPdf(cert);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${cert.cert_no}.pdf"`);
@@ -1220,6 +1266,7 @@ app.get("/api/admin/certificates/:id/pdf", auth, adminOnly, wrap(async (req, res
 app.post("/api/admin/certificates/:id/send", auth, adminOnly, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert) return res.status(404).json({ error: "Certificate not found." });
+  if (!offersCertificate(cert.certTemplate)) return res.status(403).json({ error: NO_CERT_ADMIN_ERROR });
   const pdf = await certPdf(cert);
   const html = await emailHtml("Your certificate", `Certificate for ${cert.courseTitle}`,
     mailer.paragraph(`Hello <strong>${mailer.esc(cert.studentName)}</strong>,`) +
@@ -1231,6 +1278,8 @@ app.post("/api/admin/certificates/:id/send", auth, adminOnly, wrap(async (req, r
 }));
 
 app.post("/api/admin/certificates/:id/unlock", auth, adminOnly, wrap(async (req, res) => {
+  const cert = await dbmod.getCertificate(Number(req.params.id));
+  if (cert && !offersCertificate(cert.certTemplate)) return res.status(403).json({ error: NO_CERT_ADMIN_ERROR });
   await dbmod.unlockCertificate(Number(req.params.id));
   res.json({ ok: true, ...(await adminState()) });
 }));
@@ -1249,6 +1298,7 @@ function examGateMessage(pending) {
 app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  if (!offersCertificate(cert.certTemplate)) return res.status(403).json({ error: NO_CERT_STUDENT_ERROR });
   // An admin can withhold this student's certificate for this course.
   if (await dbmod.isCertBlocked(req.user.id, cert.course_id)) {
     return res.status(403).json({ error: "Your certificate for this course is on hold. Please contact your administrator." });
@@ -1276,6 +1326,7 @@ app.get("/api/certificates/:id/download", auth, wrap(async (req, res) => {
 app.post("/api/certificates/:id/request-redownload", auth, wrap(async (req, res) => {
   const cert = await dbmod.getCertificate(Number(req.params.id));
   if (!cert || cert.student_id !== req.user.id) return res.status(404).json({ error: "Certificate not found." });
+  if (!offersCertificate(cert.certTemplate)) return res.status(403).json({ error: NO_CERT_STUDENT_ERROR });
   if (!cert.downloaded || cert.unlocked) return res.status(400).json({ error: "This certificate is already available to download." });
   await dbmod.requestCertRedownload(cert.id, req.user.id);
   dbmod.logActivity(req.user.id, "certificate", `Requested a re-download of ${cert.cert_no}`).catch(() => {});
@@ -1300,7 +1351,7 @@ app.get("/api/admin/cert-templates", auth, adminOnly, wrap(async (_req, res) => 
 }));
 
 app.get("/api/admin/cert-templates/:id/preview", auth, adminOnly, wrap(async (req, res) => {
-  if (!templatesList().some((t) => t.id === req.params.id)) return res.status(404).json({ error: "Template not found." });
+  if (!offersCertificate(req.params.id) || !templatesList().some((t) => t.id === req.params.id)) return res.status(404).json({ error: "Template not found." });
   const brand = await dbmod.getBrand();
   const { tz } = await dbmod.getTimezoneConfig();
   const sig = await dbmod.getCertSignature();

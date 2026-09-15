@@ -13,6 +13,8 @@ import Button from "../../components/Button.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, fmtDateMs, planBadge, instBadge, buildDeleteWarning, allocatePayments } from "../../lib/payments.js";
 
+// Reserved certTemplate value (cert.cjs NO_CERTIFICATE): the course awards no certificate.
+const NO_CERTIFICATE = "none";
 const fmtScore = (v) => parseFloat(Number(v).toFixed(2));
 const fmtDateTime = (ts) => new Date(Number(ts)).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 function fmtDuration(a, b) {
@@ -185,7 +187,8 @@ function OverviewTab({ id, s, store, navigate }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const certs = certificates.filter((c) => c.student_id === id).length;
+  // Certificates of a course that no longer offers one are hidden, so not counted.
+  const certs = certificates.filter((c) => c.student_id === id && c.offersCertificate !== false).length;
   const list = attempts || [];
   const avg = list.length
     ? Math.round((list.reduce((n, a) => n + (a.total > 0 ? Number(a.score) / a.total : 0), 0) / list.length) * 100)
@@ -413,7 +416,10 @@ function CoursesTab({ id, email, s, store, navigate }) {
         <div style={{ marginBottom: 22 }}>
           {enrolled.map(([cid, c]) => {
             const locked = lockedSet.has(cid);
-            const certHeld = certHeldSet.has(cid);
+            // A course set to "No certificate" has nothing to hold back. Any stored
+            // hold is left as it is and shows again if a design is chosen.
+            const offersCert = c.certTemplate !== NO_CERTIFICATE;
+            const certHeld = offersCert && certHeldSet.has(cid);
             const plan = planByCourse[cid];
             const pb = planBadge(plan ? plan.status : "empty");
             const curNum = s.enrolledBatch ? s.enrolledBatch[cid] : null;
@@ -451,13 +457,15 @@ function CoursesTab({ id, email, s, store, navigate }) {
                   onClick={() => setCourseLock(id, cid, !locked)}>
                   {locked ? <><Unlock /> Unlock</> : <><Lock /> Lock</>}
                 </button>
-                <button className={"btn btn-sm " + (certHeld ? "btn-outline" : "btn-ghost")}
-                  title={certHeld
-                    ? "Release this certificate so it can be issued and downloaded"
-                    : "Withhold this certificate: no automatic issue, no download. Course access is not affected."}
-                  onClick={() => toggleCertHold(cid, c, !certHeld)}>
-                  {certHeld ? <><Award /> Release certificate</> : <><Ban /> Withhold certificate</>}
-                </button>
+                {offersCert && (
+                  <button className={"btn btn-sm " + (certHeld ? "btn-outline" : "btn-ghost")}
+                    title={certHeld
+                      ? "Release this certificate so it can be issued and downloaded"
+                      : "Withhold this certificate: no automatic issue, no download. Course access is not affected."}
+                    onClick={() => toggleCertHold(cid, c, !certHeld)}>
+                    {certHeld ? <><Award /> Release certificate</> : <><Ban /> Withhold certificate</>}
+                  </button>
+                )}
                 <button className="btn btn-ghost btn-sm" onClick={() => removeCourse(cid, c)}><UserMinus /> Remove</button>
               </div>
             );

@@ -20,7 +20,10 @@ import RichTextEditor from "../../components/RichTextEditor.jsx";
 import { useStore } from "../../state.jsx";
 import { rs, fmtDate, fmtDateMs, planBadge, installmentBuckets } from "../../lib/payments.js";
 
-function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
+// Reserved certTemplate value (cert.cjs NO_CERTIFICATE): the course awards no certificate.
+const NO_CERTIFICATE = "none";
+
+function BatchDatesEditor({ batch, courseId, offersCert, setBatchDates, onDone }) {
   const [number, setNumber] = useState(String(batch.number ?? ""));
   const [startDate, setStartDate] = useState(batch.start_date || "");
   const [endDate, setEndDate] = useState(batch.end_date || "");
@@ -39,9 +42,11 @@ function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
   return (
     <div className="card" style={{ marginTop: 12, maxWidth: 700 }}>
       <div className="card-title">Batch {batch.number} details</div>
-      <div className="card-subtitle">The certificate date prints on every certificate issued for this batch (e.g. a graduation date). Leave it blank to print each certificate's actual issue date instead.</div>
+      <div className="card-subtitle">{offersCert
+        ? "The certificate date prints on every certificate issued for this batch (e.g. a graduation date). Leave it blank to print each certificate's actual issue date instead."
+        : "This course does not offer a certificate, so there is no certificate date to set. A date saved earlier is kept."}</div>
       {msg && <div className="alert alert-danger"><AlertTriangle /> {msg}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: offersCert ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 16 }}>
         <div className="form-group"><label className="form-label">Batch number</label>
           <input className="form-control" type="number" min="1" step="1" value={number} onChange={(e) => setNumber(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Start date</label>
@@ -49,8 +54,9 @@ function BatchDatesEditor({ batch, courseId, setBatchDates, onDone }) {
         <div className="form-group"><label className="form-label">End date</label>
           <input className="form-control" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Saving this batch's payment plan replaces this with the plan's completion date.</div></div>
-        <div className="form-group"><label className="form-label">Certificate date</label>
-          <input className="form-control" type="date" value={certDate} onChange={(e) => setCertDate(e.target.value)} /></div>
+        {/* Hidden, not cleared: save still sends the stored date so it survives. */}
+        {offersCert && <div className="form-group"><label className="form-label">Certificate date</label>
+          <input className="form-control" type="date" value={certDate} onChange={(e) => setCertDate(e.target.value)} /></div>}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" loading={busy} onClick={save}><Save /> Save changes</Button>
@@ -93,6 +99,7 @@ export default function CourseManage() {
   const enrolledCount = Object.values(users).filter(inBatch).length;
   // Certificates issued for this course in the viewed batch only.
   const issuedCount = (certificates || []).filter((c) => c.course_id === id && (viewedNum == null || c.batchNumber === viewedNum)).length;
+  const offersCert = c.certTemplate !== NO_CERTIFICATE;
 
   const tabs = [
     { k: "details", label: "Course details", icon: SettingsIcon },
@@ -102,7 +109,7 @@ export default function CourseManage() {
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: data.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: data.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: data.materials.length },
-    { k: "certificates", label: "Certificates", icon: Award, n: issuedCount },
+    { k: "certificates", label: "Certificates", icon: Award, n: offersCert ? issuedCount : undefined },
   ];
 
   const onStartNewBatch = async () => {
@@ -141,7 +148,7 @@ export default function CourseManage() {
           <button className="btn btn-outline" type="button" onClick={() => setDatesOpen((v) => !v)}><Calendar /> {datesOpen ? "Close dates" : "Edit dates"}</button>
         </div>
         {datesOpen && viewedBatch && (
-          <BatchDatesEditor key={viewedBatch.id} batch={viewedBatch} courseId={id} setBatchDates={setBatchDates} onDone={() => setDatesOpen(false)} />
+          <BatchDatesEditor key={viewedBatch.id} batch={viewedBatch} courseId={id} offersCert={offersCert} setBatchDates={setBatchDates} onDone={() => setDatesOpen(false)} />
         )}
       </div>
 
@@ -167,7 +174,9 @@ export default function CourseManage() {
         {tab === "links" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="links" title="Course links" Icon={Link2} items={data.links} placeholder="Link title" installments={data.planInstallments} />}
         {tab === "materials" && <ContentSection id={id} batchId={activeBatchId} reload={reload} store={store} bucket="materials" title="Materials" Icon={FileDown} items={data.materials} placeholder="Material title" installments={data.planInstallments} />}
         {tab === "students" && <StudentsTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} navigate={navigate} />}
-        {tab === "certificates" && <CertificatesTab id={id} batchNum={viewedNum} courseTitle={c.title} certProgramName={c.certProgramName} store={store} />}
+        {tab === "certificates" && (offersCert
+          ? <CertificatesTab id={id} batchNum={viewedNum} courseTitle={c.title} certProgramName={c.certProgramName} store={store} />
+          : <NoCertificateTab keptCount={Number(c.certificatesIssued) || 0} onOpenDetails={() => setTab("details")} />)}
         {tab === "plan" && <CoursePlanTab id={id} batchId={activeBatchId} batchNum={viewedNum} store={store} />}
         {tab === "instructor" && <InstructorTab id={id} batchId={activeBatchId} c={data} reload={reload} store={store} navigate={navigate} />}
       </div>
@@ -197,14 +206,28 @@ function DetailsTab({ id, c, store, navigate }) {
 
   const defaultName = templates.find((t) => t.id === defaultId)?.name || "default";
   // A previously-saved template id may no longer exist; fall back to the default.
-  const knownTemplate = templates.length === 0 || templates.some((t) => t.id === certTemplate);
+  // "none" is never in the template list, so it must be recognised here or a
+  // plain save would quietly turn certificates back on.
+  const noCert = certTemplate === NO_CERTIFICATE;
+  const knownTemplate = noCert || templates.length === 0 || templates.some((t) => t.id === certTemplate);
   const certValue = knownTemplate ? certTemplate : "";
   const preview = async () => {
     const tid = certValue || defaultId;
-    if (tid) { try { await store.previewCertTemplate(tid, { courseTitle: title, certProgramName, certSubtitle }); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
+    if (tid && !noCert) { try { await store.previewCertTemplate(tid, { courseTitle: title, certProgramName, certSubtitle }); } catch (e) { setMsg({ ok: false, msg: e.message }); } }
   };
 
-  const save = async () => setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName, certSubtitle }));
+  const save = async () => {
+    if (noCert && c.certTemplate !== NO_CERTIFICATE) {
+      // Counted now, not from page load, since certificates may have been issued since.
+      let kept = Number(c.certificatesIssued) || 0;
+      try { kept = await store.fetchCourseCertificateCount(id); } catch { /* use the loaded count */ }
+      if (kept > 0) {
+        const body = `${kept} certificate${kept === 1 ? " has" : "s have"} already been issued for "${c.title}". ${kept === 1 ? "It stays" : "They stay"} on record but ${kept === 1 ? "is" : "are"} hidden from students, and no new certificates are issued.\n\nPick a certificate template again later to show ${kept === 1 ? "it" : "them"} again.`;
+        if (!(await popup.confirm(body, { title: "Stop offering certificates?", confirmText: "Stop offering", tone: "warning" }))) return;
+      }
+    }
+    setMsg(await store.updateCourse(id, { code, title, sessions: c.sessions ?? 0, blurb, certTemplate: certValue, certProgramName, certSubtitle }));
+  };
   const remove = async () => {
     if (!(await popup.confirm(`Delete "${c.title}"? This removes its content and enrolments. This cannot be undone.`, { title: "Delete course", confirmText: "Delete", danger: true }))) return;
     await store.deleteCourse(id);
@@ -228,19 +251,25 @@ function DetailsTab({ id, c, store, navigate }) {
           <select className="form-control" style={{ maxWidth: 300 }} value={certValue} onChange={(e) => setCertTemplate(e.target.value)}>
             <option value="">Default ({defaultName})</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <option value={NO_CERTIFICATE}>No certificate</option>
           </select>
-          <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>
+          {!noCert && <button className="btn btn-outline" type="button" onClick={preview}><Eye /> Preview</button>}
         </div>
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Used for every certificate issued for this course. The default is locked in automatically on first issue.</div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>{noCert
+          ? "This course does not offer a certificate. Its program name and subject line are saved in case you pick a template again."
+          : "Used for every certificate issued for this course. The default is locked in automatically on first issue."}</div>
       </div>
-      <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#EF4444" }}>*</span></label>
-        <input className="form-control" value={certProgramName} placeholder="e.g. Stock Market Certificate Program" onChange={(e) => setCertProgramName(e.target.value)} />
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The course title printed on the certificate. Required - certificates cannot be issued for this course until this is set.</div>
-      </div>
-      <div className="form-group"><label className="form-label">Certificate subject line</label>
-        <input className="form-control" value={certSubtitle} placeholder="In Stock Market Investments" onChange={(e) => setCertSubtitle(e.target.value)} />
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The smaller line under the certificate heading. Leave it blank to keep the wording built into the template ("In Stock Market Investments").</div>
-      </div>
+      {/* Hidden, not cleared: save still sends both values so a later switch back restores them. */}
+      {!noCert && <>
+        <div className="form-group"><label className="form-label">Certificate program name <span style={{ color: "#EF4444" }}>*</span></label>
+          <input className="form-control" value={certProgramName} placeholder="e.g. Stock Market Certificate Program" onChange={(e) => setCertProgramName(e.target.value)} />
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The course title printed on the certificate. Required - certificates cannot be issued for this course until this is set.</div>
+        </div>
+        <div className="form-group"><label className="form-label">Certificate subject line</label>
+          <input className="form-control" value={certSubtitle} placeholder="In Stock Market Investments" onChange={(e) => setCertSubtitle(e.target.value)} />
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>The smaller line under the certificate heading. Leave it blank to keep the wording built into the template ("In Stock Market Investments").</div>
+        </div>
+      </>}
       <div style={{ display: "flex", gap: 10 }}>
         <Button className="btn btn-primary" onClick={save}><Save /> Save changes</Button>
         <Button className="btn btn-danger" onClick={remove}><Trash2 /> Delete course</Button>
@@ -351,6 +380,24 @@ function outstandingNote(gate, plan) {
   }
   if (!feesSettled(plan)) bits.push(`${rs(plan.remaining)} remaining`);
   return bits.join(" · ");
+}
+
+/* Stands in for the Certificates tab while the course is set to "No certificate",
+   so an admin who looks here sees why it is empty. */
+function NoCertificateTab({ keptCount, onOpenDetails }) {
+  return (
+    <div>
+      <div className="alert alert-info" style={{ marginTop: 0, marginBottom: 14 }}><Award /> <span>This course does not offer a certificate, so none are issued and students see no certificate for it. To offer one, pick a <strong>Certificate template</strong> on the Course details tab.</span></div>
+      {keptCount > 0 && (
+        <div className="alert alert-warning" style={{ marginBottom: 14 }}><AlertTriangle /> <span>{keptCount} certificate{keptCount === 1 ? " was" : "s were"} issued before this course stopped offering one. {keptCount === 1 ? "It stays" : "They stay"} on record but hidden from students. Pick a certificate template again to show {keptCount === 1 ? "it" : "them"} again.</span></div>
+      )}
+      <div className="empty-state">
+        <div className="empty-icon"><Award /></div>
+        <p>No certificate for this course.</p>
+        <button className="btn btn-outline btn-sm" type="button" style={{ marginTop: 12 }} onClick={onOpenDetails}><SettingsIcon /> Open Course details</button>
+      </div>
+    </div>
+  );
 }
 
 /* Watch and, in exceptional cases, override certificates for THIS course and
@@ -560,7 +607,7 @@ function CertificatesTab({ id, batchNum, courseTitle, certProgramName, store }) 
                           <button className="icon-btn-plain" title="Download" onClick={() => act(() => adminDownloadCertificate(r.cert.id, r.cert.cert_no))}><Download style={{ width: 16, height: 16 }} /></button>
                           <button className="icon-btn-plain" title="Email to student" onClick={() => act(() => sendCertificate(r.cert.id))}><Send style={{ width: 16, height: 16 }} /></button>
                           {r.cert.downloaded && !r.cert.unlocked && (
-                            <button className="icon-btn-plain" title="Unlock one re-download" onClick={() => unlockCertificate(r.cert.id)} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
+                            <button className="icon-btn-plain" title="Unlock one re-download" onClick={async () => { const res = await unlockCertificate(r.cert.id); if (!res.ok) popup.toast(res.msg || "Could not unlock the certificate.", "error"); }} style={{ color: "var(--primary)" }}><LockOpen style={{ width: 16, height: 16 }} /></button>
                           )}
                         </>}
                       </td>

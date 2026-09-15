@@ -39,15 +39,21 @@ export default function CourseDetail() {
   const myExams = isLocked ? [] : exams.filter((x) => x.course_id === id);
   const myPlan = (payments || []).find((p) => p.course_id === id) || null;
   const myCert = (certificates || []).find((c2) => c2.course_id === id) || null;
+  const myCertStatus = (certStatus || {})[id];
+  // An older server sends no flag, so only an explicit false hides the tab.
+  const offersCert = (myCertStatus || {}).offersCertificate !== false;
 
   const tabs = [
     { k: "recordings", label: "Recordings", icon: PlayCircle, n: c.recordings.length },
     { k: "links", label: "Course links", icon: Link2, n: c.links.length },
     { k: "materials", label: "Materials", icon: FileDown, n: c.materials.length },
     { k: "payments", label: "Payments", icon: Wallet, n: myPlan ? myPlan.installments.length : 0 },
-    { k: "certificate", label: "Certificate", icon: Award, n: myCert ? 1 : 0 },
+    ...(offersCert ? [{ k: "certificate", label: "Certificate", icon: Award, n: myCert ? 1 : 0 }] : []),
     ...(myExams.length > 0 ? [{ k: "exam", label: "Exams", icon: FileQuestion, n: myExams.length }] : []),
   ];
+  // The tab choice survives moving between courses, so it can name a tab this
+  // course does not have. Show the first tab rather than an empty card.
+  const shown = tabs.some((t) => t.k === tab) ? tab : tabs[0].k;
 
   return (
     <Layout title="Course">
@@ -79,13 +85,13 @@ export default function CourseDetail() {
       <div className="card">
         <div className="tabs">
           {tabs.map((t) => (
-            <button key={t.k} className={"tab-btn" + (tab === t.k ? " on" : "")} onClick={() => setTab(t.k)}>
+            <button key={t.k} className={"tab-btn" + (shown === t.k ? " on" : "")} onClick={() => setTab(t.k)}>
               <t.icon /> <span className="tab-label">{t.label}</span> {t.n != null && <span className="tab-count">{t.n}</span>}
             </button>
           ))}
         </div>
 
-        {tab === "recordings" && (
+        {shown === "recordings" && (
           c.recordings.length === 0
             ? <div className="empty-state"><div className="empty-icon"><PlayCircle /></div><p>No recordings have been published yet.</p></div>
             : c.recordings.map((r) => (
@@ -95,7 +101,7 @@ export default function CourseDetail() {
               ))
         )}
 
-        {tab === "links" && (
+        {shown === "links" && (
           c.links.length === 0
             ? <div className="empty-state"><div className="empty-icon"><Link2 /></div><p>No course links have been added yet.</p></div>
             : c.links.map((r) => (
@@ -104,7 +110,7 @@ export default function CourseDetail() {
               ))
         )}
 
-        {tab === "materials" && (
+        {shown === "materials" && (
           c.materials.length === 0
             ? <div className="empty-state"><div className="empty-icon"><FileDown /></div><p>No materials have been added yet.</p></div>
             : c.materials.map((r) => (
@@ -115,11 +121,11 @@ export default function CourseDetail() {
               ))
         )}
 
-        {tab === "payments" && <PaymentsView plan={myPlan} />}
+        {shown === "payments" && <PaymentsView plan={myPlan} />}
 
-        {tab === "certificate" && <CertificateView cert={myCert} plan={myPlan} status={(certStatus || {})[id]} download={downloadCertificate} requestRedownload={requestCertRedownload} />}
+        {shown === "certificate" && <CertificateView cert={myCert} plan={myPlan} status={myCertStatus} download={downloadCertificate} requestRedownload={requestCertRedownload} />}
 
-        {tab === "exam" && myExams.map((x) => {
+        {shown === "exam" && myExams.map((x) => {
           const served = x.question_count > 0 ? Math.min(x.question_count, x.bankSize) : x.bankSize;
           const done = x.attempt && x.attempt.finished_at;
           const canRetake = done && (Number(x.attempt_limit ?? 0) === 0 || (x.attemptsUsed || 0) < Number(x.attempt_limit));

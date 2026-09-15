@@ -982,16 +982,22 @@ async function certExists(studentId, courseId) {
 // Returns true when this call created the certificate, false when one was
 // already there. The unique index is what settles a race between two issuing
 // paths, so a rejected insert means the other side won, not that anything broke.
-async function issueCertificate(studentId, courseId, certNo, when) {
+/* Returns "issued", "exists", or "no-certificate". The course is re-checked in
+   the same statement as the insert, so an admin switching the course to no
+   certificate at that moment cannot end up with a freshly issued one. */
+async function issueCertificate(studentId, courseId, certNo, when, noCertificateId) {
   const [[e]] = await q("SELECT batch_id FROM enrolments WHERE user_id=? AND course_id=?", [studentId, courseId]);
   const bid = e ? e.batch_id : await currentBatchId(courseId);
   try {
-    await q("INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) VALUES (?,?,?,?,?,0,0)", [certNo, studentId, courseId, bid, when]);
+    const [r] = await q(
+      "INSERT INTO certificates (cert_no,student_id,course_id,batch_id,issued_at,downloaded,unlocked) SELECT ?,?,?,?,?,0,0 FROM courses WHERE id=? AND COALESCE(cert_template,'')<>?",
+      [certNo, studentId, courseId, bid, when, courseId, noCertificateId]);
+    if (!r.affectedRows) return "no-certificate";
   } catch (err) {
-    if (err && (err.code === "ER_DUP_ENTRY" || err.errno === 1062)) return false;
+    if (err && (err.code === "ER_DUP_ENTRY" || err.errno === 1062)) return "exists";
     throw err;
   }
-  return true;
+  return "issued";
 }
 async function listCertificates() {
   const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.redownload_requested, c.student_id, c.course_id, bt.number AS batchNumber,
@@ -1019,7 +1025,7 @@ async function getCertificate(id) {
 }
 async function studentCertificates(studentId) {
   const [rows] = await q(`SELECT c.id, c.cert_no, c.issued_at, c.downloaded, c.unlocked, c.redownload_requested, c.course_id,
-      co.title AS courseTitle, co.code AS courseCode
+      co.title AS courseTitle, co.code AS courseCode, co.cert_template AS certTemplate
     FROM certificates c JOIN courses co ON co.id=c.course_id WHERE c.student_id=? ORDER BY c.issued_at DESC`, [studentId]);
   return rows;
 }
