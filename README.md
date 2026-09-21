@@ -58,7 +58,8 @@ resets the admin from the `.env` values.
 - `dist/` is committed on purpose so the production host never has to build.
   **Always run `npm run build` before committing UI changes.**
 - Host: cPanel + LiteSpeed running the Node app. Entry point: `server.cjs`.
-- Deploy on the server with `redeploy.sh` (pull -> npm install -> kill the stale
+- Deploy on the server with `redeploy.sh` (pull -> npm install only when
+  package.json/the lockfile changed or a package is missing -> kill the stale
   LiteSpeed worker -> restart -> verify):
 
 ```bash

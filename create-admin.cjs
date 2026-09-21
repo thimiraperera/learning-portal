@@ -4,7 +4,7 @@
    time: if the admin username already exists it just resets its password and
    makes sure it is an active admin; otherwise it creates it. */
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const bcrypt = require("bcryptjs");
 const dbmod = require("./db.cjs");
 

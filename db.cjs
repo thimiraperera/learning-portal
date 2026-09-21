@@ -4,7 +4,7 @@
    On first run it creates the schema, migrates older databases, and seeds
    demo data with hashed passwords. */
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -17,10 +17,48 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 5,
+  // Hand idle connections back to the server instead of holding all five.
+  maxIdle: 2,
+  idleTimeout: 60000,
   charset: "utf8mb4",
 });
 
-const q = (sql, params) => pool.query(sql, params);
+/* Limits on every connection, so a slow query cannot hang the site: a
+   statement is stopped after STATEMENT_SECONDS (the error, with its SQL, lands
+   in stderr.log), and waiting on a lock gives up after LOCK_WAIT_SECONDS
+   instead of the server default of up to a day. On MariaDB the time limit
+   covers every statement; MySQL only has one for SELECTs, so there writes are
+   bounded by the lock waits alone. init() logs which one the server took. */
+const STATEMENT_SECONDS = 60;
+const LOCK_WAIT_SECONDS = 20;
+const STATEMENT_LIMITS = [
+  (s) => `SET SESSION max_statement_time=${s}`, // MariaDB, in seconds
+  (s) => `SET SESSION max_execution_time=${s * 1000}`, // MySQL, in ms
+];
+let statementLimit = 0; // index of the form this server accepts
+let statementLimitWarned = false;
+function setStatementLimit(conn, seconds, from = statementLimit) {
+  conn.query(STATEMENT_LIMITS[from](seconds), (e) => {
+    // Only "unknown system variable" means the other server type. Anything else
+    // (a connection dropped mid-setup) must not switch the form for every
+    // later connection; the pool discards a dead connection by itself.
+    if (!e || e.errno !== 1193) return;
+    if (from + 1 < STATEMENT_LIMITS.length) { statementLimit = from + 1; setStatementLimit(conn, seconds, from + 1); }
+    else if (!statementLimitWarned) { statementLimitWarned = true; console.warn("Could not set a statement time limit:", e.code || e.message); }
+  });
+}
+pool.on("connection", (conn) => {
+  conn.query(`SET SESSION lock_wait_timeout=${LOCK_WAIT_SECONDS}, innodb_lock_wait_timeout=${LOCK_WAIT_SECONDS}`, (e) => {
+    if (e) console.warn("Could not set lock wait limits:", e.code || e.message);
+  });
+  setStatementLimit(conn, STATEMENT_SECONDS);
+});
+
+// While init() runs, every query goes through one dedicated connection with no
+// statement limit, so a slow migration on a big table can finish instead of
+// failing on every start. The server only starts listening after init().
+let initConn = null;
+const q = (sql, params) => (initConn || pool).query(sql, params);
 
 // All tables use this one collation. Pinning it keeps JOINs from breaking when
 // the MySQL/MariaDB server default differs between table creations (newer
@@ -227,7 +265,60 @@ async function normalizeCollations() {
   }
 }
 
+/* Lookup indexes on the columns the app filters and joins on. Without them
+   each lookup reads its whole table, which gets slower as data grows and adds
+   to the hosting account's disk usage. Each is added once; one that fails is
+   logged and tried again on the next start rather than stopping the app. */
+const INDEXES = [
+  ["exams", "idx_exams_course", "course_id"],
+  ["exam_questions", "idx_eq_exam", "exam_id, position"],
+  ["exam_attempts", "idx_att_exam_user", "exam_id, user_id"],
+  ["exam_attempts", "idx_att_user", "user_id, exam_id"],
+  ["payments", "idx_pay_plan", "plan_id, paid_at"],
+  ["payment_installments", "idx_pi_plan", "plan_id, seq"],
+  ["sessions", "idx_sess_user", "user_id"],
+  ["sessions", "idx_sess_exp", "expires_at"],
+  ["enrolments", "idx_enr_course_batch", "course_id, batch_id"],
+  ["recordings", "idx_rec_course_batch", "course_id, batch_id, position"],
+  ["links", "idx_links_course_batch", "course_id, batch_id, position"],
+  ["materials", "idx_mat_course_batch", "course_id, batch_id, position"],
+  ["content_groups", "idx_groups_course", "course_id, position"],
+  ["certificates", "idx_cert_course", "course_id"],
+  ["course_instructors", "idx_ci_instr", "instructor_id, course_id"],
+  ["course_instructors", "idx_ci_course", "course_id, batch_id"],
+  ["instructors", "idx_instr_user", "user_id"],
+  ["users", "idx_users_reg_token", "reg_token"],
+  ["users", "idx_users_reset_token", "reset_token"],
+];
+async function ensureIndexes() {
+  const [rows] = await q("SELECT DISTINCT table_name AS t, index_name AS i FROM information_schema.statistics WHERE table_schema=DATABASE()");
+  const have = new Set(rows.map((r) => `${r.t}.${r.i}`));
+  for (const [table, name, cols] of INDEXES) {
+    if (have.has(`${table}.${name}`)) continue;
+    try { await q(`ALTER TABLE \`${table}\` ADD INDEX ${name} (${cols})`); }
+    catch (e) { console.warn(`Index ${name} on ${table} was not added (${e.code || e.message}). It will be tried again on the next start.`); }
+  }
+}
+
 async function init() {
+  initConn = await pool.getConnection();
+  try {
+    // Lift the statement limit on this connection only (see initConn).
+    for (const sql of ["SET SESSION max_statement_time=0", "SET SESSION max_execution_time=0"]) {
+      try { await initConn.query(sql); break; } catch { /* the other server type */ }
+    }
+    await migrate();
+    const [[{ v }]] = await q("SELECT VERSION() AS v");
+    const scope = statementLimitWarned ? "no time limit (not supported)" : statementLimit === 0 ? "all statements" : "SELECT only";
+    console.log(`Database ${v}: queries stop after ${STATEMENT_SECONDS} s (${scope}), lock waits after ${LOCK_WAIT_SECONDS} s.`);
+  } finally {
+    const conn = initConn;
+    initConn = null;
+    conn.destroy(); // never goes back to the pool without its limits
+  }
+}
+
+async function migrate() {
   for (const sql of TABLES) await q(sql);
   await normalizeCollations();
   for (const col of ["first_name", "last_name", "nickname"]) await ensureColumn("users", col, "VARCHAR(255) DEFAULT ''");
@@ -305,6 +396,7 @@ async function init() {
     }
   }
   await migrateBatches();
+  await ensureIndexes();
   // A batch now ends when its fees finish, but batches created before that only
   // pick it up the next time their plan is saved. Fill the blanks once so the
   // dates are right straight away. Anything an admin typed by hand is left be.
@@ -318,7 +410,13 @@ async function init() {
     await q("UPDATE users SET super_admin=1 WHERE role='admin'");
   }
   // Checkbox questions earn partial marks, so attempt scores can be fractional.
-  await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
+  // Altered only when needed: an ALTER on every start has to wait for any
+  // running exam query, and every exam query after it then waits in line.
+  const [[score]] = await q(`SELECT DATA_TYPE AS t, NUMERIC_PRECISION AS p, NUMERIC_SCALE AS s FROM information_schema.columns
+     WHERE table_schema=DATABASE() AND table_name='exam_attempts' AND column_name='score'`);
+  if (score && !(String(score.t).toLowerCase() === "decimal" && Number(score.p) === 6 && Number(score.s) === 2)) {
+    await q("ALTER TABLE exam_attempts MODIFY score DECIMAL(6,2) DEFAULT 0");
+  }
   const [needs] = await q("SELECT id, name FROM users WHERE COALESCE(first_name,'')='' AND COALESCE(last_name,'')=''");
   for (const u of needs) {
     const parts = String(u.name || "").trim().split(/\s+/);

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Pull the latest code, restart the Node app, and verify the live bundle.
 # Run on the cPanel server from the app root: sh deploy.sh
-# Pass --install to also run npm install (only needed when dependencies change).
+# npm install runs by itself when package.json or the lockfile changed since
+# the last successful install, or a package is missing. Pass --install to force it.
 set -e
 
 APP_ROOT=/home/cemszolc/learning-portal
@@ -14,10 +15,25 @@ cd "$APP_ROOT"
 echo "==> git pull"
 git pull
 
-if [ "$1" = "--install" ]; then
+# npm install only when the packages changed since the last successful install
+# (recorded in STAMP), a server package does not load, or --install is given.
+# A needless install rewrites node_modules (disk I/O on a shared account), and
+# a worker that starts mid-install fails with "Cannot find module".
+STAMP=node_modules/.installed-lock
+PKGS="['dotenv','express','mysql2','multer','pdfkit','bcryptjs','nodemailer','qrcode','adm-zip']"
+lock_hash() { cat package.json package-lock.json 2>/dev/null | git hash-object --stdin; }
+if [ "$1" = "--install" ] \
+  || [ "$(cat "$STAMP" 2>/dev/null)" != "$(lock_hash)" ] \
+  || ! node -e "for (const m of $PKGS) require(m)" 2>/dev/null; then
   echo "==> npm install"
-  npm install
+  if npm install --no-audit --no-fund; then lock_hash > "$STAMP"
+  else echo "FATAL: npm install failed. It runs again on the next deploy."; exit 1; fi
 fi
+node -e "for (const m of $PKGS) require(m)" || {
+  echo "FATAL: packages are missing. The new code is already on disk, so the app"
+  echo "fails on its next start until this works: sh deploy.sh --install"
+  exit 1
+}
 
 echo "==> stop app"
 cloudlinux-selector stop  --json --interpreter nodejs --app-root "$APP_ROOT" || true

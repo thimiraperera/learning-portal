@@ -22,6 +22,8 @@ import { rs, fmtDate, fmtDateMs, planBadge, installmentBuckets } from "../../lib
 
 // Reserved certTemplate value (cert.cjs NO_CERTIFICATE): the course awards no certificate.
 const NO_CERTIFICATE = "none";
+// Largest course file an admin can upload (MAX_UPLOAD_MB in server.cjs).
+const MAX_UPLOAD_MB = 20;
 
 function BatchDatesEditor({ batch, courseId, offersCert, setBatchDates, onDone }) {
   const [number, setNumber] = useState(String(batch.number ?? ""));
@@ -873,6 +875,11 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    // Checked here too, so a big file is turned away before it uploads.
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setErr(`"${file.name}" is over the ${MAX_UPLOAD_MB} MB limit. Compress it, or add it as a link instead.`);
+      return;
+    }
     setBusy(true); setErr(null);
     const r = await uploadMaterial(id, batchId, file, seq);
     setBusy(false);
@@ -952,6 +959,7 @@ function ContentSection({ id, batchId, reload, store, bucket, title, Icon, items
           </label>
         )}
       </div>
+      {isMaterials && <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>Uploaded files can be up to {MAX_UPLOAD_MB} MB. For a larger file or a video, add a link instead.</div>}
       <div style={{ marginTop: 12 }}>
         <StageSelect stages={buckets} value={seq} onChange={setSeq} />
       </div>

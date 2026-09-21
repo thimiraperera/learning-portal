@@ -2,8 +2,21 @@
    Serves the JSON API + the prebuilt frontend in ./dist, with an SPA
    fallback so client-side routes work on refresh / deep links.
    Data lives in MySQL (see db.cjs); credentials come from env vars. */
+
+// Every log line starts with the time (UTC), so an entry in stderr.log can be
+// matched to when a problem was reported. Set up before anything is loaded so
+// even a failed start (a missing module, say) gets a time.
+for (const level of ["log", "warn", "error"]) {
+  const write = console[level].bind(console);
+  console[level] = (...args) => write(`[${new Date().toISOString()}]`, ...args);
+}
+process.on("uncaughtException", (e) => {
+  console.error("Server stopped:", e);
+  process.exit(1);
+});
+
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const fs = require("fs");
 const express = require("express");
 const crypto = require("crypto");
@@ -83,7 +96,11 @@ const materialStorage = multer.diskStorage({
   },
   filename: (_req, file, cb) => cb(null, Date.now() + "-" + crypto.randomBytes(3).toString("hex") + "-" + safeName(file.originalname)),
 });
-const uploadMaterial = multer({ storage: materialStorage, limits: { fileSize: 500 * 1024 * 1024 } });
+// Course files are documents and slides; videos go in as recording links.
+// Big files are costly to store, back up and serve on shared hosting.
+const MAX_UPLOAD_MB = 20;
+// +1: the upload parser treats a file that reaches the limit as too large.
+const uploadMaterial = multer({ storage: materialStorage, limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 + 1 } });
 const uploadBackup = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
 
 async function userCanAccessCourse(user, courseId) {
@@ -2093,11 +2110,18 @@ app.get("/api/cron/payment-reminders", wrap(async (req, res) => {
 }));
 
 /* JSON error handler (catches multer / middleware errors before the SPA fallback). */
-app.use((err, _req, res, next) => {
+app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
-  console.error(err);
-  const tooBig = err && err.code === "LIMIT_FILE_SIZE";
-  res.status(tooBig ? 413 : 400).json({ error: tooBig ? "That file is too large." : (err.message || "Request failed") });
+  // A multer file over its limit, or a JSON body over express.json's limit.
+  const tooBigFile = err && err.code === "LIMIT_FILE_SIZE";
+  const tooBig = tooBigFile || (err && (err.type === "entity.too.large" || err.status === 413));
+  if (tooBig) console.warn(`Request refused, too large: ${req.method} ${req.path}`);
+  else console.error(err);
+  const tooBigMsg = !tooBigFile ? "That is too much data to save at once. Use smaller images."
+    : req.path === "/api/admin/items/upload" ? `That file is too large. Files can be up to ${MAX_UPLOAD_MB} MB. Compress it, or add it as a link instead.`
+    : "That file is too large.";
+  const status = tooBig ? 413 : (err && err.status >= 400 && err.status < 500 ? err.status : 400);
+  res.status(status).json({ error: tooBig ? tooBigMsg : (err.message || "Request failed") });
 });
 
 /* ---- static build + SPA fallback ---- */
