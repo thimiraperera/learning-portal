@@ -6,11 +6,12 @@ import {
   Award, Send, Download, LockOpen, Calendar,
 } from "lucide-react";
 
-// "Batch 2 · ongoing" style label for the batch dropdown / cards.
-function batchLabel(b) {
+// "Batch 2 (ended) · 14 students · dates" style label for the batch dropdown.
+function batchLabel(b, students) {
   if (!b) return "";
   const dates = [b.start_date, b.end_date].filter(Boolean).join(" to ");
-  return `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${dates ? " · " + dates : ""}`;
+  const count = students == null ? "" : ` · ${students} student${students === 1 ? "" : "s"}`;
+  return `Batch ${b.number}${b.status === "ended" ? " (ended)" : ""}${count}${dates ? " · " + dates : ""}`;
 }
 import Layout from "../../components/Layout.jsx";
 import Pagination from "../../components/Pagination.jsx";
@@ -99,6 +100,13 @@ export default function CourseManage() {
   const viewedNum = viewedBatch ? viewedBatch.number : null;
   const inBatch = (u) => u.enrolled.includes(id) && (u.enrolledBatch ? u.enrolledBatch[id] === viewedNum : true);
   const enrolledCount = Object.values(users).filter(inBatch).length;
+  // Students per batch number, shown in the dropdown so earlier batches are easy to find.
+  const studentsByBatch = {};
+  for (const u of Object.values(users)) {
+    const n = u.enrolled.includes(id) && u.enrolledBatch ? u.enrolledBatch[id] : null;
+    if (n != null) studentsByBatch[n] = (studentsByBatch[n] || 0) + 1;
+  }
+  const otherBatchesWithStudents = batches.filter((b) => b.id !== activeBatchId && studentsByBatch[b.number]);
   // Certificates issued for this course in the viewed batch only.
   const issuedCount = (certificates || []).filter((c) => c.course_id === id && (viewedNum == null || c.batchNumber === viewedNum)).length;
   const offersCert = c.certTemplate !== NO_CERTIFICATE;
@@ -131,6 +139,21 @@ export default function CourseManage() {
     else popup.toast(r.msg || "Could not start the batch.", "error");
   };
 
+  // Undo a batch started by mistake. The server refuses while anything uses it.
+  const onRemoveBatch = async () => {
+    if (!viewedBatch) return;
+    const ok = await popup.confirm(
+      `Remove Batch ${viewedBatch.number}? It has no students. Its recordings, links, materials, instructors and fee settings are removed with it. Other batches are not changed.`,
+      { title: `Remove Batch ${viewedBatch.number}`, confirmText: "Remove batch", danger: true }
+    );
+    if (!ok) return;
+    setBatchBusy(true);
+    const r = await store.removeBatch(id, viewedBatch.id);
+    setBatchBusy(false);
+    if (r.ok) { setViewBatchId(null); setBc(null); popup.toast(`Batch ${viewedBatch.number} removed`); }
+    else popup.toast(r.msg || "Could not remove the batch.", "error");
+  };
+
   return (
     <Layout title="Manage course">
       <button className="back-link" onClick={() => navigate("/admin/courses")}><ArrowLeft /> All courses</button>
@@ -144,11 +167,26 @@ export default function CourseManage() {
           <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600 }}>Batch</span>
           <select className="form-control" style={{ flex: "0 0 auto", width: "auto", maxWidth: 280 }}
             value={activeBatchId || ""} onChange={(e) => setViewBatchId(Number(e.target.value))}>
-            {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b)}</option>)}
+            {batches.map((b) => <option key={b.id} value={b.id}>{batchLabel(b, studentsByBatch[b.number] || 0)}</option>)}
           </select>
           <Button className="btn btn-outline" loading={batchBusy} onClick={onStartNewBatch}><Plus /> Start new batch</Button>
           <button className="btn btn-outline" type="button" onClick={() => setDatesOpen((v) => !v)}><Calendar /> {datesOpen ? "Close dates" : "Edit dates"}</button>
         </div>
+        {viewedBatch && enrolledCount === 0 && batches.length > 1 && (
+          <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0, flexWrap: "wrap" }}>
+            <Layers />
+            <span style={{ flex: "1 1 260px" }}>
+              Batch {viewedBatch.number} has no students yet.
+              {otherBatchesWithStudents.length > 0 && " Students of earlier batches stay in their own batch. Open one to see them, or remove this batch if it was started by mistake."}
+            </span>
+            {otherBatchesWithStudents.slice(-3).reverse().map((b) => (
+              <button key={b.id} className="btn btn-outline btn-sm" type="button" onClick={() => setViewBatchId(b.id)}>
+                Open Batch {b.number} ({studentsByBatch[b.number]})
+              </button>
+            ))}
+            <Button className="btn btn-ghost btn-sm" loading={batchBusy} onClick={onRemoveBatch}><Trash2 /> Remove this batch</Button>
+          </div>
+        )}
         {datesOpen && viewedBatch && (
           <BatchDatesEditor key={viewedBatch.id} batch={viewedBatch} courseId={id} offersCert={offersCert} setBatchDates={setBatchDates} onDone={() => setDatesOpen(false)} />
         )}

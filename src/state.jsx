@@ -555,6 +555,10 @@ export function StoreProvider({ children }) {
     try { applyAdmin(await api(`/admin/courses/${courseId}/batches`, { method: "POST", token, body: dates || {} })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
   }, [token]);
+  const removeBatch = useCallback(async (courseId, batchId) => {
+    try { applyAdmin(await api(`/admin/courses/${courseId}/batches/${batchId}`, { method: "DELETE", token })); return { ok: true }; }
+    catch (e) { return { ok: false, msg: e.message }; }
+  }, [token]);
   const endBatch = useCallback(async (courseId, batchId) => {
     try { applyAdmin(await api(`/admin/courses/${courseId}/batches/${batchId}/end`, { method: "POST", token })); return { ok: true }; }
     catch (e) { return { ok: false, msg: e.message }; }
@@ -636,7 +640,7 @@ export function StoreProvider({ children }) {
     updateAccount, changePassword, saveSmtp, sendTestMail, saveRegnum, saveTimezone, saveCertSignature,
     fetchStudentPlans, savePlan, removePlan, addPayment, removePayment, lockStudent, purgeData,
     fetchCoursePlan, saveCoursePlan, applyCoursePlan,
-    fetchCourseBatch, startNewBatch, endBatch, setBatchDates,
+    fetchCourseBatch, startNewBatch, removeBatch, endBatch, setBatchDates,
     setCourseLock, setCertBlock, saveReminders, sendRemindersNow,
     checkSelfRegister, selfRegister, fetchSelfRegisterLink, setSelfRegisterEnabled,
   };

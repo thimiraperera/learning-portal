@@ -594,6 +594,47 @@ async function startNewBatch(courseId, { startDate = "", endDate = "", number } 
   return newId;
 }
 
+/* Undo a batch started by mistake. Only a batch nobody uses can go: any
+   student, payment plan, certificate or pending request in it blocks this.
+   Its copied content, instructors and fee settings go with it. If it was the
+   ongoing batch, the latest remaining batch becomes ongoing again. Returns the
+   material files no other row uses any more, for the caller to delete. */
+async function removeEmptyBatch(courseId, batchId) {
+  const fail = (status, msg) => { const e = new Error(msg); e.status = status; throw e; };
+  const [[b]] = await q("SELECT id, number, status FROM batches WHERE id=? AND course_id=?", [batchId, courseId]);
+  if (!b) fail(404, "Batch not found.");
+  const [[{ n: others }]] = await q("SELECT COUNT(*) AS n FROM batches WHERE course_id=? AND id<>?", [courseId, batchId]);
+  if (!others) fail(409, "A course needs at least one batch, so its only batch cannot be removed.");
+  const [[use]] = await q(`SELECT
+      (SELECT COUNT(*) FROM enrolments WHERE batch_id=?) AS students,
+      (SELECT COUNT(*) FROM payment_plans WHERE batch_id=?) AS plans,
+      (SELECT COUNT(*) FROM certificates WHERE batch_id=?) AS certs,
+      (SELECT COUNT(*) FROM course_requests WHERE batch_id=?) AS requests`, [batchId, batchId, batchId, batchId]);
+  const inUse = [
+    use.students && `${use.students} student${use.students === 1 ? "" : "s"}`,
+    use.plans && `${use.plans} payment plan${use.plans === 1 ? "" : "s"}`,
+    use.certs && `${use.certs} certificate${use.certs === 1 ? "" : "s"}`,
+    use.requests && `${use.requests} course request${use.requests === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  if (inUse.length) fail(409, `Batch ${b.number} has ${inUse.join(", ")}, so it cannot be removed.`);
+  const [files] = await q("SELECT DISTINCT filename FROM materials WHERE batch_id=? AND COALESCE(filename,'')<>''", [batchId]);
+  for (const t of ["recordings", "links", "materials", "course_instructors", "course_payment_plans"]) {
+    await q(`DELETE FROM ${t} WHERE batch_id=?`, [batchId]);
+  }
+  await q("DELETE FROM batches WHERE id=?", [batchId]);
+  if (b.status === "ongoing") {
+    const [[open]] = await q("SELECT 1 AS x FROM batches WHERE course_id=? AND status='ongoing' LIMIT 1", [courseId]);
+    if (!open) await q("UPDATE batches SET status='ongoing' WHERE course_id=? ORDER BY number DESC LIMIT 1", [courseId]);
+  }
+  // A new batch shares its copied files with the batch it came from.
+  const unused = [];
+  for (const { filename } of files) {
+    const [[still]] = await q("SELECT 1 AS x FROM materials WHERE filename=? LIMIT 1", [filename]);
+    if (!still) unused.push(filename);
+  }
+  return unused;
+}
+
 /* ---- per-student course access lock ---- */
 // A locked enrolment keeps the student enrolled but blocks access to that
 // course's content (used when a student has not paid, or any other reason).
@@ -706,11 +747,14 @@ async function enrichPlans(planRows) {
   const byP = {}; for (const r of pays) (byP[r.plan_id] ||= []).push(r);
   return planRows.map((p) => buildPlan(p, byI[p.id] || [], byP[p.id] || [], today));
 }
+// Plans are labelled with the batch the student is in now. A plan kept through
+// a batch move ("keep fee") can still carry its old batch_id.
 async function studentPlans(userId) {
   const [plans] = await q(`SELECT p.id, p.user_id, p.course_id, p.created_at, p.last_reminded, bt.number AS batchNumber,
        co.code AS courseCode, co.title AS courseTitle
      FROM payment_plans p JOIN courses co ON co.id=p.course_id
-     LEFT JOIN batches bt ON bt.id=p.batch_id
+     LEFT JOIN enrolments en ON en.user_id=p.user_id AND en.course_id=p.course_id
+     LEFT JOIN batches bt ON bt.id=COALESCE(en.batch_id, p.batch_id)
      WHERE p.user_id=? ORDER BY co.title`, [userId]);
   return enrichPlans(plans);
 }
@@ -721,7 +765,8 @@ async function allPlans() {
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
-     LEFT JOIN batches bt ON bt.id=p.batch_id
+     LEFT JOIN enrolments en ON en.user_id=p.user_id AND en.course_id=p.course_id
+     LEFT JOIN batches bt ON bt.id=COALESCE(en.batch_id, p.batch_id)
      ORDER BY p.created_at DESC, p.id DESC`); // newest first
   return enrichPlans(plans);
 }
@@ -778,7 +823,8 @@ async function overduePayments() {
      FROM payment_plans p
      JOIN users u ON u.id=p.user_id
      JOIN courses co ON co.id=p.course_id
-     LEFT JOIN batches bt ON bt.id=p.batch_id
+     LEFT JOIN enrolments en ON en.user_id=p.user_id AND en.course_id=p.course_id
+     LEFT JOIN batches bt ON bt.id=COALESCE(en.batch_id, p.batch_id)
      WHERE u.role='student' AND u.status='active'
        AND EXISTS (SELECT 1 FROM enrolments e WHERE e.user_id=p.user_id AND e.course_id=p.course_id)`);
   return (await enrichPlans(plans)).filter((p) => p.missedCount > 0);
@@ -1649,7 +1695,7 @@ async function setSmtp(next) {
 
 module.exports = {
   pool, q, init, displayName, courseFull, coursesMap, enrolledIds, enrolledBatches, lockedCourses, usersMap,
-  listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch,
+  listBatches, currentBatch, currentBatchId, batchById, setBatchDates, endBatch, startNewBatch, removeEmptyBatch,
   updateCourse, deleteCourse, updateStudentProfile, inviteStudent, getInvite, completeRegistration, usernameExists,
   createSelfRegisteredStudent, getSelfRegisterConfig, setSelfRegisterEnabled,
   instructorsList, addInstructor, updateInstructor, deleteInstructor,

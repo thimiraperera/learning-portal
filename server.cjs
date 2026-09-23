@@ -961,6 +961,7 @@ app.post("/api/admin/enrol", auth, adminOnly, wrap(async (req, res) => {
       // and recorded payments alone so they keep their old batch's price.
       await q("UPDATE enrolments SET batch_id=? WHERE user_id=? AND course_id=?", [bid, u.id, cid]);
       if (!req.body?.keepFee) await applyCoursePlanToStudent(u.id, cid);
+      else await q("UPDATE payment_plans SET batch_id=? WHERE user_id=? AND course_id=?", [bid, u.id, cid]);
     } else {
       // Not enrolled -> enrol into this batch and apply its fee.
       await q("INSERT INTO enrolments (user_id,course_id,batch_id) VALUES (?,?,?)", [u.id, cid, bid]);
@@ -1055,6 +1056,16 @@ app.post("/api/admin/courses/:id/batches", auth, adminOnly, wrap(async (req, res
     if (clash) return res.status(409).json({ error: `Batch ${number} already exists for this course.` });
   }
   await dbmod.startNewBatch(courseId, { startDate: req.body?.startDate, endDate: req.body?.endDate, number });
+  res.json(await adminState());
+}));
+// Remove a batch started by mistake (refused while anything uses it).
+app.delete("/api/admin/courses/:id/batches/:batchId", auth, adminOnly, wrap(async (req, res) => {
+  try {
+    await removeFiles(await dbmod.removeEmptyBatch(String(req.params.id), Number(req.params.batchId)));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
   res.json(await adminState());
 }));
 // Mark a batch ended.
